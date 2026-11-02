@@ -69,7 +69,7 @@
             const proposal = r.mode === 'AUDIT'
                 ? '拟补录 ' + value(s.wouldCreate) + ' / 拟补齐 ' + value(s.wouldRepair) + '（目标；— 表示未核查档案存在性，候选不等于拟新增）'
                 : '正式补录按实际结果统计；拟变化仅对照模式提供';
-            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (snapshot.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
+            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (s.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
             const progress = find('progress'); progress.max = snapshot.totalKnown && s.papers > 0 ? s.papers : 1;
             if (snapshot.totalKnown) progress.value = s.paperComplete + s.paperErrors + s.paperCancelled; else progress.removeAttribute('value');
             text('phase', snapshot.progressText + ' · 阶段 ' + (reasons[r.scope?.reasonCode] || r.phase));
@@ -307,6 +307,9 @@
         listen(root, 'keydown', e => { if (!e.target.matches('[data-rp-action="papers"],[data-rp-action="targets"]')) return; if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); switchTab(e.key === 'Home' ? 'PAPER' : e.key === 'End' ? 'TARGET' : tab === 'PAPER' ? 'TARGET' : 'PAPER', true); } });
         [confirm, detailDialog].forEach(dialog => {
             listen(dialog, 'cancel', () => { dialogSeq++; });
+            // Native Escape must close only this dialog. The task host also listens for document
+            // keydown; stopping propagation here keeps its close task modal out of the new dialog.
+            listen(dialog, 'keydown', e => { if (e.key === 'Escape') e.stopPropagation(); });
             listen(dialog, 'close', () => { focusTargets.get(dialog)?.focus(); });
         });
         function suspend() { epoch++; runSeq++; itemSeq++; dialogSeq++; stop(); abort(); submitting = mutating = false; snapshot = null; preview = null; renderedList = ''; close(confirm); close(detailDialog); render(); scopeText(); }

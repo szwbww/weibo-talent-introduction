@@ -35,18 +35,44 @@ def expected_status(old_row):
     return 'EXPECTED_MATCH' if old_row['status'] == 'ALREADY_RECOVERED' else 'EXPECTED_MISSING'
 
 
-def actual_binding(actual):
-    if actual is None:
-        return False
-    if 'status' in actual:
-        return actual['status'] == 'ALREADY_RECOVERED'
-    return actual.get('targetOutcome') not in {'CONFLICT', 'PROTECTED', 'ERROR'}
-
-
 def expected_doc(old_row):
     documents = (old_row.get('inventory') or {}).get('documents') or []
     ids = {d.get('docId') for d in documents if not d.get('protected') and d.get('docId')}
     return ids.pop() if len(ids) == 1 else None
+
+
+# A replay receipt status is either explicit identity evidence, an honest absence of a binding,
+# or a rejection. REPRODUCED only proves the audited page fact was re-read, never a binding.
+REPLAY_BOUND_STATUSES = {'ALREADY_RECOVERED'}
+REPLAY_ABSENT_STATUSES = {'REPRODUCED', 'NOT_REPRODUCED'}
+# A run target outcome only binds when the actual target identity (docId) is present and matches.
+RUN_BOUND_OUTCOMES = {'NEW', 'REPAIRED', 'UNCHANGED', 'SKIPPED'}
+
+
+def evidence(old_row, actual):
+    """Return BOUND, ABSENT or INVALID for actual evidence. Totals and names never establish identity."""
+    if actual is None:
+        return 'ABSENT'
+    if 'status' in actual:
+        status = actual.get('status')
+        if status in REPLAY_ABSENT_STATUSES:
+            return 'ABSENT'
+        if status not in REPLAY_BOUND_STATUSES or actual.get('reason') == 'CONFLICTING_PRODUCTION_BINDING':
+            return 'INVALID'
+        # A baseline-confirmed binding must remain confirmed; a fresh parse is not its proof.
+        if old_row['status'] == 'ALREADY_RECOVERED' and status != 'ALREADY_RECOVERED':
+            return 'INVALID'
+        return 'BOUND'
+    outcome = actual.get('targetOutcome')
+    if outcome == 'AMBIGUOUS_TARGETS' or outcome not in RUN_BOUND_OUTCOMES:
+        return 'INVALID'
+    doc = actual.get('docId')
+    if not doc:
+        return 'INVALID'
+    expected = expected_doc(old_row)
+    if expected and doc != expected:
+        return 'INVALID'
+    return 'BOUND'
 
 
 def classify(old_row, actual, external_reason):
@@ -54,15 +80,13 @@ def classify(old_row, actual, external_reason):
         return 'EXTERNAL_DATA_CHANGED'
     if old_row['status'] == 'SOURCE_MISSING':
         return 'SOURCE_MISSING'
-    bound = actual_binding(actual)
-    if old_row['status'] == 'ALREADY_RECOVERED':
-        if not bound:
-            return 'REGRESSION'
-        doc = expected_doc(old_row)
-        if doc and actual.get('docId') and actual['docId'] != doc:
-            return 'REGRESSION'
-        return 'EXPECTED_MATCH'
-    return 'EXPECTED_MATCH' if bound else 'EXPECTED_MISSING'
+    state = evidence(old_row, actual)
+    if state == 'INVALID':
+        return 'REGRESSION'
+    if state == 'ABSENT':
+        # A baseline-confirmed binding that disappeared is a regression, not an honest absence.
+        return 'REGRESSION' if old_row['status'] == 'ALREADY_RECOVERED' else expected_status(old_row)
+    return 'EXPECTED_MATCH'
 
 
 def receipt(path, manifest_hash, expected):
@@ -186,6 +210,7 @@ def main():
         row['actualQualification'] = actual.get('qualification') if actual else None
         row['actualReasonCode'] = actual.get('reasonCode') if actual else None
         row['externalChange'] = external_reason_for(c, changes)
+        row['actualEvidence'] = evidence(old[k], actual)
         row['classification'] = classify(old[k], actual, row['externalChange'])
         merged.append(row)
     extras = []

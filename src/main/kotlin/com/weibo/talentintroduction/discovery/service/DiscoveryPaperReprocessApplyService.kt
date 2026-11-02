@@ -49,6 +49,7 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
     internal fun apply(parent: ReprocessRun): Boolean {
         repository.requirePermission(parent)
         val context = registration.beginFromPaperReprocess(parent)
+        resumeOwnedQualification(parent)
         for (saved in targets(parent.executionId)) {
             val target = repository.claimTarget(parent, saved.id) ?: continue
             val result = target.result?.deepCopy<ObjectNode>() ?: result(target)
@@ -269,12 +270,20 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
             if (supplement?.phase == "PROTECTED") result.put("targetOutcome", "PROTECTED")
             val current = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId)
             current?.let { result.set<JsonNode>("after", mapper.valueToTree(it)) }
-            trace(result, 5, if (item.state in TERMINAL) if (item.state == VerificationState.ERROR) "ERROR" else "SUCCESS" else "RUNNING")
+            trace(result, 5, when (item.state) {
+                VerificationState.COMPLETED -> "SUCCESS"
+                VerificationState.ERROR -> "ERROR"
+                VerificationState.CANCELLED -> "CANCELLED"
+                else -> "RUNNING"
+            })
             result.put("reason", if (result.path("syncFailure").asInt() == 1) "已准入，候选同步失败；沿用核验同步重试，不重新资格外呼" else "补录与核验结果分别计数")
             save(parent, target, result)
             afterEffect("AFTER_ADMISSION_OBSERVED")
         }
-        val awaiting = item?.let { it.state !in TERMINAL || it.projectionState == VerificationProjection.PENDING }
+        val awaiting = item?.let {
+            it.state !in TERMINAL || it.projectionState == VerificationProjection.PENDING ||
+                (it.state == VerificationState.CANCELLED && it.admissionRevision == null)
+        }
             ?: (result.path("needsRecheck").asBoolean() || result.path("targetOutcome").asText() == "NEW")
         if (awaiting) {
             save(parent, target, result)
@@ -285,6 +294,16 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
                 result.put("targetOutcome", "ERROR")
             complete(parent, target, result, if (item?.state == VerificationState.ERROR || result.path("targetOutcome").asText() == "ERROR")
                 ReprocessItemState.ERROR else ReprocessItemState.COMPLETE)
+        }
+    }
+
+    /** Only this parent's cancelled child qualification is resumed; completed peers stay immutable. */
+    private fun resumeOwnedQualification(parent: ReprocessRun) {
+        for (saved in targets(parent.executionId)) {
+            val childId = saved.result?.path("childRunId")?.takeIf { it.isIntegralNumber }?.asLong() ?: continue
+            val child = verification.findRun(childId) ?: continue
+            if (child.recheckJson == null || verification.recheck(child).control.phase != RecheckPhase.CANCELLED) continue
+            rechecks.resumeFromPaperReprocess(parent, childId)
         }
     }
 

@@ -32,6 +32,7 @@ import org.springframework.transaction.annotation.AnnotationTransactionAttribute
 import org.springframework.transaction.interceptor.TransactionInterceptor
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.client.RestTemplate
+import org.springframework.web.server.ResponseStatusException
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.MySQLContainer
 import java.net.InetSocketAddress
@@ -76,6 +77,10 @@ class DiscoveryPaperReprocessEndToEndTest {
                     `fixed twelve targets separate new repair conflict protection missing and write failure`()
                     clean()
                     `cancel retains committed results and transient write recovery never replays successful targets`()
+                    clean()
+                    `explicit retry resumes cancelled ordinary qualification without duplicating effects`()
+                    clean()
+                    `explicit retry resumes a cancelled owned child under the same epoch`()
                 }
                 println("PAPER06_RUNTIME_OK realMySQL=true loopbackEsCAS=true realServices=true paidCalls=0 productionWrites=0")
             } finally { stop() }
@@ -118,13 +123,32 @@ class DiscoveryPaperReprocessEndToEndTest {
             assertNotNull(n1Item)
             assertEquals(VerificationProjection.ERROR, n1Item!!.projectionState)
             assertNotNull(n1Item.admissionRevision)
+            // The existing eight-step seam serves the ordinary epoch0 item and the REPAIRED child alike.
+            val ordinary = h.queries.recheckItem(run.executionId, n1Item.id)
+            assertEquals(n1Item.id, ordinary.itemId); assertEquals(run.executionId, ordinary.runId)
+            assertEquals((1..8).toList(), ordinary.trace.steps.map { it.stepNo }.distinct().sorted())
+            val repaired = h.target(run.executionId, requireNotNull(h.e1.email)).result!!
+            val childRunId = repaired.path("verificationRunId").asLong()
+            val childItemId = repaired.path("verificationItemId").asLong()
+            val child = h.queries.recheckItem(childRunId, childItemId)
+            assertEquals(childItemId, child.itemId)
+            assertEquals((1..8).toList(), child.trace.steps.map { it.stepNo }.distinct().sorted())
+            // Wrong parent/item and an unrelated ordinary run stay outside the exception.
+            assertThrows(ResponseStatusException::class.java) { h.queries.recheckItem(run.executionId, childItemId) }
+            h.f.repository.createRun(Harness.UNRELATED_RUN, VerificationMode.AUDIT, false, "{}", Instant.now())
+            assertThrows(ResponseStatusException::class.java) { h.queries.recheckItem(Harness.UNRELATED_RUN, n1Item.id) }
             val providerCalls = h.providerUris.toList()
             h.failCandidateDocs.clear()
-            h.commits.project(n1Item)
+            // The public sync-retry seam projects only; admission and provider calls are retained.
+            val retriedItem = h.rechecks.syncRetry(run.executionId, RecheckSyncRequest(listOf(n1Item.id))).single()
+            assertEquals(VerificationProjection.PROJECTED, retriedItem.projection)
             val projected = h.f.repository.findItem(n1Item.id)!!
             assertEquals(VerificationProjection.PROJECTED, projected.projectionState)
             assertEquals(providerCalls, h.providerUris)
             assertEquals(n1Item.admissionRevision, projected.admissionRevision)
+            assertThrows(ResponseStatusException::class.java) {
+                h.rechecks.syncRetry(run.executionId, RecheckSyncRequest(listOf(999999)))
+            }
 
             // A same-run retry only resets non-terminal targets. Every committed target receipt must
             // remain byte-for-byte identical and no business effect may be replayed.
@@ -189,6 +213,82 @@ class DiscoveryPaperReprocessEndToEndTest {
         }
     }
 
+    @Test fun `explicit retry resumes cancelled ordinary qualification without duplicating effects`() {
+        Harness().use { h ->
+            h.seedCancelSource()
+            val run = h.create(Harness.CANCEL_SOURCE)
+            h.cancelOnFirstConsume = true
+            h.pump(run.executionId, ReprocessState.CANCELLED)
+            val target = h.targets(run.executionId).single()
+            assertEquals("NEW", target.result!!.path("targetOutcome").asText())
+            assertEquals(1, target.result!!.path("actualNew").asInt())
+            assertEquals("NOT_STARTED", target.result!!.path("trace")[4].path("state").asText())
+            val item = h.verificationItem(h.cancelDoc)!!
+            assertEquals(VerificationState.CANCELLED, item.state)
+            assertNull(item.admissionRevision)
+            assertEquals(VerificationQualification.NOT_EVALUATED, item.qualification)
+            val cancelledSteps = h.f.repository.findSteps(item.id)
+            assertTrue(cancelledSteps.any { it.state == VerificationStepState.CANCELLED || it.state == VerificationStepState.SKIPPED })
+            val rawWrites = h.server.rawWrites
+            val rawBefore = h.readRaw(h.cancelDoc)
+            val personRows = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_person_member", Long::class.java)
+
+            h.cancelOnFirstConsume = false
+            val retried = h.service.retry(run.executionId, h.repository.find(run.executionId)!!.revision)
+            assertEquals("QUEUED", jdbc.queryForObject("SELECT state FROM discovery_verification_item WHERE id=?",
+                String::class.java, item.id))
+            h.pump(retried.executionId, ReprocessState.COMPLETED)
+
+            val finished = h.verificationItem(h.cancelDoc)!!
+            assertEquals(item.id, finished.id)
+            assertEquals(VerificationState.COMPLETED, finished.state)
+            assertNotEquals(VerificationQualification.NOT_EVALUATED, finished.qualification)
+            assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE expert_doc_id=?",
+                Long::class.java, h.cancelDoc))
+            assertEquals(rawWrites, h.server.rawWrites)
+            assertEquals(rawBefore, h.readRaw(h.cancelDoc))
+            assertEquals(personRows, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_person_member", Long::class.java))
+            val summary = h.repository.summary(run.executionId)
+            assertEquals(1, summary.actualNew)
+            assertEquals(0L, summary.qualification.notEvaluated)
+            val receipt = h.repository.item(run.executionId, target.id)!!.result!!
+            assertEquals("SUCCESS", receipt.path("trace")[4].path("state").asText())
+            assertEquals("SUCCESS", receipt.path("trace")[5].path("state").asText())
+            assertTrue(h.f.repository.findSteps(item.id).any { step ->
+                step.reasonJson?.contains("CANCELLED") == true
+            }, "cancellation history stays durable")
+            h.reportRun(run.executionId, "RETRIED")
+        }
+    }
+
+    @Test fun `explicit retry resumes a cancelled owned child under the same epoch`() {
+        Harness().use { h ->
+            h.seedExistingAuthorSource()
+            val run = h.create(Harness.CHILD_SOURCE)
+            h.cancelOnFirstStart = true
+            h.pump(run.executionId, ReprocessState.CANCELLED)
+            val target = h.targets(run.executionId).single()
+            val childId = target.result!!.path("childRunId").asLong()
+            assertTrue(childId > 0)
+            assertEquals(RecheckPhase.CANCELLED, h.f.repository.recheck(h.f.repository.findRun(childId)!!).control.phase)
+            assertEquals(1, h.f.repository.recheckItems(childId, 0, 100).second.size)
+            assertEquals(VerificationState.CANCELLED, h.f.repository.recheckItems(childId, 0, 100).second.single().state)
+            assertEquals(1, h.f.repository.paperReprocessRuns(run.executionId).count { it.recheckJson != null })
+
+            h.cancelOnFirstStart = false
+            val retried = h.service.retry(run.executionId, h.repository.find(run.executionId)!!.revision)
+            h.pump(retried.executionId, ReprocessState.COMPLETED)
+
+            val receipt = h.repository.item(run.executionId, target.id)!!.result!!
+            assertEquals(childId, receipt.path("childRunId").asLong())
+            assertEquals(1, h.f.repository.paperReprocessRuns(run.executionId).count { it.recheckJson != null }, "no second epoch is prepared")
+            assertEquals(RecheckPhase.COMPLETED, h.f.repository.recheck(h.f.repository.findRun(childId)!!).control.phase)
+            assertEquals(VerificationState.COMPLETED, h.f.repository.recheckItems(childId, 0, 100).second.single().state)
+            assertEquals("SUCCESS", receipt.path("trace")[4].path("state").asText())
+            h.reportRun(run.executionId, "CHILD_RETRIED")
+        }
+    }
+
     private class Paper(val key: String, val email: String?, val given: String, val family: String,
         val orcid: String?, val country: String = "United Kingdom", val facts: String = "") {
         var doc: String = ""
@@ -202,6 +302,8 @@ class DiscoveryPaperReprocessEndToEndTest {
             const val SOURCE = 30711L
             const val CANCEL_SOURCE = 30712L
             const val RECOVERY_SOURCE = 30713L
+            const val CHILD_SOURCE = 30715L
+            const val UNRELATED_RUN = 99001L
             const val PROFESSOR_ORCID = "0000-0002-1825-0097"
             const val OTHER_ORCID = "0000-0002-1562-097X"
         }
@@ -263,9 +365,11 @@ class DiscoveryPaperReprocessEndToEndTest {
         val w = Paper("w-write", "w.write@fixture.edu", "Wade", "Write", PROFESSOR_ORCID)
         val trigger = Paper("trigger-no-email", null, "Tess", "Trigger", null)
         val cancelPaper = Paper("cancel-paper", "cancel.new@fixture.edu", "Cara", "Cancel", PROFESSOR_ORCID)
+        val existingAuthor = Paper("existing-author", "existing.author@fixture.edu", "Edith", "Existing", null)
         val recoveryFirst = Paper("recovery-first", "recovery.first@fixture.edu", "Rita", "First", PROFESSOR_ORCID)
         val recoverySecond = Paper("recovery-second", "recovery.second@fixture.edu", "Rami", "Second", OTHER_ORCID)
         var cancelOnFirstConsume = false
+        var cancelOnFirstStart = false
         private var cancelTriggered = false
         private var cancelRunId: Long? = null
 
@@ -357,7 +461,8 @@ class DiscoveryPaperReprocessEndToEndTest {
             service = DiscoveryPaperReprocessService(repository, archive, analyzer, mapper, f.apolloSettings,
                 Mockito.mock(TaskProgressStore::class.java), apply)
             apply.afterEffect = { point ->
-                if (point == "AFTER_CONSUME" && cancelOnFirstConsume && !cancelTriggered) {
+                val cancel = (point == "AFTER_CONSUME" && cancelOnFirstConsume) || (point == "AFTER_START" && cancelOnFirstStart)
+                if (cancel && !cancelTriggered) {
                     cancelTriggered = true
                     val id = cancelRunId!!
                     service.cancel(id, repository.find(id)!!.revision)
@@ -375,6 +480,8 @@ class DiscoveryPaperReprocessEndToEndTest {
                 VALUES (?, 'EXPERT_DISCOVERY','MANUAL','SUCCESS',NOW(),NOW())""", CANCEL_SOURCE)
             jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,finished_at)
                 VALUES (?, 'EXPERT_DISCOVERY','MANUAL','SUCCESS',NOW(),NOW())""", RECOVERY_SOURCE)
+            jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,finished_at)
+                VALUES (?, 'EXPERT_DISCOVERY','MANUAL','SUCCESS',NOW(),NOW())""", CHILD_SOURCE)
         }
 
         private fun <T : Any> proxy(value: T): T {
@@ -409,6 +516,11 @@ class DiscoveryPaperReprocessEndToEndTest {
 
         fun seedRecoverySource() {
             seed(RECOVERY_SOURCE, recoveryFirst, recoverySecond)
+        }
+
+        fun seedExistingAuthorSource() {
+            seed(CHILD_SOURCE, existingAuthor)
+            seedRaw(existingAuthor, complete = true, orcid = null)
         }
 
         private fun seed(sourceId: Long, vararg papers: Paper) {
@@ -470,7 +582,7 @@ class DiscoveryPaperReprocessEndToEndTest {
             UUID.randomUUID().toString(), sourceId, ReprocessMode.ENFORCE, service.preview(sourceId).expectedScopeHash))
 
         fun pump(id: Long, expected: ReprocessState) {
-            if (cancelOnFirstConsume) cancelRunId = id
+            if (cancelOnFirstConsume || cancelOnFirstStart) cancelRunId = id
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(300)
             while (true) {
                 service.poll()

@@ -202,6 +202,52 @@ test('six fixed steps map cancelled/insufficient, safe raw text and genuine old8
     h.act('close-detail').click(); assert.equal(h.document.activeElement, trigger); assert.equal(h.calls.filter(c => /analysis|cancel/.test(c.url)).length, 0); h.view.dispose();
 });
 
+test('native Escape closes only the new dialog while the actual task host stays open', async () => {
+    const h = harness(url => url.includes('/runs?') ? { items: [run()], total: 1 } : undefined);
+    h.view.setExecution(9001); h.view.setVisible(true); await flush();
+    // The real host handler, sliced from app.js and attached the way the application does.
+    const app = fs.readFileSync(path.join(base, 'app.js'), 'utf8');
+    const start = app.indexOf('if (event.key === "Escape" && currentTaskModal)');
+    assert.ok(start > 0, 'host Escape handler source is present');
+    const end = app.indexOf('\n    });', start);
+    const handler = new Function('event', 'currentTaskModal', 'document', '$', 'closeTaskModal', app.slice(start, end));
+    let hostCloses = 0;
+    const hostDocument = { getElementById: () => null };
+    const $ = q => q === '#discoveryRecheckRoot' ? { querySelector: () => null } : null;
+    h.document.body.addEventListener('keydown', e => handler(e, {}, hostDocument, $, () => { hostCloses++; h.view.suspend(); }));
+    const confirm = h.root.querySelector('#paperReprocessConfirm'), trigger = h.act('open');
+    trigger.focus(); trigger.click(); await flush();
+    assert.equal(confirm.open, true);
+    assert.equal(confirm.dispatch('keydown', { key: 'Escape' }).stopped, true, 'the dialog owns its Escape');
+    confirm.close();
+    assert.equal(confirm.open, false); assert.equal(h.document.activeElement, trigger); assert.equal(hostCloses, 0);
+    const row = h.find('paperRows').querySelector('button'); row.focus(); row.click(); await flush();
+    const detail = h.root.querySelector('#paperReprocessDetail');
+    assert.equal(detail.open, true);
+    assert.equal(detail.dispatch('keydown', { key: 'Escape' }).stopped, true);
+    detail.close();
+    assert.equal(detail.open, false); assert.equal(h.document.activeElement, row); assert.equal(hostCloses, 0);
+    // Control: the same real handler still closes the host when Escape happens outside the dialogs.
+    h.document.body.dispatch('keydown', { key: 'Escape' });
+    assert.equal(hostCloses, 1);
+    assert.equal(h.calls.filter(c => c.url.endsWith('/cancel')).length, 0, 'no task cancellation is sent');
+    h.view.dispose();
+});
+
+test('completion summary reads targetTotalKnown from the actual nested DTO summary', async () => {
+    for (const known of [true, false]) {
+        const h = harness(url => {
+            if (url.includes('/runs?')) return { items: [run()], total: 1 };
+            // The root property is deliberately the opposite: only ReprocessDetail.summary is authoritative.
+            if (/\/runs\/\d+$/.test(url)) return { run: run(), summary: { ...summary, targetTotalKnown: known }, totalKnown: true, targetTotalKnown: !known, progressText: '已处理121/121篇' };
+        });
+        h.view.setExecution(9001); h.view.setVisible(true); await flush();
+        assert.match(h.find('summary').textContent, known ? /目标总量已固定/ : /目标总量仍在形成/);
+        assert.ok(!h.find('summary').textContent.includes(known ? '目标总量仍在形成' : '目标总量已固定'));
+        h.view.dispose();
+    }
+});
+
 test('explicit cancel once, history source-bound and close/Escape/dispose frontend only', async () => {
     let resolveCancel;
     const h = harness((url, options) => { if (url.endsWith('/cancel')) return new Promise(r => { resolveCancel = r; }); if (url.includes('/runs?')) return { items: [run()], total: 1 }; });

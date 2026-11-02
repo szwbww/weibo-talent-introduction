@@ -99,4 +99,129 @@ class DiscoveryPaperIdentityReplayToolTest {
             }
         } finally { Files.list(outer).use { it.forEach(Files::delete) }; Files.delete(outer) }
     }
+
+    // Reconciliation acceptance lives in the existing CLI: identity evidence, not totals, decides.
+    private val bodySha = "a".repeat(64)
+    private val emailHash = "b".repeat(24)
+    private val nameHash = "c".repeat(24)
+    private val expectedDoc = "0000-0002-0178-9985"
+
+    private fun combination(): ObjectNode = mapper.createObjectNode().put("recordId", 1).put("bodySha256", bodySha)
+        .put("page", 1).put("emailHash", emailHash).put("nameHash", nameHash)
+        .put("authorKey", "A1").put("auditRule", "TEST_ONLY").put("personGroup", "1")
+        .put("sameBatchStatus", "test").put("negative", false)
+
+    private fun inputs(dir: Path, withInventory: Boolean = true): Path {
+        Files.createDirectories(dir.resolve("audit"))
+        val manifest = mapper.createObjectNode().put("schemaVersion", 1).put("sourceDirectory", dir.toString())
+            .put("executionId", 30711)
+        manifest.putArray("records"); manifest.putArray("negativeCandidates")
+        manifest.putArray("combinations").add(combination())
+        val audit = "archive_record_id,blob_hash_fingerprint,email_sha256_prefix24,name_sha256_prefix24,page\n" +
+            "1," + DiscoveryPaperIdentityReplayTool.sha(bodySha.toByteArray()).take(24) + ",$emailHash,$nameHash,1\n"
+        Files.write(dir.resolve("audit/confirmed-bindings.csv"), audit.toByteArray())
+        manifest.putObject("auditSha256").put("confirmed-bindings.csv", DiscoveryPaperIdentityReplayTool.sha(audit.toByteArray()))
+        Files.write(dir.resolve("manifest.json"), mapper.writeValueAsBytes(manifest))
+        val receipt = mapper.createObjectNode()
+        receipt.put("manifestSha256", DiscoveryPaperIdentityReplayTool.sha(Files.readAllBytes(dir.resolve("manifest.json"))))
+        receipt.put("networkCalls", 0).put("businessWriteServicesConstructed", 0)
+        val row = receipt.putArray("rows").addObject().put("recordId", 1).put("bodySha256", bodySha).put("page", 1)
+            .put("emailHash", emailHash).put("nameHash", nameHash).put("status", "REPRODUCED").put("reason", "TEST_ONLY")
+        row.putArray("newNames")
+        if (withInventory) row.putObject("inventory").put("status", "COMPLETE").putArray("documents")
+            .addObject().put("docId", expectedDoc).put("protected", false).put("status", "COMPLETE_NAME_MISSING_PROOF")
+        Files.write(dir.resolve("old.json"), mapper.writeValueAsBytes(receipt))
+        Files.write(dir.resolve("runtime.json"), "{}".toByteArray())
+        return dir
+    }
+
+    private fun target(outcome: String?, docId: String?): ObjectNode = mapper.createObjectNode().also { value ->
+        outcome?.let { value.put("targetOutcome", it) }
+        docId?.let { value.put("docId", it) }
+        value.putArray("candidates").add(combination().also { it.remove("page") })
+    }
+
+    private fun runExport(dir: Path, vararg targets: ObjectNode): Path = dir.resolve("run.json").also {
+        val root = mapper.createObjectNode().put("schemaVersion", 1)
+        root.putObject("run")
+        val array = root.putArray("targets")
+        targets.forEach { target ->
+            val entry = array.addObject().put("email", "a@example.invalid")
+            entry.set<JsonNode>("candidates", target["candidates"].deepCopy())
+            target["targetOutcome"]?.let { value -> entry.put("targetOutcome", value.asText()) }
+            target["docId"]?.let { value -> entry.put("docId", value.asText()) }
+        }
+        Files.write(it, mapper.writeValueAsBytes(root))
+    }
+
+    private fun csvFields(line: String): List<String> {
+        val fields = mutableListOf<String>(); val value = StringBuilder(); var quoted = false; var index = 0
+        while (index < line.length) {
+            val char = line[index]
+            if (quoted) {
+                if (char == '"') { if (index + 1 < line.length && line[index + 1] == '"') { value.append('"'); index++ } else quoted = false }
+                else value.append(char)
+            } else when (char) { '"' -> quoted = true; ',' -> { fields += value.toString(); value.clear() }; else -> value.append(char) }
+            index++
+        }
+        fields += value.toString(); return fields
+    }
+
+    private fun reconcile(dir: Path, extra: List<String>): Map<String, String> {
+        val process = ProcessBuilder(listOf("python3", "scripts/discovery_admission_probe/reconcile_paper_identity_replay.py",
+            "--manifest", dir.resolve("manifest.json").toString(), "--old-replay", dir.resolve("old.json").toString(),
+            "--audit-directory", dir.resolve("audit").toString(), "--csv", dir.resolve("out.csv").toString(),
+            "--report", dir.resolve("out.md").toString(), "--runtime-evidence", dir.resolve("runtime.json").toString()) + extra)
+            .redirectErrorStream(true).start()
+        val output = process.inputStream.use { it.readBytes().decodeToString() }
+        assertEquals(0, process.waitFor(), output)
+        val lines = Files.readAllLines(dir.resolve("out.csv"))
+        assertEquals(2, lines.size, output)
+        val header = csvFields(lines[0])
+        return header.zip(csvFields(lines[1])).toMap()
+    }
+
+    @Test fun `reconciliation rejects invalid actual identities instead of accepting totals`() {
+        fun case(name: String, vararg targets: ObjectNode): Map<String, String> {
+            val dir = inputs(Files.createDirectories(root.resolve(name)))
+            return reconcile(dir, listOf("--reprocess-run", runExport(dir, *targets).toString()))
+        }
+        val wrong = case("wrong-doc", target("REPAIRED", "wrong-doc"))
+        assertEquals("REGRESSION", wrong["classification"]); assertEquals("INVALID", wrong["actualEvidence"])
+        val duplicate = case("duplicate-targets", target("REPAIRED", expectedDoc), target("REPAIRED", expectedDoc))
+        assertEquals("REGRESSION", duplicate["classification"])
+        val missing = case("missing-outcome", target(null, "wrong-doc"))
+        assertEquals("REGRESSION", missing["classification"])
+        val skipped = case("skipped-wrong-doc", target("SKIPPED", "wrong-doc"))
+        assertEquals("REGRESSION", skipped["classification"])
+        val control = case("valid-control", target("REPAIRED", expectedDoc))
+        assertEquals("EXPECTED_MATCH", control["classification"]); assertEquals("BOUND", control["actualEvidence"])
+        // A skipped business outcome may prove the source identity but never a business/admission success.
+        val skippedValid = case("skipped-valid-identity", target("SKIPPED", expectedDoc))
+        assertEquals("EXPECTED_MATCH", skippedValid["classification"]); assertEquals("SKIPPED", skippedValid["actualTargetOutcome"])
+    }
+
+    @Test fun `reconciliation rejects a conflicting replay binding and keeps honest absence`() {
+        val dir = inputs(Files.createDirectories(root.resolve("replay-conflict")))
+        val receipt = mapper.createObjectNode()
+        receipt.put("manifestSha256", DiscoveryPaperIdentityReplayTool.sha(Files.readAllBytes(dir.resolve("manifest.json"))))
+        receipt.put("networkCalls", 0).put("businessWriteServicesConstructed", 0)
+        receipt.putArray("rows").addObject().put("recordId", 1).put("bodySha256", bodySha).put("page", 1)
+            .put("emailHash", emailHash).put("nameHash", nameHash).put("status", "AMBIGUOUS")
+            .put("reason", "CONFLICTING_PRODUCTION_BINDING").putArray("newNames").add("Wrong Name")
+        Files.write(dir.resolve("new.json"), mapper.writeValueAsBytes(receipt))
+        val conflicted = reconcile(dir, listOf("--new-replay", dir.resolve("new.json").toString()))
+        assertEquals("REGRESSION", conflicted["classification"])
+        assertEquals("INVALID", conflicted["actualEvidence"])
+        val absent = inputs(Files.createDirectories(root.resolve("honest-absence")))
+        val absentReceipt = mapper.createObjectNode()
+        absentReceipt.put("manifestSha256", DiscoveryPaperIdentityReplayTool.sha(Files.readAllBytes(absent.resolve("manifest.json"))))
+        absentReceipt.put("networkCalls", 0).put("businessWriteServicesConstructed", 0)
+        absentReceipt.putArray("rows").addObject().put("recordId", 1).put("bodySha256", bodySha).put("page", 1)
+            .put("emailHash", emailHash).put("nameHash", nameHash).put("status", "NOT_REPRODUCED").put("reason", "TEST_ONLY")
+            .putArray("newNames")
+        Files.write(absent.resolve("new.json"), mapper.writeValueAsBytes(absentReceipt))
+        val honest = reconcile(absent, listOf("--new-replay", absent.resolve("new.json").toString()))
+        assertEquals("EXPECTED_MISSING", honest["classification"]); assertEquals("ABSENT", honest["actualEvidence"])
+    }
 }

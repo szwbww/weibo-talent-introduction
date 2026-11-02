@@ -365,9 +365,12 @@ class DiscoveryRecheckService(
     }
 
     fun syncRetry(id: Long, request: RecheckSyncRequest): List<RecheckItemView> {
-        queries.requireRecheck(id)
+        // A paper-reprocess parent also owns an ordinary epoch0 run. Only its admitted items may use
+        // the existing projection leaf; generic recheck guards remain unchanged for every other run.
+        val paperOwned = repository.isPaperReprocessOwned(id)
+        if (!paperOwned) queries.requireRecheck(id)
         require(request.itemIds.size in 1..100 && request.itemIds.all { it > 0 } && request.itemIds.distinct().size == request.itemIds.size)
-        val items = request.itemIds.map { queries.requireRecheckItem(id, it) }
+        val items = request.itemIds.map { if (paperOwned) queries.requirePaperOwnedItem(id, it) else queries.requireRecheckItem(id, it) }
         if (items.any { it.admissionRevision == null || it.state != VerificationState.COMPLETED ||
                 it.projectionState == VerificationProjection.NOT_REQUIRED }) conflict("ITEM_NOT_ADMITTED")
         items.forEach { item ->
@@ -396,6 +399,14 @@ class DiscoveryRecheckService(
         if (control.phase == RecheckPhase.READY) return start(childId, RecheckStartRequest(requireNotNull(control.scopeHash), current.revision))
         return queries.recheckRun(childId)
     }
+
+    /** Explicit same-parent retry resumes this parent's cancelled child under the same epoch. */
+    internal fun resumeFromPaperReprocess(parent: ReprocessRun, childId: Long): Boolean =
+        transactions.execute {
+            repository.requirePaperParent(parent)
+            require(repository.paperReprocessRuns(parent.executionId).any { it.executionId == childId && it.recheckJson != null })
+            repository.resumeCancelledPaperRecheck(childId, parent.executionId, clock.instant())
+        }!!
     companion object {
         const val TASK_TYPE = "DISCOVERY_RECHECK_PREPARE"
         const val CODE_VERSION = "discovery-recheck-v1-rule4"

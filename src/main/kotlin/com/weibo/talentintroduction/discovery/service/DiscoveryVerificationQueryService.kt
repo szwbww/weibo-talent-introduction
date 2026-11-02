@@ -173,8 +173,24 @@ class DiscoveryVerificationQueryService(
     }
 
     fun recheckItem(id: Long, itemId: Long): RecheckItemView {
-        val item = requireRecheckItem(id, itemId)
+        require(id > 0)
+        val run = repository.findRun(id)
+        val item = when {
+            run?.recheckJson != null -> requireRecheckItem(id, itemId)
+            // Only a server-owned paper-reprocess parent exposes its ordinary epoch0 eight-step record.
+            run != null && repository.isPaperReprocessOwned(id) -> requirePaperOwnedItem(id, itemId)
+            else -> throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_NOT_FOUND")
+        }
         return recheckItemView(item, admissions.findAdmission(item.expertDocId))
+    }
+
+    /** Ordinary items are readable/reprojectable only through their exact parent-owned run and epoch. */
+    fun requirePaperOwnedItem(runId: Long, itemId: Long): VerificationItem {
+        require(itemId > 0)
+        if (!repository.isPaperReprocessOwned(runId))
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_NOT_FOUND")
+        return repository.findItem(itemId)?.takeIf { it.ownerExecutionId == runId && it.reviewEpoch == 0L }
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_ITEM_NOT_FOUND")
     }
 
     private fun recheckItemView(item: VerificationItem, current: ExpertDiscoveryAdmission?): RecheckItemView {

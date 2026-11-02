@@ -145,6 +145,35 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         paperReprocessRuns(parentId).filter { it.recheckJson != null }.forEach { cancelRecheck(it.executionId, Instant.now()) }
     }
 
+    /**
+     * Explicit paper-reprocess retry resumes only its own cancelled child. The immutable spec, the
+     * completed peers and every cancellation receipt stay untouched; only unfinished, never-admitted
+     * items are queued again and the control phase returns to RUNNING under the same epoch.
+     */
+    @Transactional
+    fun resumeCancelledPaperRecheck(executionId: Long, parentId: Long, now: Instant): Boolean {
+        val run = lockRun(executionId)
+        require(paperParentId(run) == parentId && run.recheckJson != null) { "FOREIGN_VERIFICATION" }
+        val frozen = recheck(run)
+        if (frozen.control.phase != RecheckPhase.CANCELLED) return false
+        val requeued = jdbc.update("""UPDATE discovery_verification_item SET activated_at=COALESCE(activated_at,?),
+            state='QUEUED',outcome=NULL,route='NONE',qualification='NOT_EVALUATED',completed_at=NULL,lease_token=NULL,
+            lease_until=NULL,next_attempt_at=NULL,reasons_json='[]',generation=generation+1,updated_at=?
+            WHERE owner_execution_id=? AND state='CANCELLED' AND admission_revision IS NULL""",
+            now.verificationUtc(), now.verificationUtc(), executionId)
+        if (requeued == 0) return false
+        val json = replayMapper.readTree(run.recheckJson) as ObjectNode
+        json.set<com.fasterxml.jackson.databind.JsonNode>("control", replayMapper.valueToTree(frozen.control.copy(phase = RecheckPhase.RUNNING)))
+        check(jdbc.update("""UPDATE discovery_verification_run SET recheck_json=?,input_closed=1,revision=revision+1,
+            updated_at=? WHERE execution_id=? AND revision=?""", json.toString(), now.verificationUtc(),
+            executionId, run.revision) == 1)
+        jdbc.update("""UPDATE task_execution SET status='RUNNING',finished_at=NULL,error_message=NULL,
+            interruption_reason_code=NULL,interruption_reason_detail=NULL,heartbeat_at=?,updated_at=?
+            WHERE id=? AND task_type='DISCOVERY_RECHECK_PREPARE'""",
+            now.verificationUtc(), now.verificationUtc(), executionId)
+        return true
+    }
+
 
     fun replayAdmission(docId: String, locked: Boolean = false): ReplayAdmission? =
         jdbc.query("""SELECT identity_hash,decision,revision,policy_version FROM expert_discovery_admission

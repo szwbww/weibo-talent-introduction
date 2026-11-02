@@ -473,6 +473,23 @@ class DiscoveryPaperReprocessRepository(
                             AND JSON_EXTRACT(t.result_json,'$.applicationError')=true
                             AND COALESCE(JSON_EXTRACT(t.result_json,'$.applied'),false)=false""",
                         db(time), runId, runId.toString())
+                    // An explicit retry also resumes this parent's cancelled but unfinished ordinary
+                    // qualification. Cancellation receipts, completed peers and prior evidence stay
+                    // durable; the same item is requeued once and cannot be requeued twice.
+                    jdbc.update("""UPDATE discovery_verification_item v
+                        JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
+                        JOIN discovery_paper_reprocess_item t ON t.execution_id=r.execution_id AND t.kind='TARGET'
+                        SET v.state='QUEUED',v.outcome=NULL,v.route='NONE',v.qualification='NOT_EVALUATED',
+                            v.completed_at=NULL,v.lease_token=NULL,v.lease_until=NULL,v.next_attempt_at=NULL,
+                            v.generation=v.generation+1,v.updated_at=?
+                        WHERE r.execution_id=? AND r.recheck_json IS NULL
+                            AND JSON_UNQUOTE(JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId'))=?
+                            AND v.review_epoch=0 AND v.state='CANCELLED' AND v.admission_revision IS NULL
+                            AND t.state NOT IN ('COMPLETE','SKIPPED')
+                            AND (JSON_EXTRACT(t.result_json,'$.verificationItemId')=v.id
+                                OR v.expert_doc_id=COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')),'null'),
+                                    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.proposedDocId')),'null')))""",
+                        db(time), runId, runId.toString())
                     jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',lease_token=NULL,
                         lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,completed_at=NULL
                         WHERE execution_id=? AND state NOT IN ('COMPLETE','SKIPPED')""", db(time), runId)
