@@ -46,6 +46,7 @@
         function append(parent, tag, cls, content) { const el = node(tag, cls, content); parent.appendChild(el); return el; }
         function button(parent, label, fn, disabled = false) { const b = append(parent, 'button', 'dp-link', label); b.type = 'button'; b.disabled = disabled; b.addEventListener('click', fn); return b; }
         function show(dialog, trigger) { focusTargets.set(dialog, trigger || doc.activeElement); if (!dialog.open) dialog.showModal(); }
+        function lockMode(locked) { root.querySelectorAll('input[name="paperReprocessMode"]').forEach(input => { input.disabled = locked; }); }
         function close(dialog) { if (dialog.open) dialog.close(); }
         function scopeText() {
             action('open').disabled = !visible || !preview || authFailed || submitting || Boolean(preview.activeRun);
@@ -65,7 +66,10 @@
             text('papersTotal', snapshot.totalKnown ? s.papers : null);
             text('papersProcessed', s.paperComplete == null ? null : s.paperComplete + s.paperErrors + s.paperCancelled);
             text('newRecords', s.actualNew); text('repairedRecords', s.actualUpdated); text('admitted', s.actualAdmitted); text('pendingVerification', s.pendingVerification);
-            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + '拟补录 ' + value(s.wouldCreate) + ' / 拟补齐 ' + value(s.wouldRepair) + '（目标；— 表示未核查档案存在性，候选不等于拟新增）。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (s.targetTotalKnown ? '目标总量已固定。' : '目标仍在统计中，当前分类为已持久化结果。') + '未知统计以 — 显示。');
+            const proposal = r.mode === 'AUDIT'
+                ? '拟补录 ' + value(s.wouldCreate) + ' / 拟补齐 ' + value(s.wouldRepair) + '（目标；— 表示未核查档案存在性，候选不等于拟新增）'
+                : '正式补录按实际结果统计；拟变化仅对照模式提供';
+            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (snapshot.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
             const progress = find('progress'); progress.max = snapshot.totalKnown && s.papers > 0 ? s.papers : 1;
             if (snapshot.totalKnown) progress.value = s.paperComplete + s.paperErrors + s.paperCancelled; else progress.removeAttribute('value');
             text('phase', snapshot.progressText + ' · 阶段 ' + (reasons[r.scope?.reasonCode] || r.phase));
@@ -153,7 +157,10 @@
         }
         async function openConfirm(trigger) {
             if (!preview || submitting || authFailed) return;
-            root.querySelector('input[name="paperReprocessMode"][value="AUDIT"]').checked = true;
+            const pending = requests.get(source);
+            const mode = pending?.mode === 'ENFORCE' ? 'ENFORCE' : 'AUDIT';
+            root.querySelector('input[name="paperReprocessMode"][value="' + mode + '"]').checked = true;
+            lockMode(Boolean(pending));
             action('start').disabled = true; error('confirmError', '');
             text('confirmExecution', '#' + source); text('confirmScope', '正在重新读取全部页范围…'); text('confirmApollo', '正在读取已保存配置…'); text('confirmHint', '正在读取范围…');
             show(confirm, trigger); const owner = epoch, seq = ++dialogSeq;
@@ -163,7 +170,9 @@
                 preview = p; apollo = a; scopeText();
                 text('confirmScope', '全部 ' + p.recordCount + ' 篇；缺原文 ' + value(p.missingSourcePapers) + ' 篇（包含未留存、删除、保存异常）');
                 text('confirmApollo', '免费搜索' + (a.searchEnabled ? '开启' : '关闭') + ' / 付费详情' + (a.detailEnabled ? '开启' : '关闭') + ' · 已保存版本 ' + value(a.revision));
-                text('confirmHint', p.activeRun ? '已有活动任务，请关闭后查看记录' : '范围与页面筛选 / 勾选无关；默认仅对照');
+                text('confirmHint', p.activeRun ? '已有活动任务，请关闭后查看记录'
+                    : pending ? '上次提交结果未知；将继续使用同一请求标识与' + (pending.mode === 'ENFORCE' ? '正式补录' : '仅对照') + '模式'
+                    : '范围与页面筛选 / 勾选无关；默认仅对照');
                 action('start').disabled = Boolean(p.activeRun);
             } catch (e) { if (!stale(owner) && seq === dialogSeq) { failure(e, 'confirmError'); text('confirmHint', '范围或设置读取失败，不能启动'); } }
         }
@@ -174,6 +183,7 @@
             if (!pending) {
                 pending = { requestKey: window.crypto.randomUUID(), sourceExecutionId: id, mode: root.querySelector('input[name="paperReprocessMode"]:checked').value, expectedScopeHash: preview.expectedScopeHash };
                 requests.set(id, pending);
+                lockMode(true);
             }
             submitting = true; action('start').disabled = true; scopeText();
             try {
@@ -181,14 +191,30 @@
                 const prior = await request('/runs?sourceExecutionId=' + id + '&requestKey=' + encodeURIComponent(pending.requestKey) + '&page=0&size=20');
                 const run = prior.items[0] || await post('/runs', pending);
                 if (stale(owner)) return;
-                requests.delete(id); close(confirm); await selectRun(run);
+                requests.delete(id); lockMode(false); close(confirm); await selectRun(run);
             } catch (e) {
                 if (stale(owner)) return;
-                failure(e, 'confirmError');
-                if (!authFailed && e.name !== 'AbortError') {
+                const deterministic = Number.isFinite(e.status) && e.status >= 400 && e.status < 500;
+                if (deterministic) {
+                    // A rejected submission never became a durable request; retaining its key/hash would
+                    // wedge every retry behind the same stale scope or version.
+                    requests.delete(id); lockMode(false); preview = null;
+                    action('start').disabled = true;
+                    error('confirmError', e.data?.message || e.message || '提交未被受理');
+                    text('confirmHint', '提交未被受理；正在重新读取最新范围…');
+                    scopeText();
+                    // A deterministic rejection is safe to retry with a new key once the current scope is read.
+                    request('/preview?sourceExecutionId=' + id).then(p => {
+                        if (stale(owner) || !confirm.open) return;
+                        preview = p; scopeText();
+                        action('start').disabled = Boolean(p.activeRun);
+                        text('confirmHint', p.activeRun ? '已有活动任务，请关闭后查看记录' : '范围已更新；可重新确认');
+                    }).catch(() => { if (!stale(owner) && confirm.open) text('confirmHint', '范围读取失败；请关闭后重试'); });
+                } else if (e.name !== 'AbortError') {
+                    failure(e, 'confirmError');
                     try {
                         const found = await request('/runs?sourceExecutionId=' + id + '&requestKey=' + encodeURIComponent(pending.requestKey) + '&page=0&size=20');
-                        if (found.items[0]) { requests.delete(id); close(confirm); await selectRun(found.items[0]); }
+                        if (found.items[0]) { requests.delete(id); lockMode(false); close(confirm); await selectRun(found.items[0]); }
                         else text('confirmHint', '提交结果未知；重试仍使用同一请求标识及模式，请勿新建另一任务');
                     } catch (lookup) { failure(lookup, 'confirmError'); }
                 }
@@ -225,7 +251,9 @@
         function itemEvidence(item) {
             const input = item.input || {}, result = item.result || {}, ref = input.paperRefs?.[0] || result.paperRefs?.[0] || {};
             const evidence = ref.identityEvidence;
-            return { ref, recordId: input.recordId || ref.recordId, attemptId: input.bodies?.[0]?.attemptId || ref.attemptIds?.[0], quote: typeof evidence === 'string' ? evidence : evidence?.quote || evidence?.sentence || '' };
+            return { ref, recordId: input.recordId || ref.recordId, attemptId: input.bodies?.[0]?.attemptId || ref.attemptIds?.[0],
+                bodySha256: input.bodies?.[0]?.hash || ref.bodySha256 || ref.bodyHash || null,
+                quote: typeof evidence === 'string' ? evidence : evidence?.quote || evidence?.sentence || '' };
         }
         async function showItem(id, trigger) {
             const owner = epoch, seq = ++dialogSeq, run = snapshot.run;
@@ -251,7 +279,11 @@
                 }
                 fragment.querySelector('.rp-source').querySelector('p').textContent = '记录 #' + value(evidence.recordId) + ' · attempt ' + value(evidence.attemptId) + ' · 原文只读；不会自动运行分析';
                 fragment.querySelector('blockquote').textContent = evidence.quote || '本项未留存可显示的原句，请查看原文与关联论文记录。';
-                const original = fragment.querySelector('[data-rp-action="open-source"]'); original.disabled = !evidence.recordId || typeof openPaper !== 'function'; original.addEventListener('click', () => openPaper({ recordId: evidence.recordId, attemptId: evidence.attemptId }, original));
+                const original = fragment.querySelector('[data-rp-action="open-source"]'); original.disabled = !evidence.recordId || typeof openPaper !== 'function';
+                original.addEventListener('click', () => {
+                    const result = openPaper({ recordId: evidence.recordId, attemptId: evidence.attemptId, bodySha256: evidence.bodySha256 }, original);
+                    if (result && typeof result.catch === 'function') result.catch(e => text('detailSubtitle', e?.message || '原文打开失败'));
+                });
                 const verification = fragment.querySelector('[data-rp-action="open-verification"]');
                 verification.disabled = !result.verificationRunId || !result.verificationItemId || typeof openVerification !== 'function';
                 verification.textContent = verification.disabled ? '未进入资格重审：' + (run.mode === 'AUDIT' ? '仅对照，未应用' : reason(result)) : '查看逐人核验（原8步）';

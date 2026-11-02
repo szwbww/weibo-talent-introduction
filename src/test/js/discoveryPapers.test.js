@@ -282,11 +282,15 @@ test('reprocess shares authenticated host seams and only execution selection cha
 });
 
 test('reprocess record references reuse the read-only reader, select exact attempts and retain frozen safeguards', async () => {
+    const hash11 = 'a'.repeat(64), hash12 = 'b'.repeat(64);
     const h = harness(url => /\/1$/.test(url) ? { record: row(), analysis: null, outcome: null,
-        attempts: [11, 12].map(id => ({ id, kind: 'EMBEDDED_TEXT', status: 'SAVED', readable: true })) } : undefined);
-    await h.view.openPaper({ recordId: 1, attemptId: 12 });
+        attempts: [{ id: 11, kind: 'EMBEDDED_TEXT', status: 'SAVED', readable: true, bodySha256: hash11 },
+            { id: 12, kind: 'EMBEDDED_TEXT', status: 'SAVED', readable: true, bodySha256: hash12 }] } : undefined);
+    await h.view.openPaper({ recordId: 1, attemptId: 12, bodySha256: hash12 });
     assert.equal(h.find('attempts').value, '12');
     assert.match(h.fetched.at(-1).url, /\/attempts\/12\/content$/);
+    await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: 12, bodySha256: hash11 }), /PAPER_SHA_CONFLICT/);
+    await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: 12, bodySha256: 'not-a-sha' }), /PAPER_REFERENCE_INVALID/);
     await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: 99 }), /PAPER_ATTEMPT_NOT_FOUND/);
     await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: -1 }), /PAPER_REFERENCE_INVALID/);
     await assert.rejects(h.view.openPaper({ archiveRecordId: 1, recordId: 1, attemptId: 12 }), /PAPER_SHA_UNKNOWN/);

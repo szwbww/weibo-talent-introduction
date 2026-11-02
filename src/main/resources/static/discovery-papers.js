@@ -308,6 +308,13 @@
             if (ref && ref.archiveRecordId == null && Number.isSafeInteger(ref.recordId) && ref.recordId > 0) {
                 if (ref.attemptId != null && (!Number.isSafeInteger(ref.attemptId) || ref.attemptId <= 0))
                     return Promise.reject(new Error('PAPER_REFERENCE_INVALID：原文尝试编号无效'));
+                if (ref.bodySha256 != null) {
+                    if (typeof ref.bodySha256 !== 'string' || !/^[a-f0-9]{64}$/.test(ref.bodySha256))
+                        return Promise.reject(new Error('PAPER_REFERENCE_INVALID：原文 SHA 无效'));
+                    // A reprocess item carries the frozen body hash; route through the existing
+                    // fixed-record checks instead of a hash-less attempt lookup.
+                    return reader(ref.recordId, trigger, { archiveRecordId: ref.recordId, attemptId: ref.attemptId, bodySha256: ref.bodySha256 }, signal);
+                }
                 return reader(ref.recordId, trigger, null, signal, ref.attemptId);
             }
             if (!ref || !Number.isSafeInteger(ref.archiveRecordId) || ref.archiveRecordId <= 0 ||

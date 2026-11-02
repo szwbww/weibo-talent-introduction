@@ -536,14 +536,12 @@ class DiscoveryPaperReprocessRepository(
                     JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='NEW')))),0) pending,
             COALESCE(SUM(t.kind='TARGET' AND JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))
                 IN ('NEW','REPAIRED','UNCHANGED','CONFLICT','PROTECTED','SKIPPED','ERROR')),0) outcome_known,
-            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
-                AND JSON_TYPE(JSON_EXTRACT(t.result_json,'$.wouldCreate'))='BOOLEAN'),0) create_known,
-            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
-                AND JSON_EXTRACT(t.result_json,'$.wouldCreate')=true),0) would_create,
-            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
-                AND JSON_TYPE(JSON_EXTRACT(t.result_json,'$.wouldRepair'))='BOOLEAN'),0) repair_known,
-            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
-                AND JSON_EXTRACT(t.result_json,'$.wouldRepair')=true),0) would_repair,
+            -- AUDIT persists candidate proposals with businessExistenceEvaluated=false; the proposal
+            -- count must still be shown, explicitly as an overlapping candidate (not a business write).
+            COALESCE(SUM(t.kind='TARGET' AND JSON_TYPE(JSON_EXTRACT(t.result_json,'$.wouldCreate'))='BOOLEAN'),0) create_known,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.wouldCreate')=true),0) would_create,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_TYPE(JSON_EXTRACT(t.result_json,'$.wouldRepair'))='BOOLEAN'),0) repair_known,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.wouldRepair')=true),0) would_repair,
             COALESCE(SUM(t.kind='TARGET' AND JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='UNCHANGED'
                 AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase')),'')
                     NOT IN ('CONFLICT','PROTECTED')

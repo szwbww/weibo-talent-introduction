@@ -318,12 +318,13 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
         assertTrue(pages.all { it.total == 121L })
         assertEquals(summary, repository.summary(id))
         assertEquals(before, f.jdbc.queryForList("SELECT * FROM discovery_paper_reprocess_item WHERE execution_id=? ORDER BY id", id))
-        // Real AUDIT results are identity candidates only: the two true flags do not establish existence.
+        // Real AUDIT results are identity candidates only: the two true flags do not establish existence,
+        // but the candidate proposal counts must still be shown (explicitly overlapping, not a write).
         f.jdbc.update("""UPDATE discovery_paper_reprocess_item SET result_json=?
             WHERE execution_id=? AND kind='TARGET' AND item_key=?""",
             f.result("AUDIT_CANDIDATE").put("businessExistenceEvaluated", false)
                 .put("wouldCreate", true).put("wouldRepair", true).toString(), id, f.hash("target-119"))
-        assertNull(repository.summary(id).wouldCreate); assertNull(repository.summary(id).wouldRepair)
+        assertEquals(2L, repository.summary(id).wouldCreate); assertEquals(2L, repository.summary(id).wouldRepair)
         assertNull(repository.summary(id).unchanged); assertNull(repository.summary(id).protected)
         f.jdbc.update("UPDATE discovery_paper_reprocess_run SET phase='BIND' WHERE execution_id=?", id)
         assertFalse(repository.summary(id).targetTotalKnown)

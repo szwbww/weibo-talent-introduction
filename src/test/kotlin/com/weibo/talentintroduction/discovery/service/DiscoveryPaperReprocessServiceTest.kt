@@ -25,7 +25,7 @@ import java.time.LocalDateTime
 import java.util.concurrent.CancellationException
 
 class DiscoveryPaperReprocessServiceTest {
-    @Test fun `readonly preview and detail expose persisted counts units overlap and null proposal semantics without parsing`() {
+    @Test fun `readonly preview and detail expose persisted counts units overlap and proposal semantics without parsing`() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
         val repository = Mockito.mock(DiscoveryPaperReprocessRepository::class.java)
         val archive = Mockito.mock(DiscoveryPaperArchiveService::class.java)
@@ -46,6 +46,7 @@ class DiscoveryPaperReprocessServiceTest {
                 ReprocessState.RUNNING, PaperReprocessPhase.BIND, mapper.createObjectNode().put("frozen", true),
                 0, null, null, 0, false, time, time, null)
             val summary = ReprocessSummary(121, 121, 0, 0, 121, 121, 0,
+                wouldCreate = 2, wouldRepair = 1,
                 conflict = 2, missingSourcePapers = 3, totalKnown = true, targetTotalKnown = false,
                 qualification = ReprocessQualificationSummary(unavailable = 121))
             Mockito.`when`(repository.find(9002)).thenReturn(run)
@@ -53,8 +54,8 @@ class DiscoveryPaperReprocessServiceTest {
             val detail = service.detail(9002)
             assertEquals(summary, detail.summary); assertTrue(detail.totalKnown)
             val json = mapper.valueToTree<JsonNode>(detail)
-            assertTrue(json.path("summary").get("wouldCreate").isNull)
-            assertTrue(json.path("summary").get("wouldRepair").isNull)
+            assertEquals(2, json.path("summary").path("wouldCreate").asInt())
+            assertEquals(1, json.path("summary").path("wouldRepair").asInt())
             assertEquals(0, json.path("summary").path("actualNew").asInt())
             assertEquals(0, json.path("summary").path("actualUpdated").asInt())
             assertEquals(0, json.path("summary").path("actualAdmitted").asInt())
@@ -477,6 +478,13 @@ internal fun paper03WholeSourceScenario(f: Paper03RuntimeFixture) {
     mvc.perform(get("$root/runs/$id/items/999999999")).andExpect(status().isNotFound)
     val targets = f.repository.items(id, ReprocessKind.TARGET, 0, 100).items
     assertTrue(targets.any { it.input.path("email").asText() == "alice@fixture.edu" && it.result!!.path("reasonCode").asText() == "CONFLICT" })
+    // The real AUDIT writer persists candidate flags with businessExistenceEvaluated=false; summary must
+    // surface those overlapping proposals for actual production rows, not only manually seeded fixtures.
+    val candidateCreates = targets.count { it.result?.path("wouldCreate")?.asBoolean() == true }
+    val candidateRepairs = targets.count { it.result?.path("wouldRepair")?.asBoolean() == true }
+    assertNotNull(detail.summary.wouldCreate); assertNotNull(detail.summary.wouldRepair)
+    assertEquals(candidateCreates.toLong(), detail.summary.wouldCreate)
+    assertEquals(candidateRepairs.toLong(), detail.summary.wouldRepair)
     assertEquals(3, Mockito.mockingDetails(f.analyzer).invocations.count { it.method.name == "parse" },
         "shared body/metadata is decoded once; duplicate attempt references are retained")
     for ((recordId, value) in before) assertEquals(value, f.archiveRepository.record(recordId))

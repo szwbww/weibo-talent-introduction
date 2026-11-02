@@ -61,13 +61,14 @@ const run = (id = 7001, source = 9001, state = 'RUNNING', mode = 'AUDIT') => ({ 
 const summary = { papers: 121, paperComplete: 42, paperErrors: 0, paperCancelled: 0, targets: 121, targetErrors: 0, actualNew: 0, actualUpdated: 0, actualAdmitted: 0, pendingVerification: 0, wouldCreate: null, wouldRepair: null, unchanged: 0, conflict: 1, protected: 0, syncFailure: 0, missingSourcePapers: 0, targetTotalKnown: false, qualification: { notMet: 0, unknown: 0, conflict: 0, notEvaluated: 0, unavailable: 121 } };
 function paper(id = 1) { return { id, kind: 'PAPER', input: { recordId: id, paperKey: 'W' + id, metadata: { title: '<img src=x onerror=alert(1)>' }, first: { outcome: { emails: [{ givenNames: 'Alice', familyNames: 'Smith' }] } }, bodies: [{ attemptId: 100 + id }] }, result: { analysis: { after: [{ authorName: 'Alice Smith' }, { authorName: 'Bob Jones' }], deltaAddedBindings: 1, coverage: { scannedPages: 2 } }, trace: [{ stepNo: 1, state: 'SUCCESS' }], reasonCode: 'PARSED' } }; }
 function target(id = 2) { return { id, kind: 'TARGET', input: { email: 'alice@example.invalid', paperRefs: [{ recordId: 1, attemptIds: [101], givenNames: '<b>Alice</b>', familyNames: 'Smith', identityEvidence: '<script>not HTML</script>' }] }, result: { verificationRunId: 8001, verificationItemId: 91, verificationState: 'RUNNING', actualNew: 1, targetOutcome: 'NEW', trace: [{ stepNo: 1, state: 'SUCCESS' }, { stepNo: 3, state: 'INSUFFICIENT' }, { stepNo: 5, state: 'RUNNING' }], reason: '长中文原因'.repeat(80) } }; }
-function harness(handler = () => undefined) {
+function harness(handler = () => undefined, openPaper) {
     const document = dom(), root = document.body.querySelector('#taskProgressModal'), calls = [], timers = new Map(), opened = [], verification = [];
     let timer = 0, uuid = 0;
     const sandbox = { window: { crypto: { randomUUID: () => '11111111-1111-4111-8111-' + String(++uuid).padStart(12, '0') } }, console, AbortController, DOMException, URLSearchParams, setTimeout: (fn, ms) => { timers.set(++timer, { fn, ms }); return timer; }, clearTimeout: id => timers.delete(id) };
     vm.runInNewContext(source, sandbox);
     const api = async (url, options = {}) => { const call = { url, options, body: options.body && JSON.parse(options.body) }; calls.push(call); const result = await handler(url, options, call); if (result !== undefined) return result; if (url.includes('/preview')) return { sourceExecutionId: 9001, recordCount: 121, missingSourcePapers: 3, expectedScopeHash: 'a'.repeat(64), activeRun: null }; if (url.endsWith('/apollo-settings')) return { revision: 5, searchEnabled: true, detailEnabled: false }; if (/\/items\//.test(url)) return paper(); if (url.includes('/items?')) return { items: url.includes('kind=TARGET') ? [target()] : [paper()], total: 121 }; if (/\/runs\/\d+$/.test(url)) return { run: run(), summary: { ...summary }, totalKnown: true, progressText: '已处理42/121篇' }; if (url.endsWith('/runs') && options.method === 'POST') return run(); return { items: [], total: 0 }; };
-    const view = sandbox.window.DiscoveryPaperReprocess.mount({ root, api, makeUrl: p => p, openPaper: (...args) => opened.push(args), openVerification: (...args) => verification.push(args) });
+    const view = sandbox.window.DiscoveryPaperReprocess.mount({ root, api, makeUrl: p => p,
+        openPaper: openPaper || ((...args) => opened.push(args)), openVerification: (...args) => verification.push(args) });
     const find = name => root.querySelector('[data-rp="' + name + '"]'), act = name => root.querySelector('[data-rp-action="' + name + '"]');
     return { view, document, root, calls, timers, find, act, opened, verification, uuid: () => uuid };
 }
@@ -112,6 +113,58 @@ test('uncertain submission repeated click retains original ENFORCE mode and requ
     h.view.setExecution(9001); h.view.setVisible(true); await flush(); h.act('open').click(); await flush();
     const modeDialog = h.root.querySelector('#paperReprocessConfirm'); modeDialog.querySelector('input[value="AUDIT"]').checked = false; modeDialog.querySelector('input[value="ENFORCE"]').checked = true;
     h.act('start').click(); await flush(); h.act('start').click(); await flush(); const writes = h.calls.filter(c => c.options.method === 'POST'); assert.equal(writes.length, 2); assert.equal(writes[0].body.requestKey, writes[1].body.requestKey); assert.equal(writes[0].body.mode, 'ENFORCE'); assert.equal(h.uuid(), 1); h.view.dispose();
+});
+
+test('reopened confirmation restores pending ENFORCE mode and keeps the same request key', async () => {
+    const h = harness((url, options) => { if (url.endsWith('/runs') && options.method === 'POST') throw new Error('network'); });
+    h.view.setExecution(9001); h.view.setVisible(true); await flush();
+    h.act('open').click(); await flush();
+    const dialog = h.root.querySelector('#paperReprocessConfirm');
+    dialog.querySelector('input[value="AUDIT"]').checked = false; dialog.querySelector('input[value="ENFORCE"]').checked = true;
+    h.act('start').click(); await flush();
+    h.act('close-confirm').click(); await flush();
+    h.act('open').click(); await flush();
+    assert.equal(dialog.querySelector('input[value="ENFORCE"]').checked, true, 'pending ENFORCE stays visible');
+    assert.equal(dialog.querySelector('input[value="AUDIT"]').checked, false);
+    assert.equal(dialog.querySelector('input[value="ENFORCE"]').disabled, true, 'mode is locked while the key is pending');
+    assert.match(h.find('confirmHint').textContent, /同一请求标识.*正式补录/);
+    h.act('start').click(); await flush();
+    const writes = h.calls.filter(c => c.options.method === 'POST');
+    assert.equal(writes.length, 2); assert.equal(writes[0].body.requestKey, writes[1].body.requestKey);
+    assert.equal(writes[0].body.mode, 'ENFORCE'); assert.equal(writes[1].body.mode, 'ENFORCE');
+});
+
+test('deterministic rejection clears the pending key and retries with a fresh UUID after preview refresh', async () => {
+    let posts = 0, fail = true;
+    const h = harness((url, options) => {
+        if (url.endsWith('/runs') && options.method === 'POST') {
+            posts++;
+            if (fail) { fail = false; throw Object.assign(new Error('范围已变化'), { status: 409 }); }
+            return run();
+        }
+        if (url.includes('requestKey=')) return { items: [], total: 0 };
+    });
+    h.view.setExecution(9001); h.view.setVisible(true); await flush();
+    h.act('open').click(); await flush();
+    h.act('start').click(); await flush();
+    assert.equal(posts, 1);
+    assert.match(h.find('confirmError').textContent, /范围已变化/);
+    assert.equal(h.act('start').disabled, false, 'fresh preview re-enables submission');
+    assert.equal(h.root.querySelector('input[value="AUDIT"]').disabled, false, 'mode is unlocked after the rejection');
+    h.act('start').click(); await flush();
+    const writes = h.calls.filter(c => c.options.method === 'POST');
+    assert.equal(writes.length, 2); assert.notEqual(writes[0].body.requestKey, writes[1].body.requestKey);
+    assert.equal(h.uuid(), 2);
+});
+
+test('reader rejection surfaces a Chinese error instead of an unhandled promise', async () => {
+    const item = paper(); item.input.bodies[0].hash = 'a'.repeat(64);
+    const h = harness(url => { if (url.includes('/runs?')) return { items: [run()], total: 1 }; if (/\/items\//.test(url)) return item; },
+        () => Promise.reject(new Error('PAPER_SOURCE_UNAVAILABLE：固定原文已删除')));
+    h.view.setExecution(9001); h.view.setVisible(true); await flush();
+    h.find('paperRows').querySelector('button').click(); await flush();
+    h.act('open-source').click(); await flush();
+    assert.match(h.find('detailSubtitle').textContent, /PAPER_SOURCE_UNAVAILABLE/);
 });
 
 test('source ownership drops late response, aborts frontend only, no filter scope in requests', async () => {
