@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-11-01T21:03:54+08:00
 - Current child: 04
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -23,7 +23,7 @@
 | 01 | docs/plans/2026-11-01/paper-reprocess-01-parser.md | sha256:508fd62d84283bd223aca0970c9e265944762f6c48f36ffaf127ba2b88260608 | 00 | 1 | LIGHT_PASS_WITH_NOTES | 1f73037375bc53082ab07f0603debad684f5fc3e | 41c24f879591062b0efbe39eb9df4ef3d802754d | 2 | 7ec1e868c877529849fe2c81acf1a9975ff961de,1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 55ee1ffd35d131c8126c38b68d31120e51c6045a | F-01/F-02 resolved; O-01/O-02 RECORD_ONLY; both artifact checkpoints VALID |
 | 02 | docs/plans/2026-11-01/paper-reprocess-02-identity.md | commit:9ce385c729c4b3a4c6fd0fff3aa06c126773cec3 | 01 | 2 | LIGHT_PASS | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 25fe0ef0d89257536bf0cf56a2d6ec5da80c8961 | 2 | b065357c8c6816cf7fea0651b370a924b7e920f0,47393695c8157c7033147ae4b041e5c5b3c52aa9 | 47393695c8157c7033147ae4b041e5c5b3c52aa9 | 03168d167a423fca98c1d593e9b3113e5e2a271e | F-01/F-02/F-03 resolved; fresh four-gate PASS |
 | 03 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | 02 | 4 | LIGHT_PASS_WITH_NOTES | 47393695c8157c7033147ae4b041e5c5b3c52aa9 | f4773fc4e517628fa9b527c85b75bf93908932c0 | 1 | ff7e67506545a31bc38a3d3f674056c522c57917 | ff7e67506545a31bc38a3d3f674056c522c57917 | 6b5b919b0e103c6b307c9937b0a2c98e4cb2432e | F-01/F-02 resolved, O-01 RECORD_ONLY; canonical fix binding corrected |
-| 04 | docs/plans/2026-11-01/paper-reprocess-04-apply.md | commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d | 03 | 2 | PENDING | — | — | 0 | — | — | — | Epoch1 pre-edit dependency conflict resolved A8/A9, no product edits |
+| 04 | docs/plans/2026-11-01/paper-reprocess-04-apply.md | commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d | 03 | 2 | LIGHT_PASS_WITH_NOTES | ff7e67506545a31bc38a3d3f674056c522c57917 | dff7585906d8a628c87e4c385dba4c822f72e576 | 2 | 503e7e51bff189d57bf9da6bad26015e930c7478,736535ce9487782e52a73af6cb52517fa799b194 | 736535ce9487782e52a73af6cb52517fa799b194 | 520eedbf0c20df573365a6962c996d4cb7f296c9 | F01-F05 resolved; O01/O02/O03 RECORD_ONLY; fresh four-gate pass |
 | 05 | docs/plans/2026-11-01/paper-reprocess-05-frontend.md | sha256:3ee9c93f3ce58d0ae2eb8ad4ae7ebea9215248529333a19d614ac446aed4a615 | 04 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 06 | docs/plans/2026-11-01/paper-reprocess-06-verification.md | sha256:ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 
@@ -113,3 +113,11 @@ None.
 - Child03 fullseven-childmanifest checkpoint --through-child03 --allow-dirty-artifacts now VALID exit0; codeff7e67506545a31bc38a3d3f674056c522c57917, evidence6b5b919b0e103c6b307c9937b0a2c98e4cb2432e. Commitmetadata then cleanmode before04dispatch.
 - Child03 cleanfullmanifest checkpoint VALIDexit0 at9be7ca2c2940abfac761d321f021844c9706e88d. Child04 briefprerequisites7520bcd and PaperApplyImplementer04 acquired; no dispatch failure.
 - Child04 epoch1 PLAN_CONFLICT pre-edit: receipt/REVIEW persistence absent, original consume multi-effect lacks parent checkpoints, ordinaryworker skips epoch0ownership. Exactreceipts inexecution. A8/A9 standing-approved plan-only5a31faaebf28001fb05d34c6b2aa195cc2a0e01d resolves threeadditionalfiles/cap13; no product modifications.
+- Child04 epoch2 PaperApplyImplementer04E2 acquired; plan5a31faaebf28001fb05d34c6b2aa195cc2a0e01d, metadata0b5c779, samepriorcodeBase. No productchangesepoch1/dispatcherrors.
+- Child04 epoch2 READY_FOR_VERIFICATION dff7585906d8a628c87e4c385dba4c822f72e576; thirteenfiles, writerfresh47tests andexisting-chainruntime pass; freshindependent PaperApplyVerifier04E2 acquiredfixround0.
+- Child04 epoch2 attempt1 LIGHT_FAIL despitefresh47tests+runtime; F01incompleteapplyretry, F02parkedglobalclaimstarvation, F03parkedrecoveryabort, F04lockedpreparationpermission, F05pendingprojectionreceipt. Round1boundedfixacquired; O01/O02limitsRECORD_ONLY. Findingssource/callpathproof, notmisreportedruntimeprobes.
+- Child04 epoch2 round1 503e7e51bff189d57bf9da6bad26015e930c7478 writerreports51tests+actualproductiontick/correctedruntimepass. Independent PaperApplyReverifier04E2R1 acquired; observedrapid-overlap projectiontraceerrornotfixed/claimedsolved, classificationownedbyverifier.
+- Child04 epoch2 attempt2 LIGHT_FAIL: fresh51tests/2018boundJS/runtime pass, F02-F05resolved; remainingF01 unconditionalPERSON_ATTEMPTED suppresses FAILED/STALE retry. Round2exactconsumer+IntegrationTest repairacquired. O01/O02/O03RECORD_ONLY. Userreiterated继续 twice; standingcompletionauthorityunchanged, no review-fast-p.
+- Child04 round2directdependencyRegistrationService authorizedwithin13existingfiles tostoreactualpersonresult/retryability. Fix736535ce9487782e52a73af6cb52517fa799b194; writer52tests+FAILED/STALEruntimepass. Freshindependentattempt3 PaperApplyReverifier04E2R2 acquired.
+- Child04 epoch2 attempt3 LIGHT_PASS_WITH_NOTES by PaperApplyReverifier04E2R2; fresh52JVM/2018boundJS+actualSQLruntime pass, genuineFAILED/STALEoriginalpersonactionretry proved. NoopenAUTO_FIX, closing evidence; aggregate review remainsdeferred.
+- Child04 fullseven-childmanifest checkpoint --through-child04 --allow-dirty-artifacts VALIDexit0 at520eedbf0c20df573365a6962c996d4cb7f296c9, code736535ce9487782e52a73af6cb52517fa799b194. Commitmetadata/cleanmode then05.
