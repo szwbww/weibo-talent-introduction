@@ -372,3 +372,497 @@ $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reproc
 
 No implementation was performed.  
 No product code was modified.
+
+
+## Epoch 2 — 2026-11-03T00:35:13+08:00
+
+## Verification Result: FAIL
+
+Plan：[paper-reprocess-master.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/2026-11-01/paper-reprocess-master.md)  
+Requested phase：`aggregate/master`  
+Implementation boundary：`3a425461dbe6088e4d4dda1a53141416a392670c..291fb34b35be496673e28f124d443b9c46ba66f4`  
+Evidence HEAD：`96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0`  
+Reviewer：`/root/paper_reprocess_aggregate_epoch2`；同一 epoch，usage-limit 后恢复 attempt 2。  
+Convergence：**DIVERGING**  
+Manual acceptance：**PENDING**  
+Repair planning：**N/A**
+
+确认两项阻断：**V-3 持续；V-5 出现同级回归**。V-1、V-2、V-4 已解决。必需命令全部取得新鲜完整回执；C10 首轮失败、完整复跑通过，失败记录保留。
+
+本报告中的仓库根目录 **W**：
+
+`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master`
+
+本轮临时证据根目录 **D**：
+
+`/tmp/paper-aggregate-epoch2-ei2_5x6s`
+
+表内相对源码路径均相对于 W；临时回执均相对于 D。
+
+### 身份与审查边界
+
+| 项目 | 独立核对结果 |
+|---|---|
+| Worktree / branch | W；`fast/paper-reprocess-master`；解析方式 `EXPLICIT`，对应已注册 worktree |
+| Governing master | SHA-256 `85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e`；逐字等于 commit `53c2b0018e239e3c30db25942e99c2cddc69e9d4` |
+| Current invoked master | `SAME` |
+| Historical invoked copy | SHA-256 `d1e17452a5484eae56b37bca5671e8c767fd3f744594232e4b57dac4826b1aa6`；已读完整 governing diff |
+| Master identity state | `AMENDMENT_RECORDED`，A1–A13 |
+| Fast-p ledger | `docs/plans/fast/paper-reprocess-master/ledger.md`；SHA-256 `dc2d86b0f225fbcec9f86a2bfa5f089cc3075fe541881dd5a8ceb88689274e09` |
+| Fast-p handoff | 同目录 `human-review-handoff.md`；SHA-256 `ee33dc68d01e4682dfec0fc0edd3607b42587832811c08d453414371cc2ab155` |
+| Prior aggregate report | `docs/plans/review/paper-reprocess-master/machine-verification.md`，epoch 1；SHA-256 `338e26bab7c2bfe1790144b85db617742744b1b226678230fb80241a27d014eb` |
+| Ancestry | base、prior code、candidate、recorded master 均在所声明祖先链 |
+| Final state | HEAD、branch 不变；index 空；唯一 tracked diff 为控制器的 review `ledger.md` |
+| Reviewer writes | 仅临时诊断、测试及构建输出；未写 aggregate report、review ledger 或修复稿 |
+
+有序子计划均位于 `W/docs/plans/2026-11-01/`：
+
+| Child | 精确计划 | 身份 |
+|---|---|---|
+| 00 | `paper-reprocess-00-replay.md` | SHA-256 `f9cb78a3c967c67fbbeab0c272a0894cb4928cd6a650e05ae419853dee6a2132` |
+| 01 | `paper-reprocess-01-parser.md` | SHA-256 `508fd62d84283bd223aca0970c9e265944762f6c48f36ffaf127ba2b88260608` |
+| 02 | `paper-reprocess-02-identity.md` | 逐字等于 commit `9ce385c729c4b3a4c6fd0fff3aa06c126773cec3` |
+| 03 | `paper-reprocess-03-batch.md` | 逐字等于 commit `a6e14b63448fecfa0cd1319074c8d0b5bb2026be` |
+| 04 | `paper-reprocess-04-apply.md` | 逐字等于 commit `5a31faaebf28001fb05d34c6b2aa195cc2a0e01d` |
+| 05 | `paper-reprocess-05-frontend.md` | 逐字等于 commit `d678780155fc4fac5ecc4896135806729efaee2f` |
+| 06 | `paper-reprocess-06-verification.md` | SHA-256 `ac6a7663526a7a5c3a74716a3be3b54db97b8afaa6b5576672d8b65f655a6bb2` |
+
+已核对各 child 的 `brief.md`、`execution.md`、`fix-log.md`、`verify-log.md` 及相关引用证据；各 child 均为终态。LIGHT_PASS 和执行者测试数未充当本轮验证结果。
+
+### Post-repair evidence
+
+Mode：**DURABLE_HANDOFF**。
+
+- Repair：[repair.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md)，SHA-256 `47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110`。
+- Approval：durable handoff 记录人类明确 `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md`。
+- Executor：`PaperRepairExecutor`，与本 reviewer 不同。
+- Handoff：[repair-execution.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/review/paper-reprocess-master/repair-execution.md)，SHA-256 `6d96f63786c56d0a5b6b36937431db3f372ae4270e4ccdcb324725281bf6424e`。
+- Prior code：`e213acb50791fe39a0de0a4d9d599bc4e2398cc1`。
+- Pre-execution parent：`54a7d14648ec7c2580c01c3cef26bbabaf0c5021`；prior code 至此仅 docs。
+- Repair code：`291fb34b35be496673e28f124d443b9c46ba66f4`。
+- Repair code 至 evidence HEAD 仅执行交接文档。
+- 可选精确 executor status token：`NOT_RECORDED`。完整命令、clean/commit 回执已存在；未据可选叙述缺失阻断。
+- 修复累计 delta 恰为以下十个 Authorized Files，无额外文件：
+
+| 文件，均相对于 W | Authorized |
+|---|---:|
+| `scripts/discovery_admission_probe/reconcile_paper_identity_replay.py` | YES |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt` | YES |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` | YES |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessApplyService.kt` | YES |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt` | YES |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt` | YES |
+| `src/main/resources/static/discovery-paper-reprocess.js` | YES |
+| `src/test/js/discoveryPaperReprocess.test.js` | YES |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperIdentityReplayToolTest.kt` | YES |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessEndToEndTest.kt` | YES |
+
+### Recorded Approved Amendments
+
+共同批准原文 H1：
+
+> HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00
+
+| ID | Master rule | Recorded reason | Approval |
+|---|---|---|---|
+| A1 | I-4/I-6/X-4 and 顺序与门禁 | Approve child 02 eleven-file exception for existing persisted-admission seam without reducing tests | H1 |
+| A2 | I-4/I-6/X-4 | Authorize narrow DiscoveryReviewService controlled changed-identity seam and existing-test regressions | H1 |
+| A3 | I-2/I-5/X-1/X-5 and 顺序与门禁 | Allocate unused V173 because existing V172 is occupied; preserve applied migration, schema, scope count and acceptance | H1 |
+| A4 | I-4/I-5/X-1/X-5 and 顺序与门禁 | Authorize child03 cap13 for existing parser-chain page cancellation/budget checkpoints only | H1 |
+| A5 | I-4/I-5/X-1/X-5 | Add three proven parser checkpoint seams, preserve default behavior/rules/versions, retain all acceptance | H1 |
+| A6 | I-5/I-7/X-6 and 顺序与门禁 | Authorize child03 cap14 for directly broken task catalog contract tests, no acceptance reduction | H1 |
+| A7 | I-5/I-7/X-6 | Add affected TaskExecutionSummaryExtractorTest and covering command; retire incidental fixed lists/count instead of re-pinning | H1 |
+| A8 | I-4/I-5/I-6/X-3/X-4/X-7/X-8 and 顺序与门禁 | Child04 cap13 for durable receipts and original consume/ordinary-worker parent permission seams | H1 |
+| A9 | I-4/I-5/I-6/X-3/X-4/X-7/X-8 | Add three evidenced necessary receipt/owned-consume/epoch0 worker fences; preserve ordinary defaults and all acceptance | H1 |
+| A10 | I-5/I-7/I-9/X-5/X-6/X-8/X-9 and 顺序与门禁 | Child05 cap19 for required existing readonly opener, authoritative summary/preview and directly broken resource tests | H1 |
+| A11 | I-5/I-7/I-9/X-5/X-6/X-8/X-9 | Add readonly API totals/source-missing preview and original8-step opener; retire incidental resource inventories, retain exact CSS/DOM/browser acceptance | H1 |
+| A12 | I-1/I-3/I-6 and 顺序与门禁 | Child06 fifth-file exception for existing DiscoveryVerificationWorkerTest Flyway fixture target V161→V173 | H1 |
+| A13 | I-1/I-3/I-6 | Raise existing migration fixture target only; assertions/business behavior/12-target/migration/report acceptance unchanged | H1 |
+
+A12 master identity：`2de159efc6b04e4f8dc3542890009eba15f004cf` → `53c2b0018e239e3c30db25942e99c2cddc69e9d4`。  
+A13 child06 SHA：`ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791` → `ac6a7663526a7a5c3a74716a3be3b54db97b8afaa6b5576672d8b65f655a6bb2`。
+
+Master 顺序表 06 仍写 4；第五文件按明确 A12/A13 处理。全部 amendment 均作为已记录契约逐项核对，未用作行为缺陷豁免。
+
+### Commands
+
+执行目录全部为 W。所有 Maven/Java/子 Java：
+
+`JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home`
+
+实际 Maven 为 `/opt/homebrew/bin/mvn`；XML 记录 Java `11.0.32.1`。MySQL 为隔离 Testcontainers `8.0.36`。Maven/target 写操作串行；runner 每条命令有限 watchdog，恢复后的 runner 逐条持久化退出码。
+
+| ID | 精确命令 | 结果及新鲜回执 |
+|---|---|---|
+| C1 | `/opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperIdentityReplayToolTest,DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | **PASS**，exit 0，281.36s；12 tests，0 failure/error/skip。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C1.log) |
+| C2 | `node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js` | **PASS**，exit 0，0.72s；46/46，0 skip。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C2.log) |
+| C3 | `/opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperIdentityReplayToolTest,SourceAuthorEmailResolverTest,DiscoveryPaperLayoutRegressionTest,DiscoveryPaperAnalysisServiceTest,RetainedPaperIdentityServiceTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationCommitServiceTest,DiscoveryVerificationQueryServiceTest,DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest,TaskExecutionSummaryExtractorTest,DiscoveryPaperReprocessApplyServiceTest,DiscoveryPaperBackfillServiceTest,DiscoveryRecheckServiceTest,DiscoveryVerificationIntegrationTest -DmysqlIt=true -DpaperReprocessIt=true` | **PASS**，exit 0，914.25s；205 tests，0 failures，0 errors，1 optional corpus skip。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C3.log)、[逐类 XML 摘要](/tmp/paper-aggregate-epoch2-ei2_5x6s/C3-summary.json) |
+| C4 | `/opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | **PASS**，exit 0，272.96s；4/0/0/0。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C4.log) |
+| C5 | `/opt/homebrew/bin/mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | 初次日志记录 48/0/0/0、BUILD SUCCESS；usage-limit 断开导致 OS exit **NOT_RECORDED**。保留[原日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C5.log)及 XML，未补造退出码 |
+| C5R | 同 C5 精确命令 | **PASS**，exit 0，796.92s；48/0/0/0；真实空库及 V170→V173；94 次 schema clean、93 次成功迁移调用。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C5R.log) |
+| C6 | `/opt/homebrew/bin/mvn package -DskipTests` | **PASS**，exit 0，221.87s；Maven-bound JS 2037/2037、354 suites；WAR 成功。此命令未运行 Kotlin 测试。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C6.log) |
+| C7 | `node --test src/test/js/*.test.js` | **PASS**，exit 0，5.74s；2037 pass，354 suites，0 failure/skip。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C7.log) |
+| C8 | `python3 docs/audits/2026-11-01-discovery-30711-pdf/recount.py` | **PASS**，exit 0，0.07s；PERSON 333、PAPER 244、PAPER_BINDINGS 337、prior_known 7、other_same_name 1。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C8.log) |
+| C9 | `/opt/homebrew/bin/mvn -q exec:exec -Dexec.executable=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Dexec.classpathScope=test '-Dexec.args=-DpaperReprocessIt=true -DmysqlIt=true -cp %classpath com.weibo.talentintroduction.discovery.service.Paper03RuntimeSmoke'` | **PASS**，exit 0，73.09s；121 records/7 pages、幂等、401、零 provider/归档写；404/409 修正路径及 durable error 回读。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C9.log) |
+| C10 | `/opt/homebrew/bin/mvn -q exec:exec -Dexec.executable=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Dexec.classpathScope=test '-Dexec.args=-DpaperReprocessIt=true -DmysqlIt=true -cp %classpath com.weibo.talentintroduction.discovery.service.DiscoveryVerificationIntegrationTest --paper-reprocess-smoke'` | **首轮 FAIL**，exit **1**，94.83s；取消时序测试抛 `Trace lease lost`。[失败日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C10.log) |
+| C10R | 同 C10 精确命令，仅一次完整重跑 | **PASS**，exit 0，360.54s；`PAPER04_RUNTIME_OK`，取消、恢复、100+1 分组、原 CLI、保护及投影场景完成。未据此宣称首轮问题已修复。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C10R.log)、[真实退出码](/tmp/paper-aggregate-epoch2-ei2_5x6s/C10R-result.json) |
+| C11 | `/opt/homebrew/bin/mvn -q exec:exec -Dexec.executable=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Dexec.classpathScope=test '-Dexec.args=-DpaperReprocessIt=true -DmysqlIt=true -cp %classpath com.weibo.talentintroduction.discovery.service.DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke'` | **PASS**，exit 0，69.7s；`PAPER06_RUNTIME_OK`，真实 SQL、loopback ES CAS、真实服务、paidCalls=0、productionWrites=0。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C11.log) |
+| C12 | `/usr/bin/time -l /Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Xmx1536m -cp 'target/classes:target/weibo-talent-introduction-1.0.0-SNAPSHOT/WEB-INF/lib/*' com.weibo.talentintroduction.discovery.service.DiscoveryPaperIdentityReplayTool /Users/lukai/.local/share/paper-reprocess-30711 docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json /tmp/paper-aggregate-epoch2-ei2_5x6s/replay.json` | **PASS**，exit 0，101.73s；337 rows，244 records，networkCalls=0、businessWriteServicesConstructed=0；最大 RSS 1,354,530,816 bytes。[日志](/tmp/paper-aggregate-epoch2-ei2_5x6s/C12.log) |
+| C13 | `python3 scripts/discovery_admission_probe/reconcile_paper_identity_replay.py --manifest docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json --old-replay /tmp/paper-reprocess-30711-baseline.json --new-replay /tmp/paper-aggregate-epoch2-ei2_5x6s/replay.json --audit-directory docs/audits/2026-11-01-discovery-30711-pdf --csv /tmp/paper-aggregate-epoch2-ei2_5x6s/reconciled.csv --report /tmp/paper-aggregate-epoch2-ei2_5x6s/reconciled.md --runtime-evidence /tmp/paper-reprocess-30711-runtime.json` | 正常输入命令 **PASS**，exit 0，0.13s；337 rows、extras=0、51 EXPECTED_MATCH/286 EXPECTED_MISSING。验证器语义仍有 V-3。[CSV](/tmp/paper-aggregate-epoch2-ei2_5x6s/reconciled.csv) |
+| C14 | 实际 CUA 浏览器操作：隔离 AUDIT/API/MySQL、四种 viewport、Escape、500、完成、NEW/REPAIRED 八步、只读原文、公开 sync-retry | **混合结果**：布局/Escape/目标总量/八步读取通过；REPAIRED child sync-retry 实际 **404**，见 V-5。浏览器工具操作无 shell exit，未捏造统一退出码 |
+| C15 | `node --check src/main/resources/static/discovery-paper-reprocess.js`；`git diff --check 3a425461dbe6088e4d4dda1a53141416a392670c..291fb34b35be496673e28f124d443b9c46ba66f4 -- src scripts docs/audits` | 均 exit 0；scope、CSS/DOM、Git/index 最终核对通过 |
+| D-V3 | 七组真实固定行 CLI 诊断；精确 argv 保存在 `identity-probe-results.json` | 各 CLI exit 0；valid 正确接受，四种无效证据正确拒绝；**wrong-email、missing-email 错误接受**。[逐例命令/结果](/tmp/paper-aggregate-epoch2-ei2_5x6s/identity-probe-results.json) |
+| D-V5 | 隔离当前 fixture MySQL 故障注入 + 实际公开 API/页面按钮 | SQL 保持 COMPLETED/admissionRevision=0，仅投影 PROJECTED→ERROR；真实 API 与 UI POST 均404。[SQL](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-projection-fault-sql.log)、[API](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-sync-error-api.json)、[HTTP](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-sync-error-http.json) |
+
+C3 逐类测试数，顺序对应命令：
+
+`8, 30, 8, 10, 7, 24, 7, 22, 6, 12, 19, 2, 4, 10, 36`。
+
+唯一 skip：`DiscoveryPaperLayoutRegressionTest` 的可选 `DISCOVERY_LAYOUT_FROZEN_SAMPLES` 旧 corpus；本计划必需 #30711 原始字节重放未跳过。
+
+构建 WAR：53,149,381 bytes；SHA-256：
+
+`5243ee8fc0f5eee2b78b5a2496e3c892fdce33236d9b1ad19d962bfcea289596`
+
+修复 Verification Commands 1–14 已逐项覆盖；master/children 的必需业务测试、Node、迁移、打包、重算、重放、三个独立 JVM runtime 与实际浏览器要求均有对应新鲜证据。未复用执行者或 epoch1 计数。
+
+### 实际效果与输入保护
+
+| 指标 | 本轮结果 |
+|---|---|
+| 固定 manifest | 337 组合、244 record |
+| 可读取原文 | 244；SOURCE_MISSING=0 |
+| 旧 replay | REPRODUCED 330、NOT_REPRODUCED 6、ALREADY_RECOVERED 1 |
+| 新 replay | ALREADY_RECOVERED 51、NOT_REPRODUCED 284、REPRODUCED 2 |
+| 正确新增绑定增量 | 50 组合、49 email hashes、39 records |
+| 已有正确绑定丢失 | 0 |
+| 仍缺口 | NO_PRODUCTION_LAYOUT_CONTACT 280；NAME_NOT_LITERAL_IN_PDFBOX_PAGE 4；EMAIL_NOT_LITERAL_IN_PDFBOX_PAGE 1；AUDITED_PAGE_OUTSIDE_PRODUCTION_SELECTION 1 |
+| 原始 47 未确认分栏候选 | 未自动修复，继续排除 |
+| 固定 12-target ENFORCE | 15 papers/12 targets；新增2、补齐2、准入2、冲突2、保护2、错误2、同步失败1 |
+| 同批第二轮 | 新增0、补齐0、准入0；原已准入2单列 |
+| 普通核验取消后 | NEW1、admitted0、NOT_EVALUATED1 |
+| 同父显式 retry 后 | NEW1、admitted1、NOT_EVALUATED0 |
+| 已有档案 child retry | 同一 child 完成实际核验，UNKNOWN 已评价；旧取消 trace、完成 peers 保留 |
+| 生产业务执行 | NOT_RUN；上述新增/补齐/准入数字仅隔离固定 fixture |
+
+输入及冻结回执末次 SHA 检查无变化：
+
+| 输入 | SHA-256 |
+|---|---|
+| `production-replay-manifest.json` | `de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c` |
+| `/tmp/paper-reprocess-30711-baseline.json` | `e0fe5b1e008fda6188315f73972f72af79b3897b6ca59f1a4f04c8d452b3d91c` |
+| `/tmp/paper-reprocess-30711-runtime.json` | `5d00ffbc736f653fe64b93b5e667c8baf776aa33b1320716d212291b45e037c3` |
+
+### Contract Matrix
+
+除人工条目、显式非目标及 Observation 外，下列均为必需项。来源 `master`、`00..06` 指上述精确批准计划；证据 C/D 编号指本报告命令及诊断。
+
+| ID / Source | 必需要求 | Verdict | Evidence |
+|---|---|---|---|
+| I-1 / master | 原文与生产重放真值；数量不夸大 | **FAIL** | 新鲜337正常重放通过；实际身份校验仍可接受错误/缺失邮箱，V-3 |
+| I-2 / master | 原文、metadata、first、历史不覆写；版本/页码/原句可追溯 | PASS | C3/C9/C10R/C11/C12；冻结哈希；retained identity / item immutable input 路径 |
+| I-3 / master | 身份事实不直接准入；现行资格门禁 | PASS | C3/C10R/C11；UNKNOWN、PARTIAL 不自动合格 |
+| I-4 / master | 保护、AUDIT、ENFORCE、取消隔离 | PASS | C9零业务/provider；C10R保护、late response、取消；C11 |
+| I-5 / master | 固定跨页 scope、持久 lease/幂等/恢复 | PASS | C3/C9 121/7页；C10R分组/恢复；C11 retry；另保留 C10 不稳定观察 |
+| I-6 / master | 单一消费、窄修复、原 Commit/project、旧 CLI | PASS | 源码叶子追踪；C10R consumer/legacyCLI/project；无第二套 writer |
+| I-7 / master | 计数、身份、准入、同步与 trace 可核对 | **FAIL** | 统计及 V-4 已修复；V-3 可误报身份一致，V-5 同步重试失败 |
+| I-8 / master | 父级冻结 Apollo；不扩收费策略 | PASS | C10R search=true/detail=false；C11；paidCalls=0；原设置规则未改 |
+| I-9 / master | S1–S6、全局样式、可访问状态 | PASS | C2/C7/C14/C15；完整新增 CSS 5515 bytes 一致；原 CSS 前缀不变 |
+| M-1 / master | 保持原重审及原单篇入口 | **FAIL** | 普通及 child 八步读取200；原 child sync-retry 被新分支拒绝，V-5 |
+| M-2 / master | 保护及现行资格/Apollo规则 | PASS | C3/C10R/C11；保护与冲突零业务写 |
+| M-3 / master | 原文件、first、历史、源计数不变 | PASS | C9/C10R/C11、冻结哈希、写路径 diff |
+| M-4 / master | 邮件及采集游标不变 | PASS | 无相关 writer diff；C11隔离快照；重放零业务服务 |
+| M-5 / master | 取消保留完成补录/准入 | PASS | C10R late response/child取消；C11取消及显式retry |
+| X-0 / master | 真值→生产 old/new→逐条核对 | **FAIL** | 337原文链通过；V-3 实际 target identity 未完整校验 |
+| X-1 / master | 首次归档→新解析差异 | PASS | C3/C9/C12/C13；原 first 保留、50组合真实增量 |
+| X-2 / master | 新身份→本轮有效身份→验证 | PASS | C3 retained/worker/query/commit；C10R/C11 |
+| X-3 / master | ES补齐→人物登记/保护/来源 | PASS | C10R RAW/PERSON故障续接；保护零写；C11 |
+| X-4 / master | identity guard→准入→候选同步 | **FAIL** | ordinary 投影重试通过；owned child syncRetry404，V-5 |
+| X-5 / master | 原文lease→删除/保护→新UI读取 | PASS | C3/C9；C14 reader200、analysisPOST0；原入口回归 |
+| X-6 / master | 持久任务→活动/重入 | PASS | C9相同runId/幂等；C2/C7 lifecycle；V-7仅后续新任务按钮陈旧 |
+| X-7 / master | 新作者→旧门禁→档案/人物/核验 | PASS | C10R真实consume、归属收据；C11新增2及重复0 |
+| X-8 / master | 父→自动child→准入汇总 | **FAIL** | 自动启动/准入汇总通过；child 同步失败后的既有恢复入口被阻断，V-5 |
+| X-9 / master | 原页面→新DOM/API→旧详情回跳 | **FAIL** | NEW/REPAIRED均可读8步；其中既有同步动作404，V-5 |
+| 00-I-1 / 00 | record/body/email/name/page单位，逐条身份核对 | **FAIL** | key统计正确；V-3 仅信 candidate key，忽略实际 targetEmail |
+| 00-I-2 / 00 | 同原始 bytes/metadata/配置/first 生产重放 | PASS | C1/C3/C12；244原文337组合；输入哈希不变 |
+| 00-I-3 / 00 | 离线零业务副作用 | PASS | C12 networkCalls0、writeServicesConstructed0 |
+| 01-I-1 / 01 | 明确归属；歧义不猜 | PASS | C3 resolver30/layout8；真实新增绑定50组合；冲突负例 |
+| 01-I-2 / 01 | 同页同栏联系块及终止边界 | PASS | C3生产布局反例；C12；编号References既存观察单列 |
+| 01-I-3 / 01 | parser版本独立；旧缓存/历史资格/first兼容 | PASS | 源码版本与兼容分支；C3 analysis10/retained7；C10R |
+| 02-I-1 / 02 | propose只读、确认后apply | PASS | C3/C10R AUDIT与ENFORCE对照 |
+| 02-I-2 / 02 | 跨层保护、窄CAS、PARTIAL不准入 | PASS | C3/C10R保护与RAW/PERSON续接 |
+| 02-I-3 / 02 | 当前epoch/lease/parent有效身份；历史基线保留 | PASS | Worker/Repository/Commit路径；C3/C10R |
+| 02-I-4 / 02 | persisted receipt限定提交，不泛化guard | PASS | Commit受限身份变化路径；C3 commit7/query22/integration36 |
+| 02-I-5 / 02 | 有限phase、恢复、旧外部证据失效 | PASS | retained identity/worker路径及C3/C10R |
+| 03-I-1 / 03 | 已终态source、keyset、maxRecordId固定跨页 | PASS | C9 121records/7pages、sourceFrozen、404/409 |
+| 03-I-2 / 03 | 合法状态、request-key、active-key单例 | PASS | C3 repository12/service6；C9重复runId及冲突 |
+| 03-I-3 / 03 | PAPER/TARGET、immutable input、schema1、六步、lease | PASS | C3 repository；C9 schema/trace；C10R/C11 |
+| 03-I-4 / 03 | record与target单位分开；AUDIT actuals0 | PASS | C9、C14 121/121及actuals0、proposal1/1 |
+| 03-I-5 / 03 | lease释放、默认单并发、AUDIT无业务/外呼、取消保存 | PASS | C3/C9/C10R；C10首轮取消时序异常保留为未归因观察 |
+| 04-I-1 / 04 | 原consume/受限repair、无第二套覆盖 | PASS | Apply→consumeArchivedPaper→原consume；C10R/C11 |
+| 04-I-2 / 04 | durable副作用收据、归属续接、重复增量 | PASS | C10R AFTER_RAW/PREPARE/START/ADMISSION及PERSON失败/STALE；C11 |
+| 04-I-3 / 04 | 父冻结配置、稳定分组、服务端自动start、租约 | PASS | C10R 100+1稳定分组/冻结/late prepare围栏 |
+| 04-I-4 / 04 | 互斥结果、真实核验终态、现有syncRetry、取消范围 | **FAIL** | V-1已修复；V-5 child候选同步失败无法沿用原syncRetry |
+| 04-I-5 / 04 | 原bytes生成permit；identity与qualification分离；CLI原义 | PASS | C10R PARTIAL与legacyCLI；C11 |
+| 05-I-1 / 05 | API唯一状态、requestKey恢复、source scope | PASS | C2/C7/C9/C14；V-7作为非阻断陈旧preview保留 |
+| 05-I-2 / 05 | 默认AUDIT、明确ENFORCE、失败disabled、关闭不取消 | PASS | C2/C7；C14 Escape/关闭 cancelPOST0；V-6为非必需模式锁定缺陷 |
+| 05-I-3 / 05 | 绑定/档案/准入分开；中文原因；不误称未分析 | PASS | C14真实AUDIT完成、proposal1/1、actuals0、长中文500原因；V-4已解决 |
+| 05-I-4 / 05 | DOM/CSS、安全textContent、分页/旧响应/权限 | PASS | C2/C7/C15；C9真实401；全局401重定向边界另列 |
+| S-1 / 05 | 整批入口结构/字号/边距 | PASS | C15逐字CSS/DOM；C14实际页面 |
+| S-2 / 05 | 确认弹窗结构、状态、按钮可达 | PASS | C14四viewport；Escape仅关当前dialog |
+| S-3 / 05 | 服务端统计、六卡/手机三列、分页 | PASS | C14 121/121、四viewport；targetTotalKnown来自summary |
+| S-4 / 05 | 逐项中文结果、六步与既有八步入口 | PASS | NEW及REPAIRED八步GET200；六步详情；原文只读。同步动作另由V-5阻断 |
+| S-5 / 05 | 完整新增CSS逐字一致，全局不改 | PASS | 含terminal LF 5515 bytes一致，原CSS完整前缀保留 |
+| S-6 / 05 | 三块DOM、动态节点、安全及生命周期 | PASS | 三块骨架核对；无新inline style/innerHTML；真实Escape/focus |
+| 06-I-1 / 06 | 固定输入与逐条实际身份；外部变化单列 | **FAIL** | 正常固定输入通过；V-3错误实际邮箱仍EXPECTED_MATCH |
+| 06-I-2 / 06 | 逐条标识与真实增量，缺口原因，不拿总数代替身份 | **FAIL** | 完整计数已报告；V-3可使同key错误实际target被当正确 |
+| 06-I-3 / 06 | 隔离验证、真实门禁、生产/发布另批 | PASS | C3/C5R/C9–14隔离；初始失败及NOT_RECORDED如实保留；未生产执行 |
+| SCOPE / master+amendments | 逐child白名单、数量、≤2子系统、共享文件串行 | PASS | 各child6/7/11/14/13/19/5，未授权0；repair十文件；scope.json |
+| MIGRATION / master+03+06 | 不改已应用迁移，真实MySQL升级 | PASS | 新V173；C5R48 tests空库/升级成功 |
+| BUILD / master+06 | JDK11、Node、WAR分开验证 | PASS | C1–7；C5初始退出码缺失由C5R真实回执补齐 |
+| RUNTIME / master+06 | 三独立JVM、原bytes、实际浏览器 | PASS，有失败历史 | C9/C10R/C11/C12/C14；C10首轮FAIL未删除 |
+| NON-GOALS / master | 不做OCR/猜名/扩下载/提并发/放宽资格/47候选/整批删除重构/403422修复/生产发版补跑 | PASS | 累计diff及写路径检查，无范围外业务实现 |
+| RELEASE / master+06 | 发布前人工与独立发布授权 | PENDING | 本轮无发布、push、merge、生产补跑 |
+| MANUAL / master+children | 人工验收及签字 | PENDING | 见下表；机器浏览器不代替人工 |
+
+### 扩展文件授权矩阵
+
+每行独立核对 amendment 原规则。这里的 PASS 仅指扩展改动符合批准范围；不抵销 V-3/V-5 的行为 FAIL。
+
+下列源码路径均相对于 W。
+
+| 文件 | 授权 | Verdict / 独立核对 |
+|---|---|---|
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt` | A1/A2；I-4/I-6/X-4 | PASS：仅受控 changed-identity persisted-admission seam；保护与revision条件保留 |
+| `src/main/resources/db/migration/V173__create_discovery_paper_reprocess.sql` | A3；I-2/I-5/X-1/X-5 | PASS：使用未占用V173；未改已应用V172；真实迁移通过 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt` | A4/A5；I-4/I-5/X-1/X-5 | PASS：可选checkpoint及取消窄传播；默认调用/规则不变 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt` | A4/A5；同上 | PASS：传递checkpoint；不改资格事实规则 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt` | A4/A5；同上 | PASS：按页checkpoint；原默认及版本兼容 |
+| `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt` | A6/A7；I-5/I-7/X-6 | PASS：移除incidental固定清单/数量；真实摘要断言保留，19 tests |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt`，child04 delta | A8/A9；I-4/I-5/I-6/X-3/X-4/X-7/X-8 | PASS：durable receipt及REVIEW；不新增替代业务writer |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt` | A8/A9；同上 | PASS：原consume链父许可/逐副作用围栏/归属续接；普通默认不改 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt`，child04 delta | A8/A9；同上 | PASS：paper-owned epoch0 dispatch/late-response围栏；无全局放宽 |
+| `src/main/resources/static/discovery-recheck.js` | A10/A11；I-5/I-7/I-9/X-5/X-6/X-8/X-9 | PASS：公开原八步只读opener；保留原DOM/动作 |
+| `src/test/js/discoveryRecheck.test.js` | A10/A11；同上 | PASS：opener回归；相关行为断言保留 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPaperReprocess.kt`，child05 delta | A10/A11；同上 | PASS：只读summary/preview字段 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt`，child05 delta | A10/A11；同上 | PASS：持久记录权威汇总，未让前端抓全页计算 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt`，child05 delta | A10/A11；同上 | PASS：只读summary/缺源preview组合 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepositoryIntegrationTest.kt`，child05 delta | A10/A11；同上 | PASS：权威计数/preview回归；未减少验收 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessServiceTest.kt`，child05 delta | A10/A11；同上 | PASS：只读DTO/preview回归 |
+| `src/test/js/discoveryReview.test.js` | A10/A11；同上 | PASS：资源清单适配；行为断言保留 |
+| `src/test/js/mailboxChatBehavior.test.js` | A10/A11；同上 | PASS：仅直接受影响资源断言；邮件行为不改 |
+| `src/test/js/mailboxGroupPush.test.js` | A10/A11；同上 | PASS：同上，未重钉新资源总数 |
+| `src/test/js/meetingConfirmationAssets.test.js` | A10/A11；同上 | PASS：同上 |
+| `src/test/js/trustReplyWorkbenchSharedMount.test.js` | A10/A11；同上 | PASS：同上，共享挂载行为保留 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt`，child06 delta | A12/A13；I-1/I-3/I-6 | PASS：恰为七处Flyway fixture target V161→V173；无业务断言削弱 |
+
+完整 base..candidate 共123变更文件；产品/测试/脚本/审计并集61个，未授权0。逐 child 数量及边界：
+
+| Child | 边界 | 实际/批准 | 未授权 |
+|---|---|---:|---:|
+| 00 | `3a425461..1f730373` | 6/6 | 0 |
+| 01 | `1f730373..1979768f` | 7/7 | 0 |
+| 02 | `1979768f..47393695` | 11/11 | 0 |
+| 03 | `47393695..ff7e6750` | 14/14 | 0 |
+| 04 | `ff7e6750..736535ce` | 13/13 | 0 |
+| 05 | `736535ce..46bcb8a3` | 19/19 | 0 |
+| 06 | `46bcb8a3..e213acb5` | 5/5 | 0 |
+
+回执：[累计 scope](/tmp/paper-aggregate-epoch2-ei2_5x6s/scope.json)、[逐 child 文件](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-scope.json)。
+
+### Finding Lineage
+
+| Finding | Severity / State | 本轮证据 |
+|---|---|---|
+| V-1 | P1 — **RESOLVED** | 普通与已有档案child取消后，同父显式retry继续实际资格；成功副作用及历史保留；C1/C4/C11 |
+| V-2 | P1 — **RESOLVED** | 使用实际宿主Escape handler；confirm/detail只关闭当前dialog，hostCloses0、focus回触发器、cancelPOST0 |
+| V-3 | P1 — **PERSISTENT** | doc/outcome/duplicate等反例已补；实际target邮箱与稳定emailHash仍未校验，错误/缺失邮箱被接受 |
+| V-4 | P1 — **RESOLVED** | 读取真实`summary.targetTotalKnown`；完成AUDIT显示目标总量固定 |
+| V-5 | P1 — **REGRESSION** | 原NEW八步读取及ordinary sync已修；新分支却把既有owned recheck child路由到epoch0-only guard，公开sync404 |
+| V-6 | P2 — **PERSISTENT / EXCLUDED** | 确定性503后pending key仍锁模式；未证明违反明确必需验收 |
+| V-7 | P2 — **PERSISTENT / EXCLUDED** | 完成后preview.activeRun陈旧，需reload再开新任务；原任务恢复/显示正常 |
+
+### Findings
+
+#### P1
+
+**V-3 — 实际 target 邮箱未验证，错误实际身份仍被报告为匹配。**
+
+要求：master I-1、I-7、X-0；00-I-1；06-I-1/I-2；repair R-3 明确要求验证稳定键及 actual target identity。
+
+源码：
+
+- [reconcile_paper_identity_replay.py:107](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py:107)：展开真实run target，把 `target.email` 存为 `targetEmail`。
+- [同文件:52](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py:52)：`evidence()` 对run仅检查outcome、doc存在及已知expected doc；不检查实际邮箱。
+- 同文件186–198：使用candidate提供的稳定key选行，没有核验targetEmail与candidate emailHash一致。
+
+新鲜真实行对照：
+
+| 项目 | 有效控制 | 错误邮箱 | 缺失邮箱 |
+|---|---|---|---|
+| recordId | 31372 | 31372 | 31372 |
+| candidate expected emailHash | `1522c43ad4d32fd525a502bb` | 同左 | 同左 |
+| 实际target邮箱hash | `1522c43ad4d32fd525a502bb` | `ba944dee8305ef588a9d7bfc` | null |
+| actual docId | `0000-0002-0178-9985` | 同左 | 同左 |
+| CLI exit | 0 | 0 | 0 |
+| 输出 | BOUND / EXPECTED_MATCH | **BOUND / EXPECTED_MATCH** | **BOUND / EXPECTED_MATCH** |
+
+错误邮箱为 `different-target@wrong.example`。有效控制邮箱从不可变原输入取得并核对hash。三个输入仅改变实际target邮箱；稳定candidate键和docId保持一致。
+
+wrong-doc、unknown-outcome、duplicate、SKIPPED-wrong-doc 本轮已能输出 INVALID/REGRESSION，因此此前修复有实质效果；邮箱缺口仍是同一身份校验根因，保留 V-3。现有合成有效测试使用与实际邮箱无关的固定emailHash，不能区分此缺陷。
+
+影响：报告可能把错误实际target算成正确绑定；相同总数及candidate自报key不能证明同一身份。未宣称本次正常337-row报告已经发生该错误。
+
+最小涉及范围：归并脚本的实际身份验证及现有 replay-tool 回归测试。
+
+证据：[全部精确CLI与结果](/tmp/paper-aggregate-epoch2-ei2_5x6s/identity-probe-results.json)、[错误邮箱输入](/tmp/paper-aggregate-epoch2-ei2_5x6s/identity-wrong-email-run.json)、[错误邮箱输出](/tmp/paper-aggregate-epoch2-ei2_5x6s/identity-wrong-email.csv)。
+
+**V-5 — ordinary例外误覆盖已有recheck child，候选同步重试回归为404。**
+
+要求：master M-1、I-7、X-4/X-8/X-9；04-I-4；repair R-5 要求新增ordinary例外时保留原recheck行为及guard。
+
+源码：
+
+- [DiscoveryRecheckService.kt:367](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:367)：`syncRetry` 用 `isPaperReprocessOwned(id)` 判分支。
+- 同文件373：所有paper-owned run均调用 `requirePaperOwnedItem`。
+- [DiscoveryVerificationQueryService.kt:188](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:188)：该函数只接受 `reviewEpoch == 0`。
+- 归属查询同时覆盖ordinary run和本父拥有的recheck child；后者合法epoch等于child runId，因而被拒绝。
+
+隔离实际结果：
+
+| 路径 | 本轮结果 |
+|---|---|
+| ordinary parent30716/item1八步读取 | 200，8真实步骤 |
+| child30717/item4八步读取 | 200，8真实步骤 |
+| ordinary公开sync-retry | 200；ERROR→PROJECTED；admissionRevision1保留；provider19→19 |
+| child item4 | COMPLETED；admissionRevision0，合法非null；actualAdmitted1 |
+| child公开sync-retry | **404 RECHECK_ITEM_NOT_FOUND** |
+| 当前临时MySQL将child投影单独改为ERROR后 | 状态及准入不变；公开API和实际页面“仅重试候选同步”仍 **404** |
+
+故障仅注入当前临时fixture容器 `ec1b46de10e4a17837a3c5127ea4a3417c864faeaa1876033d74a0e2eb93fddd`、数据库 `paper_reprocess_e2e`；未操作生产。SQL前后证明投影 PROJECTED→ERROR，state仍COMPLETED、revision仍0。页面DOM及HTTP分别证明实际按钮错误。API文件中的缓存target receipt仍显示原PROJECTED；当前投影以SQL为准。
+
+修复前 `syncRetry` 对此child走原 `requireRecheck/requireRecheckItem`，当前repair新分支引入拒绝。原V-5读取缺陷已修，但同一修复路径损坏既有child同步恢复，故标记 **REGRESSION**。
+
+最小涉及范围：`DiscoveryRecheckService.syncRetry` 的ordinary/child判定与现有回归测试；不能全局放宽epoch或归属guard。
+
+证据：[SQL](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-projection-fault-sql.log)、[真实HTTP](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-sync-error-http.json)、[页面DOM](/tmp/paper-aggregate-epoch2-ei2_5x6s/child-sync-error-ui.txt)、[ordinary同步控制](/tmp/paper-aggregate-epoch2-ei2_5x6s/ordinary-sync-api.json)。
+
+#### P2
+
+- **V-6，持续、非阻断、排除于本轮repair授权**：确定性503保留pending key并锁模式。既有明确验收要求请求不确定时复用key；未额外推导“任意失败后必须切换模式”的强制需求。
+- **V-7，持续、非阻断、排除于本轮repair授权**：恢复任务完成后preview.activeRun未即时刷新，reload后可新开。未将此提升为任务恢复失败。
+
+#### Observations
+
+**O-E2-01 — C10取消时序首轮 `Trace lease lost`，根因未定。**
+
+首轮主线程在 `paperBatchCancellation` 的AFTER_PREPARE/AFTER_START循环中，经 `Worker.process → fail → endStep` 抛错；`endStep` 对失效trace lease抛异常，generic catch里的fail可能再次抛错并遮蔽先前异常。随后fixture teardown的连接关闭/rollback异常属于后续清理，不能据此认定最初错误由数据库环境引起。
+
+相关通用endStep/Trace路径并非本次repair新增；但也未证明首轮错误为既存或环境问题。C3该36-test类通过；一次相同完整C10R执行亦通过所有取消窗口及最终runtime标记。保留首轮FAIL及不稳定性，不声明修复，不凭单次失败新增未经归因P1，也不声称全部运行一次即绿。
+
+其他此前排除项见 RECORD_ONLY 映射；未重开无关清理。
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | 本轮重新判断 |
+|---|---|---|---|
+| 00 RECORD_ONLY | I-1/I-2/X-0 | N/A | 无新增条目；其固定输入要求已在C12/C13重验 |
+| 01 O-01：可选旧294 corpus | I-1/X-0 | Observation，非阻断 | 原可选目录缺失，C3唯一skip；必需30711原文244/337全部新鲜重放 |
+| 01 O-02：编号References | 01-I-2、I-1 | 既存Observation | 原路径行为未由本实现引入；不扩猜测规则，47候选仍排除 |
+| 02：无新增RECORD_ONLY；跨存储边界 | I-4/I-6/X-3/X-4 | Evidence boundary | 窄CAS与收据通过；没有宣称MySQL+ES原子提交 |
+| 03 O-01：generic summaryRule=null | I-7/X-6 | 既存Observation | 通用raw fallback未改；本功能SQL/summary API权威统计已验证 |
+| 04 O-01：loopback ES/provider/protection fixture | I-3/I-4/X-3/X-4 | Evidence boundary | 真实SQL和服务链；ES为loopback CAS，provider固定响应；不等于线上引擎验收 |
+| 04 O-02：generic summary | I-7/X-6 | 同03 O-01 | 未要求新增通用task summary shape |
+| 04 O-03：历史rapid-tick投影trace重复键 | I-5/I-7/X-4 | 既存/未归因Observation保留 | 未将C10R通过当通用并发修复；本轮C10取消Trace lease lost另立O-E2-01，未混同 |
+| 05 F-05 | 05-I-1/I-2 | V-6 PERSISTENT，非阻断 | 503后模式锁定仍在；保持原排除决定 |
+| 05 O-07：旧重复100/125截图 | I-9/S-1..S-6 | 新证据补齐 | 本轮四个不同CSS viewport单独实测；未复用重复截图 |
+| 05 O-08：旧run/config标签 | I-8/I-9 | 历史说明保留 | 本轮AUDIT9002冻结revision0、search/detail=false；浏览器settings适配局限明确；C10R/C11另测true/false |
+| 05 O-09：proposal正数 | I-7/05-I-3 | PASS；V-4已解决 | 真实API/SQL/UI proposal1/1，actuals0；summary.targetTotalKnown正确 |
+| 05 O-10：summary-null文案 | I-7 | 非阻断Observation | 文案问题未证明业务计数错误，不扩修 |
+| 05 O-11：401/JDK/旧八步证据 | I-7/I-9/X-9 | 必需证据补齐，局限保留 | 真实401 runtime、组件权限测试、Java11.0.32.1；NEW/REPAIRED实际八步均200。全局app401重定向未全链宣称；V-5同步404单列 |
+| 06 O-01：gain标签语义 | I-1/I-7 | 历史措辞Observation | 本轮明确50组合/49邮箱/39记录，不称新增/准入人数；V-3属另一实际校验问题 |
+| 06 O-02：V171升级措辞 | I-2/06-I-3 | PASS，历史说明保留 | C5R实际覆盖更早V170→V173及空库，48 tests |
+| 06 O-03：生产30711 ENFORCE/live ES/ORCID/Apollo | I-3/I-4/06-I-3 | NOT_RUN，明确范围外 | 未进行生产补跑或真实付费外呼，不冒充隔离测试结果 |
+| 06 O-04：package测试口径 | BUILD | PASS，分开记录 | C6仅JS/WAR；Kotlin与MySQL分别C1/C3/C4/C5R |
+| 06 O-05：报告历史行数634/627 | I-1 | 非阻断文档Observation | 不影响固定337组合；本轮独立CSV逐条337 |
+| 06 F-01：报告身份/门禁措辞修正 | I-1/06-I-3 | RESOLVED，保留历史 | 已读`3f042fc`与当前ac6计划；没有把历史NOT_RUN改报PASS |
+
+### 浏览器证据与限制
+
+实际AUDIT run9002处理121/121；六卡为121、121、0、0、0、0；proposal1/1，actuals0。完成页显示“目标总量已固定”。
+
+| CSS viewport | 对应检查 | dialog宽度 | 主按钮bottom | 结果 |
+|---|---|---:|---:|---|
+| 1440×900 | 1440，100% | 700 | 747.125 | 可达 |
+| 1152×720 | 1440，125%等效viewport | 700 | 657.125 | 可达 |
+| 390×900 | 390，100% | 358 | 826.8671875 | 可达 |
+| 312×720 | 390，125%等效viewport | 280 | 671 | 可达 |
+
+手机三列、无根页面横向越界；1152保留六列。使用CSS viewport等效缩放，**未宣称操作原生浏览器zoom**，未使用CSS zoom伪造。
+
+关键证据：
+
+- [四viewport指标](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-layouts.json)
+- [确认弹窗Escape](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-confirm-escape.json)
+- [完成/500/汇总证据](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-complete-evidence.json)
+- [1440确认](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-confirm-1440-100-final.jpg)
+- [312等效viewport确认](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-confirm-390-125-equivalent.jpg)
+- [手机完成](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-complete-390-100.jpg)
+- [真实500及长中文原因](/tmp/paper-aggregate-epoch2-ei2_5x6s/audit-500-long-reason.jpg)
+- [NEW八步](/tmp/paper-aggregate-epoch2-ei2_5x6s/cross-new-eightsteps.jpg)
+- [REPAIRED八步](/tmp/paper-aggregate-epoch2-ei2_5x6s/cross-repaired-eightsteps.jpg)
+- [只读原文](/tmp/paper-aggregate-epoch2-ei2_5x6s/cross-reader.jpg)
+- [实际跨路径HTTP/DOM](/tmp/paper-aggregate-epoch2-ei2_5x6s/cross-evidence.json)
+
+限制如实保留：
+
+- Paper03临时fixture只stub `freeze()`，`resolve()`为空，初始确认页因此失败；初始回执保留。临时UI adapter供应同一冻结DTO：revision0、search=false/detail=false。故此浏览器实验不证明真实保存Apollo设置endpoint；冻结业务另外由C10R/C11验证。
+- 初始child诊断用truthiness选择admissionRevision，漏掉合法0；只修正临时诊断selector为非null后才发实际child POST，未改产品。
+- 浏览器cross fixture未注入固定12-target测试的RAW故障，所以显示新增3/补齐2/准入3；不能冒充C11要求的2/2/2。固定要求由独立C11验证。
+- cross第二tab使用默认1280×720；未把其截图标为1440。
+- child错误截图仅展示对话框滚动区域，不能单靠图片证明错误banner；404由实际DOM文本、HTTP及SQL证明。
+- 500由明确临时loopback proxy故障产生，真实HTTP500；恢复后实际任务完成，保留最后快照。不是生产故障实验。
+- 使用实际app Escape handler，hash `2829faf1a2ab4a988c5ea7d772f50ed0432b5f6b37f0ab2a4d044c4f429c4596`；没有用独立模拟handler替代。
+- 临时Java/browser fixture不写生产；浏览器机测不构成人工验收。fixture停止标记已发，未补造其OS退出回执。
+- V-3诊断仅针对选中真实固定行；部分run export缺少其他行，不作为完整业务效果报告。
+- 原始PDF仍位于批准安全目录，未入Git；报告未输出原文邮箱。
+- C10首轮异常根因仍未证实；一次完整复跑成功不证明稳定性问题消失。
+
+### 人工验收
+
+全部仅记 **PENDING**：
+
+| 来源 | 项目 |
+|---|---|
+| Master | A-1 原按钮补绑；A-2 漏建档与自动衔接；A-3 只读对照与历史；A-4 保护/冲突/取消；A-5 恢复与样式；A-6 对照结论 |
+| Child00 | A-1、A-2 |
+| Child01 | A-1、A-2、A-3 |
+| Child02 | A-1、A-2、A-3、A-4 |
+| Child03 | A-1、A-2、A-3 |
+| Child04 | A-1、A-2、A-3 |
+| Child05 | A-1、A-2、A-3、A-4 |
+| Child06 | A-1、A-2、A-3 |
+
+无人工reporter、ACCEPT、签字或发布结论被制造。
+
+### Convergence
+
+**DIVERGING**。
+
+V-1、V-2、V-4已有真实解决证据；V-3的根因有所收窄，但仍违反强制身份验收。V-5在补入ordinary例外时引入同级P1回归，损坏此前可用的owned child同步路径，后续工作已必须恢复该既有行为。
+
+因此不满足 PROGRESSING 的“无 equal-or-higher new regression”条件，也不是相同blocking set反复出现的 STALLED。判断依据是新增受损行为及修复范围变化，未按“5项降为2项”计数判进展。
+
+### Repair planning: N/A
+
+本轮未调用repair-p设计新轮次，未覆盖已有修复稿。现有精确repair SHA仍为：
+
+`47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110`
+
+### Next Action
+
+停止自动修复，交人类裁决：保留当前修复并批准针对V-3/V-5的不同修复方法，或决定撤销最新修复/调整范围。当前不应重新执行旧repair artifact。
+
+暂停依据：[review-p/SKILL.md](/Users/lukai/.agents/skills/review-p/SKILL.md) 路由要求：`FAIL | STALLED or DIVERGING | Stop and request human adjudication.`
+
+No product code was modified.

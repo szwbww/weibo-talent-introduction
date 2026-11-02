@@ -1,36 +1,36 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: MACHINE_BLOCKED
+- Review epoch: 2
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e)
 - Governing master identity: sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e; recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4
-- Invoked master identity: sha256 d1e17452a5484eae56b37bca5671e8c767fd3f744594232e4b57dac4826b1aa6
+- Invoked master identity: SAME as governing master (explicit retained-worktree handoff invocation); prior invoked-copy diff retained below
 - Master identity state: AMENDMENT_RECORDED
 - Governing amendment: A12; I-1/I-3/I-6 and 顺序与门禁; fifth-file DiscoveryVerificationWorkerTest Flyway fixture V161→V173; standing human approval 2026-11-01T23:28:37+08:00 (exact source below)
 - Amendments: A1–A13; exact records below
 - Fast-p ledger: docs/plans/fast/paper-reprocess-master/ledger.md (sha256 dc2d86b0f225fbcec9f86a2bfa5f089cc3075fe541881dd5a8ceb88689274e09)
 - Fast-p handoff: docs/plans/fast/paper-reprocess-master/human-review-handoff.md (sha256 ee33dc68d01e4682dfec0fc0edd3607b42587832811c08d453414371cc2ab155)
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
-- Final code head: e213acb50791fe39a0de0a4d9d599bc4e2398cc1
-- Evidence parent before next commit: 73f77441f45f6b1c949a167a60e7b155d58dd025
-- Previous evidence commit: N/A
+- Final code head: 291fb34b35be496673e28f124d443b9c46ba66f4
+- Evidence parent before next commit: 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0
+- Previous evidence commit: 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0
 - Branch: fast/paper-reprocess-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
-- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
-- Discovery evidence: discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-master.md; exit 0; SELECTED exactly one candidate; 7 terminal children; identities above
+- Worktree resolution: EXPLICIT
+- Discovery evidence: N/A for epoch 2; explicit registered worktree/handoff validated; historical discovery retained below
 - Misdirected review evidence: N/A (no same-slug ledger in invocation worktree)
-- Reviewer: /root/paper_reprocess_aggregate_epoch1
+- Reviewer: /root/paper_reprocess_aggregate_epoch2; fork_turns=none; created after repair code commit
 - Reviewer attempt: 2
 - Machine result: FAIL
-- Machine report epoch: machine-verification.md — Epoch 1
-- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110)
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Machine report epoch: machine-verification.md — Epoch 2 (Epoch 1 retained unchanged)
+- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110; prior executed artifact unchanged; no new draft)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: repair-execution.md records explicit human $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md
+- Repair executor: PaperRepairExecutor
+- Repair code head: 291fb34b35be496673e28f124d443b9c46ba66f4
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: approve the exact repair via human-originated $execute-p; execute only its Authorized Files, make its authorized local product/evidence commits, persist repair-execution.md, and resume review-fast-p automatically when requested. No repair executed by this review.
+- Blocker/next action: Human adjudication required for FAIL/DIVERGING: V-3 persists (wrong target email accepted); V-5 has a new same-severity regression (paper-owned recheck child projection-only sync returns 404). No new repair plan or execution authorized.
 
 ## Preflight Evidence
 
@@ -131,3 +131,33 @@
 
 - Default git diff --cached --check exited 2 only for preserved Markdown hard line breaks in the complete reviewer output and single-space blank context lines in the exact governing diff. These are evidence formatting, not product changes; the source report/diff was retained.
 - Evidence validation uses core.whitespace=-blank-at-eol to preserve those intentional representations.
+
+## Epoch 2 Preflight — 2026-11-02T23:17:19+08:00
+
+- Invocation: exact retained-worktree fast-p handoff; registered branch/worktree validated.
+- Master and seven child identities match recorded fast-p identities; all seven children terminal LIGHT_PASS/LIGHT_PASS_WITH_NOTES. All 28 brief/execution/fix-log/verify-log artifacts exist; child boundary/evidence commits are ancestors of current evidence HEAD.
+- Governing master SHA-256 remains 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e and bytes equal recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4. Approved A1–A13 rule/reason/approval and governing diff remain above.
+- Prior report SHA-256 338e26bab7c2bfe1790144b85db617742744b1b226678230fb80241a27d014eb; preserve V-1..V-7 lineage and prior epoch unchanged.
+- Repair SHA-256 matches prior report/ledger: 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110. Durable handoff SHA-256 6d96f63786c56d0a5b6b36937431db3f372ae4270e4ccdcb324725281bf6424e; executor PaperRepairExecutor; result established committed candidate with recorded fresh command evidence, not a substitute for new review.
+- Prior product head e213acb50791fe39a0de0a4d9d599bc4e2398cc1 → repair product head 291fb34b35be496673e28f124d443b9c46ba66f4 → evidence HEAD 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0: all ancestry checks exit 0. Exactly one intervening product commit, exactly ten Authorized Files, zero unauthorized product/test paths. Intervening docs are preserved evidence; after repair code only repair-execution.md differs.
+- Preflight worktree and index CLEAN. No product/test/config/approved-plan/fast-p artifact mutation performed by controller.
+- Required environment available: Maven, Node, Python, JDK11 11.0.32.1; escalated read-only Docker info exit 0, Engine29.8.2. Original source directory exists (493 entries); baseline/runtime hashes equal prior epoch.
+- Evidence mode DURABLE_HANDOFF. Independent reviewer created after repair commit with fork_turns=none; identity recorded below after acquisition. Full master-required commands must run freshly. Human checks/sign-off remain PENDING.
+
+## Epoch 2 Reviewer Acquisition
+
+- 2026-11-02T23:18:19+08:00; attempt 1 acquired /root/paper_reprocess_aggregate_epoch2 with fork_turns=none. Identity differs from all recorded fast-p writers/verifiers, prior aggregate reviewer and PaperRepairExecutor. Exact input bundle only; review-p aggregate/master required; no inherited development or lightweight verification conversation.
+
+## Epoch 2 Reviewer Availability Events
+
+- 2026-11-02T23:48:58+08:00; epoch 2; attempt 1; reviewer /root/paper_reprocess_aggregate_epoch2 turn errored: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 3rd, 2026 1:45 AM. Product head unchanged: 291fb34b35be496673e28f124d443b9c46ba66f4. Action: RETRY same isolated reviewer, attempt 2, user-originated 继续; preserve fresh completed command receipts; no repair round or product mutation.
+
+## Epoch 2 Machine Conclusion — 2026-11-03T00:45:55+08:00
+
+- Independent review-p aggregate/master returned FAIL / DIVERGING. V-1/V-2/V-4 resolved; V-3 persistent; V-5 includes new same-severity child-sync regression; full stable lineage is in the complete appended report. Non-mandatory V-6/V-7 remain outside repair authority.
+- Required commands freshly executed by reviewer, including all prior master commands and repair commands1–14. C5 interruption lost its original exit status; original log retained and C5R captured exit0 (48/0/0/0). C10 initial exit1 retained (Trace lease lost); C10R captured exit0 with full runtime marker; cause remains an observation, not claimed repaired. Full command table/counts/receipts are preserved in report.
+- Machine tests do not waive semantic V-3/V-5 failures. Human acceptance and sign-off remain PENDING. No manual-acceptance.md or final-decision.md generated on FAIL.
+- Controller checked exact reviewed boundary, report completeness, required-command receipts, amendment authority rows, RECORD_ONLY mapping, durable repair lineage, no product edits, and DIVERGING route. Controller performed no inline product review or repair.
+- Prior epoch report byte prefix SHA-256 remains 338e26bab7c2bfe1790144b85db617742744b1b226678230fb80241a27d014eb. Appended reviewer output SHA-256: c75a97887cbc4b382d44786b8df4ccc368f5759e3f82823d9439382c5f5c08bf.
+- Evidence parent before this phase commit: 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0; final product code remains 291fb34b35be496673e28f124d443b9c46ba66f4. Only ledger.md and machine-verification.md are authorized for this evidence commit.
+- Next permitted action: human adjudication of the V-3/V-5 repair direction before a materially revised bounded repair plan. Existing executed repair is not a new approval request.
