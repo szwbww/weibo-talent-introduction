@@ -251,3 +251,4 @@
 - 2026-11-02：03新增TaskTypeCatalog直接触发既有TaskExecutionSummaryExtractorTest的固定类型集合/条数断言；批准第14文件，仅退役旧 incidental catalog数量/拷贝白名单断言并保留真实摘要/进度行为测试，不重新钉新数量。执行回执见03日志epoch3，决定A6/A7；原范围和验收不减。
 - 2026-11-02：04补入DiscoveryPaperReprocessRepository、ExpertDiscoveryService、DiscoveryVerificationWorker三个已证实必要的共享接缝，文件上限13；分别承担可恢复收据/REVIEW、原consume链逐副作用父许可与确证归属续接、本功能epoch0 dispatch/late-response围栏。原十文件无法完成I-2/I-4/I-6要求；执行者完整grep/read回执见04日志epoch1，A8/A9。无第二套写规则、不改无关普通任务语义、不减少故障验收。
 - 2026-11-02：05前置审计证明原8步详情仅private openDetail、API缺必要汇总与缺源计数、增加脚本使多处固定资源总数/全集测试失效；批准19文件例外，仅增加既有详情只读公开接缝、基于持久item/核验结果的权威只读summary/preview及直接受影响测试，严禁前端抓全部页自算业务统计、改业务writer/规则或重钉资源总数。完整grep/read回执见05日志epoch1，A10/A11；S-1..S-6逐字契约和浏览器验收不减。
+- 2026-11-02：06全量命名测试发现 `DiscoveryVerificationWorkerTest` 的7处Flyway fixture仍固定在V161，无法看到child04新增的V173表；批准06第5个文件，仅提升fixture迁移目标到V173，断言和全部验收不减。见06修正记录与ledger A12/A13。

@@ -1,13 +1,13 @@
 # Child 06 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-06-verification.md
-- Plan identity: sha256:ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791
+- Plan identity: sha256:ac6a7663526a7a5c3a74716a3be3b54db97b8afaa6b5576672d8b65f655a6bb2
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 05
-- Amendments: N/A
+- Amendments: A12/A13; fifth file only raises the existing Flyway fixture target from V161 to V173.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
@@ -16,6 +16,7 @@ Read the complete exact child plan from this worktree. Links written as absolute
 - `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`
 - `scripts/discovery_admission_probe/reconcile_paper_identity_replay.py`
 - `docs/audits/2026-11-01-discovery-30711-pdf/reprocess-acceptance-report.md`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt`
 
 No other product/test/plan files may change. An unlisted necessary file or behavior requires PLAN_CONFLICT, not an improvised fix. Original PDFs stay outside Git in a safe local directory. No release, production write, original-file deletion, Apollo requests, push, merge, history rewriting, or modifications of unrelated user changes.
 

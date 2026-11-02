@@ -54,8 +54,9 @@
 | `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | 新增迁移空库和升级验证 |
 | `scripts/discovery_admission_probe/reconcile_paper_identity_replay.py` | 增加实际重处理run与离线预期逐项比较 |
 | `docs/audits/2026-11-01-discovery-30711-pdf/reprocess-acceptance-report.md` | 执行后生成：可修数量、真实落地与偏差；不可预填 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` | 仅将Flyway fixture目标从V161提升到V173，使child04新增的`discovery_paper_reprocess_run`依赖可见；不改断言与业务行为 |
 
-共 4 个文件。未列文件禁止扩改；新增问题先记录证据并修订范围。
+共 5 个文件。未列文件禁止扩改；新增问题先记录证据并修订范围。
 
 ## 验收标准
 
@@ -86,3 +87,6 @@
 
 
 人工验收开始时才从此处导出同前缀 `-acceptance.md`；本次不生成衍生勾选文件。
+
+## 修正记录
+- 2026-11-02：06全量命名测试发现 `DiscoveryVerificationWorkerTest` 的7处Flyway fixture仍target V161，而child04的 `DiscoveryVerificationRepository.claimDue` 已引用V173新增表，导致7个BadSqlGrammar错误。经用户后续必要授权加入第5个文件，仅把fixture目标提升到V173；断言、业务行为、12目标fixture、迁移与报告验收均不减。证据见06执行日志与ledger A12/A13。
