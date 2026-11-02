@@ -1,6 +1,6 @@
 # #30711 paper reprocess — child 06 acceptance evidence
 
-生成时间：2026-11-02。执行状态：**PLAN_CONFLICT**（四份授权交付已完成；一个跨子计划的既有测试 fixture 仍红，详见第 6 节）。本文件是执行证据，不是 PASS、不是独立复核、不是发布批准。
+生成时间：2026-11-02。执行状态：**READY_FOR_VERIFICATION**（授权 fixture 修正后所有指定测试全绿；见第 6 节）。本文件是执行证据，不是 PASS、不是独立复核、不是发布批准。
 
 - Plan：`docs/plans/2026-11-01/paper-reprocess-06-verification.md`
 - Plan SHA-256：`ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791`
@@ -26,7 +26,7 @@
 | 取消 | CANCELLED；已提交 NEW=1 保留 | 见 3.3 |
 | 写故障恢复 | 失败目标恢复后 new=2；成功目标收据逐字不变 | 见 3.4 |
 | 迁移 | 空库→V173 通过；V170→V173 通过 | 48 个迁移测试全绿，见 4 |
-| 跨子计划回归 | `DiscoveryVerificationWorkerTest` 24 跑 7 错 | 未授权 fixture 修复，PLAN_CONFLICT，见 6 |
+| 跨子计划回归 | `DiscoveryVerificationWorkerTest` 24/24 通过（fixture 目标 V173） | 授权第五文件修正后全绿，见 6 |
 
 ## 1. 00 manifest 逐条对照（I-1 / I-2）
 
@@ -43,10 +43,10 @@
   com.weibo.talentintroduction.discovery.service.DiscoveryPaperIdentityReplayTool \
   /Users/lukai/.local/share/paper-reprocess-30711 \
   docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json \
-  /tmp/paper-reprocess-30711-child06-final.json
+  /tmp/paper-reprocess-30711-child06-amended-final.json
 ```
 
-结果：exit 0；337 行；`networkCalls=0`；`businessWriteServicesConstructed=0`；93.39 real / 134.54 user / 4.37 system 秒；最大 RSS 1,207,648,256 bytes；并发 1。输出 `/tmp/paper-reprocess-30711-child06-final.json`。
+结果：exit 0；337 行；`networkCalls=0`；`businessWriteServicesConstructed=0`；100.65 real / 141.53 user / 4.73 system 秒；最大 RSS 1,330,167,808 bytes；并发 1。输出 `/tmp/paper-reprocess-30711-child06-amended-final.json`。
 
 ### 1.2 逐条分类
 
@@ -56,10 +56,10 @@
 python3 scripts/discovery_admission_probe/reconcile_paper_identity_replay.py \
   --manifest docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json \
   --old-replay /tmp/paper-reprocess-30711-baseline.json \
-  --new-replay /tmp/paper-reprocess-30711-child06-final.json \
+  --new-replay /tmp/paper-reprocess-30711-child06-amended-final.json \
   --audit-directory docs/audits/2026-11-01-discovery-30711-pdf \
-  --csv /tmp/paper-reprocess-30711-child06-reconciled.csv \
-  --report /tmp/paper-reprocess-30711-child06-reconciled.md \
+  --csv /tmp/paper-reprocess-30711-child06-amended.csv \
+  --report /tmp/paper-reprocess-30711-child06-amended.md \
   --runtime-evidence /tmp/paper-reprocess-30711-child06-runtime.json
 ```
 
@@ -99,7 +99,7 @@ exit 0；输出：
 
 ### 1.5 逐条差异
 
-`/tmp/paper-reprocess-30711-child06-reconciled.csv` 与 `/tmp/paper-reprocess-30711-child06-reconciled.md` 保存 337 条逐条记录（recordId / page / emailHash / nameHash / baseline status / current status / classification / reason）。本文件附录 A 内嵌同一 337 条表，避免只看总数。
+`/tmp/paper-reprocess-30711-child06-amended.csv` 与 `/tmp/paper-reprocess-30711-child06-amended.md` 保存 337 条逐条记录（recordId / page / emailHash / nameHash / baseline status / current status / classification / reason）。本文件附录 A 内嵌同一 337 条表，避免只看总数。
 
 ### 1.6 实际重处理 run 对照（负向控制，不是生产结论）
 
@@ -111,8 +111,8 @@ python3 scripts/discovery_admission_probe/reconcile_paper_identity_replay.py \
   --old-replay /tmp/paper-reprocess-30711-baseline.json \
   --reprocess-run target/paper-reprocess-e2e/run-30714-FIRST.json \
   --audit-directory docs/audits/2026-11-01-discovery-30711-pdf \
-  --csv /tmp/paper-reprocess-30711-child06-run-compare.csv \
-  --report /tmp/paper-reprocess-30711-child06-run-compare.md \
+  --csv /tmp/paper-reprocess-30711-child06-amended-run-compare.csv \
+  --report /tmp/paper-reprocess-30711-child06-amended-run-compare.md \
   --runtime-evidence /tmp/paper-reprocess-30711-child06-runtime.json
 ```
 
@@ -230,19 +230,19 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test \
   -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -DtrimStackTrace=false -Dstyle.color=never
 ```
 
-exit 0；48 tests，0 failures，0 errors，0 skipped；耗时 547.467 s。新增两用例在 Surefire XML 中按名称确认执行。
+exit 0；48 tests，0 failures，0 errors，0 skipped；耗时 594.681 s。新增两用例在 Surefire XML 中按名称确认执行。
 
 ## 5. 命令与运行证据
 
 | # | 命令 | 结果 |
 |---:|---|---|
-| 1 | `mvn test -Dtest=DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | exit 0；2 tests，0 failures/errors/skipped；63.636 s |
-| 2 | `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | exit 0；48 tests，全绿；547.467 s |
-| 3 | 00–05 指定 Kotlin 测试合并命令（15 个类，含 `-DmysqlIt=true -DpaperReprocessIt=true`） | exit 1；203 tests，0 failures，**7 errors**，1 skipped；仅 `DiscoveryVerificationWorkerTest` 7 错，其他 14 类全绿；见第 6 节 |
-| 4 | 单独 `DiscoveryVerificationWorkerTest` | exit 1；24 tests，7 errors；可复现，见第 6 节 |
+| 1 | `mvn test -Dtest=DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | exit 0；2 tests，0 failures/errors/skipped；62.252 s |
+| 2 | `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | exit 0；48 tests，全绿；594.681 s |
+| 3 | 00–05 指定 Kotlin 测试合并命令（15 个类，含 `-DmysqlIt=true -DpaperReprocessIt=true`） | exit 0；203 tests，0 failures，0 errors，1 skipped；15 类全绿 |
+| 4 | 单独 `DiscoveryVerificationWorkerTest` | exit 0；24 tests，0 failures/errors；fixture 目标升至 V173 后全绿 |
 | 5 | `mvn clean package -DskipTests` | exit 0；WAR 生成 `target/weibo-talent-introduction-1.0.0-SNAPSHOT.war`；Maven 绑定 JS 2035 tests 全绿 |
-| 6 | 独立 JVM runtime smoke `DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke` | exit 0；`PAPER06_RUNTIME_OK realMySQL=true loopbackEsCAS=true realServices=true paidCalls=0 productionWrites=0`；65.18 s |
-| 7 | 00 manifest 原始字节 replay | exit 0；337 行、network 0、93.39 s |
+| 6 | 独立 JVM runtime smoke `DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke` | exit 0；`PAPER06_RUNTIME_OK realMySQL=true loopbackEsCAS=true realServices=true paidCalls=0 productionWrites=0`；71.08 s |
+| 7 | 00 manifest 原始字节 replay | exit 0；337 行、network 0、100.65 s |
 | 8 | 00 manifest 逐条 reconciliation | exit 0；51/286/0/0/0 |
 | 9 | 合成 run 对 manifest 负向控制 | exit 0；14 extras、336 expected missing、1 条生产组合未覆盖 |
 
@@ -250,33 +250,26 @@ exit 0；48 tests，0 failures，0 errors，0 skipped；耗时 547.467 s。新�
 
 `DiscoveryPaperIdentityReplayToolTest, SourceAuthorEmailResolverTest, DiscoveryPaperLayoutRegressionTest, DiscoveryPaperAnalysisServiceTest, RetainedPaperIdentityServiceTest, DiscoveryVerificationWorkerTest, DiscoveryVerificationCommitServiceTest, DiscoveryVerificationQueryServiceTest, DiscoveryPaperReprocessServiceTest, DiscoveryPaperReprocessRepositoryIntegrationTest, TaskExecutionSummaryExtractorTest, DiscoveryPaperReprocessApplyServiceTest, DiscoveryPaperBackfillServiceTest, DiscoveryRecheckServiceTest, DiscoveryVerificationIntegrationTest`。
 
-除 WorkerTest 外的逐类结果（Surefire）：RepositoryIntegration 12、AnalysisService 10、ReprocessService 6、VerificationIntegration 36、Backfill 4、Query 22、Commit 7、SourceAuthorEmailResolver 30、Retained 7、ReplayTool 6、Recheck 10、LayoutRegression 8（1 skipped）、Apply 2、TaskSummary 19；全部 0 failures/errors。
+逐类结果（Surefire）：RepositoryIntegration 12、AnalysisService 10、ReprocessService 6、VerificationIntegration 36、Backfill 4、Query 22、Commit 7、Worker 24、SourceAuthorEmailResolver 30、Retained 7、ReplayTool 6、Recheck 10、LayoutRegression 8（1 skipped）、Apply 2、TaskSummary 19；全部 0 failures/errors。
 
-## 6. 跨子计划阻断：DiscoveryVerificationWorkerTest fixture 未到 V173
+## 6. 授权 fixture 修正与结果（A12 / A13）
 
-现象（可复现，单独跑同一结果）：
+初始全量命名测试发现 `DiscoveryVerificationWorkerTest` 的 7 处 fixture 仍硬编码 `Flyway ... target("161")`，而 child 04 的 `DiscoveryVerificationRepository.claimDue` 已引用 V173 的 `discovery_paper_reprocess_run`，因此初始复跑为 24 tests / 7 errors：
 
 ```text
-Tests run: 24, Failures: 0, Errors: 7, Skipped: 0
 BadSqlGrammarException: Table '<db>.discovery_paper_reprocess_run' doesn't exist
   at DiscoveryVerificationRepository.claimDue(DiscoveryVerificationRepository.kt:977)
 ```
 
-失败用例：
+控制器按 A12/A13 增加第五个授权文件 `DiscoveryVerificationWorkerTest.kt`，仅把 7 处 fixture 目标改为 `target("173")`（行 `:43`、`:214`、`:398`、`:659`、`:760`、`:856`、`:1050`）。未改断言、测试数据、生产 SQL 或业务行为。
 
-1. `interrupted paper cache follower keeps lease resumable and owner completes`
-2. `child07 real pipeline traces frozen REUSE refresh cancellation and projection only retry`
-3. `runtime search trace survives interrupted pages and reuses only same run successes`
-4. `frozen paid access gates cache and permits while preserving legacy and channel accounting`
-5. `runtime credit recovery smoke restarts resumes remaining details and commits through normal gate`
-6. `mock HTTP failures persist atomically in MySQL and appear in item details once per request`
-7. `runtime version three registration worker SQL gate query smoke and frozen legacy runs`
+修正后 fresh 结果：
 
-根因：该测试文件在多处硬编码 `Flyway.configure()...target("161")`（例如 `:43`、`:214`、`:398`、`:659`、`:760`、`:856`、`:1050`）。child 04 的 `DiscoveryVerificationRepository.claimDue` 已引用 V173 的 `discovery_paper_reprocess_run`，因此这些 V161 fixture 必然缺表。生产迁移链包含 V173，空库/升级用例已通过；这是**测试 fixture 过期**，不是生产 schema 缺陷。
+- 单独 `DiscoveryVerificationWorkerTest`：exit 0；24 tests，0 failures/errors/skipped；194.023 s。
+- 合并 15 类：exit 0；203 tests，0 failures/errors，1 skipped；WorkerTest 24/24 通过，其他 14 类同前全绿。
+- 生产迁移链本已包含 V173；空库/V170→V173 用例继续通过。该修正只让测试 fixture 与产品 schema 对齐。
 
-为何未修：`DiscoveryVerificationWorkerTest.kt` 不在 child 06 的四个授权文件内；修改它属于新授权范围。最小修复需要在测试内把相关 fixture 迁移目标提升到 V173（并核对既有断言/清理），或提供等价 V173 schema 初始化；这需要控制器修订范围后才能实施。未伪造 PASS，也未改产品 SQL 绕过。
-
-影响：第 3 项“所有 child 计划点名的 Kotlin 测试”未全绿，因此本次执行结论为 **PLAN_CONFLICT**，不是 READY_FOR_VERIFICATION。
+因此第 5 节第 3 项不再是阻断；当前无已知 in-scope 失败。`READY_FOR_VERIFICATION` 仍不是独立复核或发布批准。
 
 ## 7. 诚实边界 / NOT_RUN / SOURCE_MISSING
 
@@ -291,7 +284,7 @@ BadSqlGrammarException: Table '<db>.discovery_paper_reprocess_run' doesn't exist
 
 ## 附录 A：337 条逐条差异
 
-`/tmp/paper-reprocess-30711-child06-reconciled.csv` 为机器可读原件；下表为同内容摘要。`baseline` 是 00 冻结基线状态，`current` 是本轮 replay 状态，`classification` 是逐条判定。
+`/tmp/paper-reprocess-30711-child06-amended.csv` 为机器可读原件；下表为同内容摘要。`baseline` 是 00 冻结基线状态，`current` 是本轮 replay 状态，`classification` 是逐条判定。
 
 | record | page | emailHash | nameHash | baseline | current | classification | reason |
 |---:|---:|---|---|---|---|---|---|
