@@ -1,6 +1,6 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
-- Status: MACHINE_BLOCKED
+- Status: REPAIR_PLAN_READY
 - Review epoch: 2
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e)
 - Governing master identity: sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e; recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4
@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/paper-reprocess-master/human-review-handoff.md (sha256 ee33dc68d01e4682dfec0fc0edd3607b42587832811c08d453414371cc2ab155)
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
 - Final code head: 291fb34b35be496673e28f124d443b9c46ba66f4
-- Evidence parent before next commit: 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0
-- Previous evidence commit: 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0
+- Evidence parent before next commit: 3ab2e86c80993929350d1dc40c859fed1a24adbc
+- Previous evidence commit: 3ab2e86c80993929350d1dc40c859fed1a24adbc
 - Branch: fast/paper-reprocess-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Worktree resolution: EXPLICIT
@@ -23,14 +23,14 @@
 - Reviewer attempt: 2
 - Machine result: FAIL
 - Machine report epoch: machine-verification.md — Epoch 2 (Epoch 1 retained unchanged)
-- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110; prior executed artifact unchanged; no new draft)
-- Repair evidence mode: DURABLE_HANDOFF
-- Repair approval source: repair-execution.md records explicit human $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md
-- Repair executor: PaperRepairExecutor
-- Repair code head: 291fb34b35be496673e28f124d443b9c46ba66f4
+- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa; replacement draft after human adjudication)
+- Repair evidence mode: N/A (new draft not executed; prior DURABLE_HANDOFF preserved in repair-execution.md)
+- Repair approval source: NOT_APPROVED for current draft; human “确认 继续” authorized different-method planning only. Prior $execute-p approval applies exclusively to old sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110.
+- Repair executor: N/A for current draft; prior PaperRepairExecutor recorded in preserved execution handoff
+- Repair code head: N/A for current draft; retained product head 291fb34b35be496673e28f124d443b9c46ba66f4
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human adjudication required for FAIL/DIVERGING: V-3 persists (wrong target email accepted); V-5 has a new same-severity regression (paper-owned recheck child projection-only sync returns 404). No new repair plan or execution authorized.
+- Blocker/next action: Approve the current ca1e7a97 repair via explicit human $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md. Only its four files/two tasks, required checks, one local product commit and durable handoff evidence commit are covered; resume aggregate review in the same chat when requested.
 
 ## Preflight Evidence
 
@@ -161,3 +161,68 @@
 - Prior epoch report byte prefix SHA-256 remains 338e26bab7c2bfe1790144b85db617742744b1b226678230fb80241a27d014eb. Appended reviewer output SHA-256: c75a97887cbc4b382d44786b8df4ccc368f5759e3f82823d9439382c5f5c08bf.
 - Evidence parent before this phase commit: 96da7863acdb8dd9a644048b8f9c99a8aa2aa7e0; final product code remains 291fb34b35be496673e28f124d443b9c46ba66f4. Only ledger.md and machine-verification.md are authorized for this evidence commit.
 - Next permitted action: human adjudication of the V-3/V-5 repair direction before a materially revised bounded repair plan. Existing executed repair is not a new approval request.
+
+## Human Adjudication After Epoch 2 — 2026-11-03T01:03:13+08:00
+
+- Human-originated decision: “确认 继续”.
+- Exact preceding proposal accepted: “保留现有修复，仅针对 V-3、V-5 重新设计修复方案”.
+- Scope: preserve committed product 291fb34b35be496673e28f124d443b9c46ba66f4, resolved V-1/V-2/V-4 and all original requirements; approve a materially different bounded repair design for V-3 actual-email validation and V-5 ordinary/child routing only.
+- This adjudicates the repair-p DIVERGING gate for planning; epoch 2 FAIL/DIVERGING remains immutable. It does not approve the yet-unwritten replacement draft, product/test modifications, repair execution, integration or production activity.
+- Planner: existing independent reviewer /root/paper_reprocess_aggregate_epoch2 applies repair-p to the exact existing repair artifact, with no new aggregate machine review or repeated long verification commands. Controller remains orchestration-only.
+- Prior repair identity: sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110, retained in committed history at 3ab2e86c80993929350d1dc40c859fed1a24adbc. Final new artifact identity and file/task scope will be recorded after self-review.
+
+## Replacement Repair Planning After Human Adjudication — 2026-11-03T01:12:09+08:00
+
+- Status: REPAIR_PLAN_READY. No new review epoch or machine verdict: epoch 2 FAIL/DIVERGING remains immutable; the human adjudication above permitted a materially different bounded repair design.
+- Planner: /root/paper_reprocess_aggregate_epoch2, using repair-p, same independent reviewer; no new aggregate review, long tests or browser acceptance performed during planning.
+- Current repair identity: sha256 ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa. Prior executed repair sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110 retained at Git 3ab2e86c80993929350d1dc40c859fed1a24adbc:docs/plans/fix/paper-reprocess-master/repair.md.
+- Scope: two tasks, four existing product/test files. V-3 validates actual target email against immutable manifest fingerprints; V-5 classifies stored ordinary/recheck type before applying its existing guard. Existing repairs and closed/excluded decisions remain in force.
+- Controller static checks: new SHA matches planner; exact four paths exist inside selected worktree; exactly R-1/R-2 and V-3/V-5 in scope. All thirteen executable verification commands compare equal to prior gate after only resolved Maven path and fresh output substitution; browser gate 14 retained. No unresolved path placeholders. Concrete product/evidence commit subjects and exact one-approval handoff present.
+- Master SHA, full machine report SHA 570fd89fa1e2e3bd05ee25c561531c45cb29c1b0539c9adc64c966bc47b26442, and prior repair-execution SHA all unchanged. Product HEAD remains 291fb34b35be496673e28f124d443b9c46ba66f4; machine result FAIL and manual acceptance PENDING remain unchanged.
+- This planning phase authorizes only this replacement repair.md and corresponding ledger evidence commit. No product/test edit, repair execution, integration or production activity occurred. New draft execution approval remains pending.
+- Evidence parent before this phase commit: 3ab2e86c80993929350d1dc40c859fed1a24adbc. Commit only the exact repair.md and review ledger; report actual resulting SHA after commit, without a self-referential follow-up.
+
+### Complete Planner Return
+
+## Repair Planning Result: DRAFT_READY
+
+Baseline：[master](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/2026-11-01/paper-reprocess-master.md)
+Verification：epoch2 **FAIL / DIVERGING**；人类“确认 继续”批准保留291产品、重新规划。原审查结论不变。
+Artifact：[repair.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md)
+状态：**DRAFT — HUMAN APPROVAL REQUIRED**
+
+新 SHA-256：
+
+`ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa`
+
+### Included Findings
+
+**4个既有文件，2个任务：**
+
+- **V-3**：实际target邮箱按既有规范化及指纹规则，与不可变manifest交叉校验；错误、缺失或冲突为INVALID。保留合法flat replay及honest absence。
+- **V-5**：先分ordinary/recheck类型，再复用各自原guard；保留epoch0归属限制、合法revision0及projection-only零外呼。
+
+### Excluded Findings
+
+V-1/V-2/V-4维持RESOLVED；仅保留回归。V-6/V-7、O-E2-01及全部既有排除决定保留，不纳入实施。
+
+### 自审证据
+
+- 原稿SHA/Git位置、291产品基线、人类裁决上下文均已记录。
+- 14项必需验证保留；1–13命令逐项比对一致，仅解析Maven路径并改用新临时输出目录。
+- one-approval交接含真实绝对路径、具体产品及证据commit subjects。
+- `git diff --check`通过；index空、HEAD仍`3ab2e86`。
+- 本agent仅改原repair.md；另一个diff为控制器ledger。master/report哈希未变。
+- 未运行测试、浏览器或总审；未stage/commit。
+
+### Required Human Decision
+
+批准并实施当前稿需明确发送：
+
+```text
+$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md
+```
+
+依据[repair-p](/Users/lukai/.agents/skills/repair-p/SKILL.md)：“Execution is prohibited until the human explicitly approves this plan.”
+
+No implementation was performed.
