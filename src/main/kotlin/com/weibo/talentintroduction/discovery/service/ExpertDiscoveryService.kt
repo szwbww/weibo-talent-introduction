@@ -2069,11 +2069,15 @@ class ExpertDiscoveryService(
                 promoted++
             }
 
-            if (paperEffects?.path("PERSON_ATTEMPTED")?.asBoolean() != true) {
+            val personReceipt = verification.archivedPaper?.target?.result?.path("personRegistration")
+            val personRetryable = if (personReceipt?.has("retryable") == true) personReceipt.path("retryable").asBoolean()
+                else verification.archivedPaper?.target?.result?.path("consumeOutcome")?.path("registrationFailed")?.asBoolean() == true
+            if (paperEffects?.path("PERSON_ATTEMPTED")?.asBoolean() != true || personRetryable) {
                 verificationRegistration?.requirePaperPermission(verification)
-                // Resume only the missing original-chain action; successful receipts are immutable evidence.
-                personCounts.fold(registerPerson(sourceName, identity.esDocId, sourceStats))
-                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "PERSON_ATTEMPTED")
+                // Only completed/non-retryable original actions suppress explicit retry, including legacy receipts.
+                val personResult = registerPerson(sourceName, identity.esDocId, sourceStats)
+                personCounts.fold(personResult)
+                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "PERSON_ATTEMPTED", personResult)
                 if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_PERSON")
             }
         }

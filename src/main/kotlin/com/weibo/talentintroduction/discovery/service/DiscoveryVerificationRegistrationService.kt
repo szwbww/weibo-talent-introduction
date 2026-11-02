@@ -150,7 +150,7 @@ class DiscoveryVerificationRegistrationService(
     }
 
     internal fun recordPaperEffect(context: DiscoveryVerificationExecution, registration: DiscoveryRegistration,
-        docId: String, effect: String) {
+        docId: String, effect: String, personResult: DiscoveryPersonRefreshResult? = null) {
         val archived = context.archivedPaper ?: return
         val parent = archived.parent ?: return
         val target = requireNotNull(archived.target)
@@ -162,7 +162,12 @@ class DiscoveryVerificationRegistrationService(
             .deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
         result.put("docId", docId).put("verificationItemId", item.id).put("verificationRunId", item.ownerExecutionId)
         val effects = result.with("effects")
-        effects.put(effect, true)
+        effects.put(effect, personResult?.retryable != true)
+        if (personResult != null) {
+            result.set<com.fasterxml.jackson.databind.JsonNode>("personRegistration", mapper.valueToTree(
+                linkedMapOf("status" to personResult.status.name, "reason" to personResult.reason,
+                    "retryable" to personResult.retryable)))
+        }
         if (effect == "RAW") {
             result.put("actualNew", 1).put("targetOutcome", "NEW")
             result.set<com.fasterxml.jackson.databind.JsonNode>("after",

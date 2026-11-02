@@ -70,6 +70,7 @@ class DiscoveryVerificationIntegrationTest {
                     DiscoveryVerificationIntegrationTest().paperBatchGroups()
                     DiscoveryVerificationIntegrationTest().paperBatchIdentityPartial()
                     DiscoveryVerificationIntegrationTest().paperBatchExplicitApplyRetry()
+                    DiscoveryVerificationIntegrationTest().paperBatchPersonRegistrationRetry()
                     DiscoveryVerificationIntegrationTest().paperBatchParkedTick()
                     DiscoveryVerificationIntegrationTest().paperBatchLockedPreparation()
                     DiscoveryVerificationIntegrationTest().paperBatchDelayedProjection()
@@ -657,6 +658,7 @@ class DiscoveryVerificationIntegrationTest {
         var providerCalls = 0
         var failCandidate = false
         var failRaw = false
+        @Volatile var failPersonSourceDoc: String? = null
         var beforeUpdate: (() -> Unit)? = null
         var beforeProjection: (() -> Unit)? = null
         val esExecutor = Executors.newCachedThreadPool()
@@ -709,7 +711,8 @@ class DiscoveryVerificationIntegrationTest {
                     val current = docs.getValue(index)[id]
                     when (exchange.requestMethod) {
                         "GET", "HEAD" -> {
-                            if (current == null) { status = 404; answer = mapOf("found" to false) }
+                            if (id == failPersonSourceDoc) { status = 503; answer = emptyMap<String, Any>() }
+                            else if (current == null) { status = 404; answer = mapOf("found" to false) }
                             else answer = mapOf("_source" to current, "_seq_no" to versions.getOrPut(key) { 1L }, "_primary_term" to 1)
                         }
                         "POST" -> {
@@ -1183,9 +1186,11 @@ class DiscoveryVerificationIntegrationTest {
             return ProxyFactory(value).apply { isProxyTargetClass = true
                 addAdvice(TransactionInterceptor(manager, AnnotationTransactionAttributeSource())) }.proxy as T
         }
-        val persons = DiscoveryPersonRegistrationService(r.writer,
+        val persons = Mockito.spy(DiscoveryPersonRegistrationService(r.writer,
             DiscoveryPersonService(tx(DiscoveryPersonRepository(jdbc)), r.writer, r.contacts, r.aliases, f.clock),
-            tx(DiscoveryPersonRepository(jdbc)), DiscoveryPersonFeatureGate(true))
+            tx(DiscoveryPersonRepository(jdbc)), DiscoveryPersonFeatureGate(true)))
+        var personFault: String? = null
+        val personResults = mutableListOf<Triple<String, String, DiscoveryPersonRefreshResult>>()
         val providerUris = mutableListOf<String>()
         var beforeProviderResponse: (() -> Unit)? = null
         val http = RestTemplate().apply { interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { request, _, _ ->
@@ -1223,6 +1228,14 @@ class DiscoveryVerificationIntegrationTest {
         val freshEmail = "ada.paper04@fixture.edu"
         val freshDoc = ExpertIdGenerator.generate(null, freshEmail)
         init {
+            Mockito.doAnswer { call ->
+                val source = call.getArgument<String>(0)
+                val docId = call.getArgument<String>(1)
+                if (docId == freshDoc && personFault == "STALE") r.failPersonSourceDoc = docId
+                try {
+                    (call.callRealMethod() as DiscoveryPersonRefreshResult).also { personResults += Triple(source, docId, it) }
+                } finally { r.failPersonSourceDoc = null }
+            }.`when`(persons).refresh(Mockito.anyString(), Mockito.anyString())
             jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,finished_at)
                 VALUES (30711,'EXPERT_DISCOVERY','MANUAL','SUCCESS',NOW(),NOW())""")
             originalTask = jdbc.queryForMap("SELECT * FROM task_execution WHERE id=30711")
@@ -1383,6 +1396,72 @@ class DiscoveryVerificationIntegrationTest {
                 check(p.f.repository.findItem(oldItem.id) == oldItem)
                 check(jdbc.queryForList("SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id", oldItem.id) == oldAttempts)
                 println("PAPER04_EXPLICIT_RETRY caughtFault=$fault closedInputReopened=true beforeRetained=true committedOldReplay=0 rawWrites=1 ordinaryItems=1")
+            }
+        }
+    }
+
+    @Test fun paperBatchPersonRegistrationRetry() {
+        for (fault in listOf("FAILED", "STALE")) {
+            clean()
+            PaperBatchRuntime().use { p ->
+                p.personFault = fault
+                if (fault == "FAILED") jdbc.execute("""CREATE TRIGGER fail_person_registration BEFORE INSERT ON discovery_person_member
+                    FOR EACH ROW BEGIN IF NEW.expert_doc_id='${p.freshDoc}' THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='transient person registration failure'; END IF; END""")
+                val parent = p.create()
+                p.pump(parent.executionId, ReprocessState.COMPLETED_WITH_ERRORS)
+                val failed = p.target(parent.executionId, p.freshEmail)
+                val failedResult = failed.result!!
+                check(failedResult.path("applicationError").asBoolean() && !failedResult.path("applied").asBoolean())
+                check(failedResult.path("consumeOutcome").path("registrationFailed").asBoolean())
+                check(failedResult.path("personRegistration").path("status").asText() == fault)
+                check(failedResult.path("personRegistration").path("reason").asText() ==
+                    if (fault == "FAILED") "REGISTRATION_EXCEPTION" else "SOURCE_UNAVAILABLE")
+                check(failedResult.path("personRegistration").path("retryable").asBoolean())
+                check(!failedResult.path("effects").path("PERSON_ATTEMPTED").asBoolean())
+                check(listOf("RAW", "ENRICHMENT_ENQUEUED", "ACTIVATED").all { failedResult.path("effects").path(it).asBoolean() })
+                check(jdbc.queryForObject("SELECT COUNT(*) FROM discovery_person_member WHERE expert_doc_id=?",
+                    Long::class.java, p.freshDoc) == 0L)
+                check(p.personResults.filter { it.second == p.freshDoc }.map { it.third.status.name } == listOf(fault))
+                val items = jdbc.queryForList("SELECT * FROM discovery_verification_item ORDER BY id")
+                val attempts = jdbc.queryForList("SELECT * FROM discovery_verification_attempt ORDER BY id")
+                val admissions = jdbc.queryForList("SELECT * FROM expert_discovery_admission ORDER BY expert_doc_id")
+                check(p.f.admissions.findAdmission(p.freshDoc)?.decision == "AUTO_PASSED")
+                val enrichment = jdbc.queryForList("SELECT * FROM expert_academic_enrichment_job ORDER BY id")
+                val raw = p.f.mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(p.r.docs)
+                val providers = p.providerUris.toList()
+                val before = failedResult.path("before").deepCopy<com.fasterxml.jackson.databind.JsonNode>()
+                check(p.f.repository.findRun(parent.executionId)!!.inputClosed)
+                jdbc.execute("DROP TRIGGER IF EXISTS fail_person_registration")
+                p.personFault = null
+                p.service.retry(parent.executionId, p.repository.find(parent.executionId)!!.revision)
+                p.pump(parent.executionId)
+                p.verifyEffects(parent.executionId)
+                val retried = p.target(parent.executionId, p.freshEmail)
+                val result = retried.result!!
+                check(result.path("applied").asBoolean() && !result.path("applicationError").asBoolean())
+                check(!result.path("consumeOutcome").path("registrationFailed").asBoolean())
+                check(result.path("before") == before && retried.input == failed.input)
+                check(result.path("paperRefs") == failedResult.path("paperRefs"))
+                check(result.path("proposalHash") == failedResult.path("proposalHash"))
+                check(listOf("RAW", "ENRICHMENT_ENQUEUED", "ACTIVATED", "PERSON_ATTEMPTED").all { result.path("effects").path(it).asBoolean() })
+                val calls = p.personResults.filter { it.second == p.freshDoc }
+                check(calls.size == 2 && calls.map { it.first }.distinct() == listOf("CROSSREF"))
+                val success = calls.last().third
+                check(success.status in setOf(DiscoveryPersonRefreshStatus.CREATED, DiscoveryPersonRefreshStatus.ATTACHED))
+                check(result.path("personRegistration").path("status").asText() == success.status.name)
+                check(!result.path("personRegistration").path("retryable").asBoolean())
+                val member = jdbc.queryForMap("SELECT * FROM discovery_person_member WHERE expert_doc_id=?", p.freshDoc)
+                check(member["person_id"].toString() == success.reason)
+                check(result.path("personRegistration").path("reason").asText() == member["person_id"].toString())
+                check(jdbc.queryForObject("SELECT COUNT(*) FROM discovery_person WHERE person_id=?", Long::class.java, success.reason) == 1L)
+                check(items == jdbc.queryForList("SELECT * FROM discovery_verification_item ORDER BY id"))
+                check(attempts == jdbc.queryForList("SELECT * FROM discovery_verification_attempt ORDER BY id"))
+                check(admissions == jdbc.queryForList("SELECT * FROM expert_discovery_admission ORDER BY expert_doc_id"))
+                check(enrichment == jdbc.queryForList("SELECT * FROM expert_academic_enrichment_job ORDER BY id"))
+                check(raw == p.f.mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(p.r.docs))
+                check(providers == p.providerUris && p.r.rawWrites == 1)
+                println("PAPER04_PERSON_RETRY fault=$fault originalActionCalls=2 actualPersonMemberReceipt=true beforeSourceRetained=true rawWrites=1 enrichmentReplay=0 qualificationReplay=0 providerDelta=0 admissionRetained=true")
             }
         }
     }
