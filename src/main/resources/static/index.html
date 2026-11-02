@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261031-mailbox-polish">
-    <link rel="stylesheet" href="expert-materials.css?v=20261031-mailbox-polish">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261031-mailbox-polish">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261031-mailbox-polish">
-    <link rel="stylesheet" href="world-clock.css?v=20261031-mailbox-polish">
-<link rel="stylesheet" href="meeting-records.css?v=20261031-mailbox-polish">
-<link rel="stylesheet" href="contact-details.css?v=20261031-mailbox-polish">
+    <link rel="stylesheet" href="styles.css?v=20261102-paper-reprocess">
+    <link rel="stylesheet" href="expert-materials.css?v=20261102-paper-reprocess">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261102-paper-reprocess">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261102-paper-reprocess">
+    <link rel="stylesheet" href="world-clock.css?v=20261102-paper-reprocess">
+<link rel="stylesheet" href="meeting-records.css?v=20261102-paper-reprocess">
+<link rel="stylesheet" href="contact-details.css?v=20261102-paper-reprocess">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1354,6 +1354,22 @@
     <label>保护状态<select data-dp="protected"><option value="">全部</option><option value="true">已保护</option><option value="false">未保护</option></select></label>
     <label>解析对照<select data-dp="gain"><option value="">全部</option><option value="true">有新增关联</option></select></label>
   </div>
+<div class="rp-batch" data-rp="batchBar">
+  <div><strong>重新处理整个采集任务</strong><p data-rp="scopeText">请选择一个执行任务</p><p class="rp-muted">覆盖本任务全部页；包含当初未建档的作者。其他筛选和勾选不缩小处理范围。</p></div>
+  <button class="button primary" type="button" data-rp-action="open" disabled>重新解析并补录本批</button>
+</div>
+<!-- S-3: batchBar 之后；没有记录则 hidden -->
+<section class="rp-log" data-rp="runPanel" aria-label="论文重新处理记录" hidden>
+  <div class="rp-log-head"><div><strong data-rp="runTitle"></strong><small data-rp="runScope"></small></div><div class="dp-actions"><span class="dp-badge" data-rp="runState"></span><button class="dp-link" type="button" data-rp-action="cancel" hidden>取消任务</button><button class="dp-link" type="button" data-rp-action="retry" hidden>重试未完成项</button><button class="dp-link" type="button" data-rp-action="history">历史记录</button></div></div>
+  <div class="rp-stats"><div><span>本批论文</span><strong data-rp="papersTotal">—</strong></div><div><span>已处理论文</span><strong data-rp="papersProcessed">—</strong></div><div><span>新增档案</span><strong data-rp="newRecords">—</strong></div><div><span>补齐已有档案</span><strong data-rp="repairedRecords">—</strong></div><div><span>实际准入</span><strong data-rp="admitted">—</strong></div><div><span>待核验档案</span><strong class="rp-orange" data-rp="pendingVerification">—</strong></div></div>
+  <div class="rp-summary" role="status" aria-live="polite" data-rp="summary"></div>
+  <div class="rp-summary"><progress class="dp-meter" data-rp="progress" aria-label="本批论文处理进度" max="1" value="0"></progress><span data-rp="phase"></span></div>
+  <div class="rp-tabs" role="tablist" aria-label="处理结果维度"><button class="dp-link" type="button" role="tab" aria-selected="true" aria-controls="rpPaperResults" id="rpPaperTab" data-rp-action="papers">论文记录</button><button class="dp-link" type="button" role="tab" aria-selected="false" aria-controls="rpTargetResults" id="rpTargetTab" data-rp-action="targets" tabindex="-1">档案记录</button></div>
+  <div id="rpPaperResults" class="rp-log-wrap" role="tabpanel" aria-labelledby="rpPaperTab"><table><thead><tr><th>论文 / 原执行</th><th>首次解析</th><th>本次解析</th><th>变化 / 原因</th><th>步骤</th><th>操作</th></tr></thead><tbody data-rp="paperRows"></tbody></table></div>
+  <div id="rpTargetResults" class="rp-log-wrap" role="tabpanel" aria-labelledby="rpTargetTab" hidden><table><thead><tr><th>姓名 / 邮箱</th><th>档案变化</th><th>核验结论</th><th>卡住步骤 / 原因</th><th>操作</th></tr></thead><tbody data-rp="targetRows"></tbody></table></div>
+  <footer class="rp-pager"><button class="button secondary small" type="button" data-rp-action="previous" disabled>上一页</button><span data-rp="pageInfo"></span><button class="button secondary small" type="button" data-rp-action="next" disabled>下一页</button></footer>
+  <div class="dp-error" role="alert" data-rp="error" hidden></div>
+</section>
   <div class="dp-selection"><span data-dp="selection">已选 0 篇</span><div class="dp-actions"><button class="button secondary small" type="button" data-dp-action="protect" disabled>批量保护</button><button class="button secondary small" type="button" data-dp-action="unprotect" disabled>批量取消保护</button><button class="button danger small" type="button" data-dp-action="delete" disabled>批量删除原文</button></div></div>
   <div class="dp-table-wrap"><table class="dp-table"><thead><tr><th><input type="checkbox" data-dp="selectPage" aria-label="选择本页论文"></th><th>论文 / 原文状态</th><th>来源 / 大小</th><th>执行记录</th><th>邮箱 / 姓名关联</th><th>职称 / 学位证据</th><th>操作</th></tr></thead><tbody data-dp="rows"></tbody></table></div>
   <div class="dp-footer"><span data-dp="listInfo">正在加载…</span><div class="dp-actions"><button class="button secondary small" type="button" data-dp-action="previous" disabled>上一页</button><span data-dp="pageInfo">第 1 页</span><button class="button secondary small" type="button" data-dp-action="next" disabled>下一页</button></div></div>
@@ -1371,6 +1387,19 @@
 </dialog>
 <dialog id="discoveryPaperSettings" class="dp-dialog dp-confirm" aria-labelledby="dpSettingsTitle"><div class="dp-dialog-head"><h3 id="dpSettingsTitle">论文原文留存设置</h3><button class="button small" type="button" data-dp-action="close-settings" aria-label="关闭设置">×</button></div><form data-dp="settingsForm"><div class="dp-dialog-body"><label class="dp-check"><input type="checkbox" data-dp="enabled">保存实际下载的完整论文原文</label><label class="dp-setting-field">原文库上限（GiB）<input type="number" min="1" max="1024" step="1" required data-dp="maxGiB"></label><label class="dp-setting-field">磁盘最低可用空间（GiB）<input type="number" min="1" max="1024" step="1" required data-dp="minFreeGiB"></label><p class="dp-warning">达到阈值会阻断新的全文下载，不会自动删除已有原文。原有单文件下载限制仍有效。</p><div class="dp-error" role="alert" data-dp="settingsError" hidden></div></div><div class="dp-dialog-foot"><button class="button secondary" type="button" data-dp-action="close-settings">取消</button><button class="button primary" type="submit">保存设置</button></div></form></dialog>
 <dialog id="discoveryPaperDelete" class="dp-dialog dp-confirm" aria-labelledby="dpDeleteTitle"><div class="dp-dialog-head"><h3 id="dpDeleteTitle">确认删除论文原文</h3><button class="button small" type="button" data-dp-action="close-delete" aria-label="关闭删除确认">×</button></div><div class="dp-dialog-body"><div class="dp-delete-metrics"><div><span>可删除文件</span><strong data-dp="deleteFiles">0</strong></div><div><span>文件逻辑字节</span><strong data-dp="deleteBytes">0 B</strong></div></div><p data-dp="deleteSkipped"></p><p class="dp-warning">保护文件和仍被未选记录引用的文件会跳过。论文元数据、解析记录和专家准入结果保留。</p><div class="dp-error" role="alert" data-dp="deleteError" hidden></div></div><div class="dp-dialog-foot"><button class="button secondary" type="button" data-dp-action="close-delete">取消</button><button class="button danger" type="button" data-dp-action="confirm-delete" disabled>确认删除原文</button></div></dialog>
+<!-- S-2: 与现有 discoveryPaperDelete 同级，在 taskProgressModal 内 -->
+<dialog id="paperReprocessConfirm" class="dp-dialog rp-dialog" aria-labelledby="rpConfirmTitle">
+  <div class="dp-dialog-head"><div><h3 id="rpConfirmTitle">重新解析并补录本批</h3><p class="dp-muted">使用最新规则，处理此任务全部留存原文。</p></div><button class="button small" type="button" data-rp-action="close-confirm" aria-label="关闭确认">×</button></div>
+  <div class="dp-dialog-body"><div class="rp-scope"><span>执行任务</span><strong data-rp="confirmExecution"></strong><span>范围</span><strong data-rp="confirmScope"></strong><span>Apollo设置</span><strong data-rp="confirmApollo"></strong></div><p class="rp-label">执行方式</p>
+    <label class="rp-option"><input type="radio" name="paperReprocessMode" value="AUDIT" checked><span><strong>仅解析对照</strong><small>保存解析差异，不补录专家、不更新档案、不请求外部服务。</small></span></label>
+    <label class="rp-option"><input type="radio" name="paperReprocessMode" value="ENFORCE"><span><strong>补录 / 补齐并自动重审</strong><small>明确身份后补录或补齐档案，再按现有规则重审；使用已保存的免费 / 付费设置。</small></span></label>
+    <div class="rp-process"><span>1 读取原文</span><b>→</b><span>2 重新解析</span><b>→</b><span>3 身份关联</span><b>→</b><span>4 补录 / 补齐</span><b>→</b><span>5 资格重审</span><b>→</b><span>6 保存结果</span></div>
+    <p class="dp-warning">按执行任务处理全部页。关闭页面继续后台执行；取消不会撤销已经补录、补齐或准入的结果。</p><div class="dp-error" role="alert" data-rp="confirmError" hidden></div>
+  </div><div class="dp-dialog-foot"><span data-rp="confirmHint">正在读取范围…</span><div class="dp-actions"><button class="button secondary" type="button" data-rp-action="close-confirm">取消</button><button class="button primary" type="button" data-rp-action="start" disabled>确认执行</button></div></div>
+</dialog>
+<!-- S-4: 逐项详情与历史均复用此容器；历史时body放table/分页，详情时放下面模板 -->
+<dialog id="paperReprocessDetail" class="dp-dialog rp-dialog" aria-labelledby="rpDetailTitle"><div class="dp-dialog-head"><div><h3 id="rpDetailTitle">逐项处理记录</h3><p class="dp-muted" data-rp="detailSubtitle"></p></div><button class="button secondary small" type="button" data-rp-action="close-detail">关闭</button></div><div class="dp-dialog-body" data-rp="detailBody"></div></dialog>
+<template id="rpTraceTemplate"><ol class="rp-trace"><li data-state="PENDING"><i>1</i><strong></strong><p></p></li></ol><div class="rp-source"><strong>原文证据</strong><p class="rp-muted"></p><blockquote></blockquote><button class="dp-link" type="button" data-rp-action="open-source">查看原文</button></div><div class="dp-actions"><button class="dp-link" type="button" data-rp-action="open-verification">查看逐人核验</button></div></template>
     </div>
 </div>
 
@@ -2515,17 +2544,18 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261031-mailbox-polish"></script>
-<script src="expert-materials.js?v=20261031-mailbox-polish"></script>
-<script src="meeting-confirmation.js?v=20261031-mailbox-polish"></script>
-<script src="mailbox-chat.js?v=20261031-mailbox-polish"></script>
-<script src="contact-history.js?v=20261031-mailbox-polish"></script>
-<script src="meeting-records.js?v=20261031-mailbox-polish"></script>
-<script src="contact-details.js?v=20261031-mailbox-polish"></script>
-<script src="discovery-papers.js?v=20261031-mailbox-polish"></script>
-<script src="discovery-recheck.js?v=20261031-mailbox-polish"></script>
-<script src="mailbox-readonly.js?v=20261031-mailbox-polish"></script>
-<script src="app.js?v=20261031-mailbox-polish"></script>
-<script src="world-clock.js?v=20261031-mailbox-polish"></script>
+<script src="trust-reply-workbench.js?v=20261102-paper-reprocess"></script>
+<script src="expert-materials.js?v=20261102-paper-reprocess"></script>
+<script src="meeting-confirmation.js?v=20261102-paper-reprocess"></script>
+<script src="mailbox-chat.js?v=20261102-paper-reprocess"></script>
+<script src="contact-history.js?v=20261102-paper-reprocess"></script>
+<script src="meeting-records.js?v=20261102-paper-reprocess"></script>
+<script src="contact-details.js?v=20261102-paper-reprocess"></script>
+<script src="discovery-paper-reprocess.js?v=20261102-paper-reprocess"></script>
+<script src="discovery-papers.js?v=20261102-paper-reprocess"></script>
+<script src="discovery-recheck.js?v=20261102-paper-reprocess"></script>
+<script src="mailbox-readonly.js?v=20261102-paper-reprocess"></script>
+<script src="app.js?v=20261102-paper-reprocess"></script>
+<script src="world-clock.js?v=20261102-paper-reprocess"></script>
 </body>
 </html>

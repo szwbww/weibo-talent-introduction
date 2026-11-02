@@ -60,6 +60,13 @@ class DiscoveryPaperReprocessRepository(
         return ScopeWatermark(sourceId, source, upper, attemptMax, count, revision, attemptCount, attemptSum, hash)
     }
 
+    /** Same full-source record scope and descriptor eligibility as freezePage, including deleted/error records. */
+    fun missingSourcePapers(sourceId: Long): Long = jdbc.queryForObject("""SELECT COUNT(*)
+        FROM discovery_paper_archive_record r WHERE r.execution_id=? AND NOT EXISTS(
+            SELECT 1 FROM discovery_paper_archive_attempt a
+            JOIN discovery_paper_archive_blob b ON b.sha256=a.blob_sha256
+            WHERE a.record_id=r.id AND a.status='SAVED' AND b.state='AVAILABLE')""", Long::class.java, sourceId)!!
+
     fun create(request: CreateReprocessRequest, requestHash: String, scope: JsonNode, owner: String): ReprocessRun {
         require(requestHash.matches(HASH) && owner.isNotBlank() && owner.length <= 64)
         require(UUID.fromString(request.requestKey).toString() == request.requestKey)
@@ -493,6 +500,7 @@ class DiscoveryPaperReprocessRepository(
         if (jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_paper_reprocess_item WHERE execution_id=?
             AND (kind NOT IN ('PAPER','TARGET') OR state NOT IN ('PENDING','RUNNING','COMPLETE','ERROR','SKIPPED','CANCELLED'))""",
                 Long::class.java, runId)!! != 0L) throw ReprocessException("INVALID_STATE", 409)
+        val run = find(runId)
         val row = jdbc.queryForMap("""SELECT COALESCE(SUM(kind='PAPER'),0) papers,
             COALESCE(SUM(kind='PAPER' AND state='COMPLETE'),0) paper_complete,
             COALESCE(SUM(kind='PAPER' AND state='ERROR'),0) paper_errors,
@@ -504,7 +512,7 @@ class DiscoveryPaperReprocessRepository(
             COALESCE(SUM(CASE WHEN kind='TARGET' THEN COALESCE(JSON_EXTRACT(result_json,'$.actualAdmitted'),0) ELSE 0 END),0) actual_admitted
             FROM discovery_paper_reprocess_item WHERE execution_id=?""", runId)
         fun n(key: String) = (row.getValue(key) as Number).toLong()
-        val business = if (find(runId)?.mode == ReprocessMode.ENFORCE) jdbc.queryForMap("""SELECT
+        val business = if (run?.mode == ReprocessMode.ENFORCE) jdbc.queryForMap("""SELECT
             COALESCE(SUM(COALESCE(JSON_EXTRACT(t.result_json,'$.alreadyAdmitted'),0)=0 AND EXISTS(
                 SELECT 1 FROM discovery_verification_item v JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
                 WHERE JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')=? AND v.admission_revision IS NOT NULL
@@ -516,10 +524,78 @@ class DiscoveryPaperReprocessRepository(
                 JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='APPLIED' AND
                 JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.repairReceipt.reason'))='REPAIRED')),0) repaired
             FROM discovery_paper_reprocess_item t WHERE t.execution_id=? AND t.kind='TARGET'""", runId, runId, runId) else null
+        // Join only this target's owned verification item. Never count foreign reviews of the same
+        // document, and never multiply a target by the number of attempts/reviews for that document.
+        val classified = jdbc.queryForMap("""SELECT
+            COALESCE(SUM(t.kind='PAPER' AND (JSON_LENGTH(JSON_EXTRACT(t.input_json,'$.bodies'))=0 OR
+                JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.reasonCode')) IN ('SOURCE_MISSING','SOURCE_DELETED'))),0) missing,
+            COALESCE(SUM(t.kind='TARGET' AND (
+                v.state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT') OR v.outcome='PENDING' OR
+                (v.id IS NULL AND t.state IN ('PENDING','RUNNING') AND (
+                    JSON_EXTRACT(t.result_json,'$.needsRecheck')=true OR
+                    JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='NEW')))),0) pending,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))
+                IN ('NEW','REPAIRED','UNCHANGED','CONFLICT','PROTECTED','SKIPPED','ERROR')),0) outcome_known,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
+                AND JSON_TYPE(JSON_EXTRACT(t.result_json,'$.wouldCreate'))='BOOLEAN'),0) create_known,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
+                AND JSON_EXTRACT(t.result_json,'$.wouldCreate')=true),0) would_create,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
+                AND JSON_TYPE(JSON_EXTRACT(t.result_json,'$.wouldRepair'))='BOOLEAN'),0) repair_known,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_EXTRACT(t.result_json,'$.businessExistenceEvaluated')=true
+                AND JSON_EXTRACT(t.result_json,'$.wouldRepair')=true),0) would_repair,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='UNCHANGED'
+                AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase')),'')
+                    NOT IN ('CONFLICT','PROTECTED')
+                AND NOT (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase')),'')='APPLIED'
+                    AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.repairReceipt.reason')),'')='REPAIRED')),0) unchanged,
+            COALESCE(SUM(t.kind='TARGET' AND (
+                JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='CONFLICT' OR
+                JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.reasonCode'))='CONFLICT' OR
+                JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='CONFLICT')),0) conflict,
+            COALESCE(SUM(t.kind='TARGET' AND (
+                JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='PROTECTED' OR v.outcome='PROTECTED' OR
+                JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='PROTECTED')),0) protected,
+            COALESCE(SUM(t.kind='TARGET' AND v.admission_revision IS NOT NULL AND v.projection_state='ERROR'),0) sync_failure,
+            COALESCE(SUM(t.kind='TARGET' AND v.qualification='MET'),0) qualification_met,
+            COALESCE(SUM(t.kind='TARGET' AND v.qualification='UNKNOWN'),0) qualification_unknown,
+            COALESCE(SUM(t.kind='TARGET' AND v.qualification='NOT_MET'),0) qualification_not_met,
+            COALESCE(SUM(t.kind='TARGET' AND v.qualification='CONFLICT'),0) qualification_conflict,
+            COALESCE(SUM(t.kind='TARGET' AND v.qualification='NOT_EVALUATED'),0) qualification_not_evaluated,
+            COALESCE(SUM(t.kind='TARGET' AND v.id IS NULL),0) qualification_unavailable
+            FROM discovery_paper_reprocess_item t
+            LEFT JOIN discovery_verification_item v ON t.kind='TARGET' AND v.id=(
+                SELECT vi.id FROM discovery_verification_item vi
+                JOIN discovery_verification_run vr ON vr.execution_id=vi.owner_execution_id
+                WHERE JSON_EXTRACT(vr.settings_json,'$.paperReprocessParentId')=t.execution_id
+                    AND vi.expert_doc_id=COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')),'null'),
+                        NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.proposedDocId')),'null'))
+                    AND CASE WHEN JSON_TYPE(JSON_EXTRACT(t.result_json,'$.verificationItemId'))='INTEGER'
+                        THEN vi.id=JSON_EXTRACT(t.result_json,'$.verificationItemId')
+                            AND vi.owner_execution_id=JSON_EXTRACT(t.result_json,'$.verificationRunId')
+                        ELSE vi.owner_execution_id=COALESCE(
+                            JSON_EXTRACT(t.result_json,'$.childRunId'),t.execution_id) END
+                ORDER BY vi.id DESC LIMIT 1)
+            WHERE t.execution_id=?""", runId)
+        fun c(key: String) = (classified.getValue(key) as Number).toLong()
+        val enforce = run?.mode == ReprocessMode.ENFORCE
+        val totalKnown = run?.scope?.path("frozen")?.asBoolean() == true
+        val targetTotalKnown = totalKnown && n("paper_complete") == n("papers") &&
+            run?.phase in setOf(PaperReprocessPhase.APPLY, PaperReprocessPhase.REVIEW, PaperReprocessPhase.SAVE)
+        fun proposal(known: String, count: String): Long? =
+            if (c(known) == n("targets") && (n("targets") > 0 || targetTotalKnown)) c(count) else null
         return ReprocessSummary(n("papers"), n("paper_complete"), n("paper_errors"), n("paper_cancelled"), n("targets"), n("target_complete"), n("target_errors"),
-            n("actual_new").coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-            (business?.get("repaired") as? Number)?.toInt() ?: n("actual_updated").coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-            (business?.get("admitted") as? Number)?.toInt() ?: n("actual_admitted").coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            if (enforce) n("actual_new").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+            if (enforce) (business?.get("repaired") as? Number)?.toInt() ?: n("actual_updated").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+            if (enforce) (business?.get("admitted") as? Number)?.toInt() ?: n("actual_admitted").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+            pendingVerification = if (enforce) c("pending") else 0,
+            wouldCreate = proposal("create_known", "would_create"), wouldRepair = proposal("repair_known", "would_repair"),
+            unchanged = proposal("outcome_known", "unchanged"), conflict = c("conflict"),
+            protected = proposal("outcome_known", "protected"), syncFailure = c("sync_failure"),
+            missingSourcePapers = c("missing"),
+            qualification = ReprocessQualificationSummary(c("qualification_met"), c("qualification_unknown"),
+                c("qualification_not_met"), c("qualification_conflict"), c("qualification_not_evaluated"), c("qualification_unavailable")),
+            totalKnown = totalKnown, targetTotalKnown = targetTotalKnown)
     }
 
     private fun progress(runId: Long, time: Instant) {

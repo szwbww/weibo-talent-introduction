@@ -311,3 +311,92 @@ test('unsafe schemes, cross-origin API refs and credential URLs are rejected', (
     assert.equal(safeUrl('/talent/api/paper', 'https://local/talent/'), 'https://local/talent/api/paper');
     assert.equal(safeUrl('https://publisher.invalid/paper', 'https://local/talent/'), 'https://publisher.invalid/paper');
 });
+
+test('public detail opener activates the existing owner from papers without preparing or replacing the eight-step engine', async () => {
+    const h = harness(); await flush(); h.view.unmount();
+    const before = h.calls.length, trigger = h.find('open');
+    trigger.focus();
+    await h.view.openDetail(42, 2, trigger);
+    assert.equal(h.find('detail').open, true);
+    assert.match(h.find('detail-person').textContent, /doc-2/);
+    assert.equal(h.find('steps').children.length, 8);
+    assert.deepEqual(h.calls.slice(before).map(call => call.url), ['/api/discovery/rechecks/42/items/2/steps']);
+    assert.equal(h.root.listeners.click.size, 1, 'the existing owner installs one event set');
+    h.find('detail').dispatch('cancel');
+    assert.equal(h.find('detail').open, false);
+    assert.equal(h.document.activeElement, trigger);
+    assert.ok(h.calls.every(call => !call.url.endsWith('/cancel')));
+    await h.view.openDetail(42, 1, trigger);
+    assert.match(h.find('detail-person').textContent, /doc-1/);
+    assert.equal(h.root.listeners.click.size, 1);
+    const activeReads = h.calls.filter(call => call.url.endsWith('/active')).length;
+    h.view.mount(); await flush();
+    assert.equal(h.calls.filter(call => call.url.endsWith('/active')).length, activeReads + 1, 'return to expert review restores its existing active-run authority');
+    h.view.mount(); await flush();
+    assert.equal(h.calls.filter(call => call.url.endsWith('/active')).length, activeReads + 1);
+    assert.equal(h.root.listeners.click.size, 1);
+    h.view.unmount();
+    for (const el of [h.root, h.document.events, ...h.root.querySelectorAll('dialog')]) {
+        for (const listeners of Object.values(el.listeners)) assert.equal(listeners.size, 0);
+    }
+    assert.equal(h.timers.size, 0);
+});
+
+test('public detail owner aborts stale paper-host requests on unmount and a newer detail context', async () => {
+    const deferred = [];
+    const h = harness((url, options) => url.includes('/items/1/steps') ? new Promise(resolve => deferred.push({ resolve, signal: options.signal })) : undefined);
+    await flush(); h.view.unmount();
+    const first = h.view.openDetail(42, 1, h.find('open'));
+    await flush(); h.view.unmount();
+    assert.equal(deferred[0].signal.aborted, true);
+    deferred[0].resolve(item(1)); await first;
+    assert.equal(h.find('detail').open, false);
+    const old = h.view.openDetail(42, 1, h.find('open')); await flush();
+    await h.view.openDetail(42, 2, h.find('open'));
+    assert.equal(deferred[1].signal.aborted, true);
+    deferred[1].resolve(item(1)); await old;
+    assert.match(h.find('detail-person').textContent, /doc-2/);
+    assert.doesNotMatch(h.find('detail-person').textContent, /doc-1/);
+    h.view.unmount(); h.view.mount(); await flush();
+    assert.equal(h.find('prepare').disabled, false, 'returning to expert review retains its preparation controls');
+    h.view.unmount();
+});
+
+test('app paper host forwards real verification identity and trigger through the existing recheck instance', async () => {
+    const appSource = fs.readFileSync(path.join(staticDir, 'app.js'), 'utf8');
+    const functions = ['ensureDiscoveryPapers', 'ensureDiscoveryRecheck'].map(name => {
+        const match = appSource.match(new RegExp('function ' + name + '\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}'));
+        assert.ok(match, name); return match[0];
+    }).join('\n');
+    const d = dom(), calls = [], opens = [];
+    assert.ok(d.getElementById('taskProgressModal'));
+    assert.ok(d.getElementById('discoveryRecheckRoot'));
+    const detailDialog = d.getElementById('discoveryRecheckRoot').querySelectorAll('dialog')[0];
+    const owner = { openDetail: (...args) => { opens.push(args); detailDialog.open = true; return 'existing-eight-step'; } };
+    let paperOptions, recheckOptions;
+    const sandbox = {
+        discoveryPapersView: null, discoveryRecheckView: null, contextPath: '/talent',
+        discoveryReviewState: { selected: new Set(), active: false },
+        $: selector => d.getElementById(selector.slice(1)),
+        api: (...args) => calls.push(args),
+        window: {
+            DiscoveryPapers: { mount: options => { paperOptions = options; return { openPaper: (...args) => calls.push(args) }; } },
+            createDiscoveryRecheck: options => { recheckOptions = options; return owner; }
+        }
+    };
+    vm.runInNewContext(functions + '\nensureDiscoveryPapers();', sandbox);
+    const trigger = d.getElementById('discoveryPapersTab');
+    assert.equal(paperOptions.openVerification(81, 303, trigger), 'existing-eight-step');
+    assert.deepEqual(opens, [[81, 303, trigger]]);
+    assert.equal(d.getElementById('discoveryReviewPane').hidden, false, 'review pane is visible for the existing eight-step dialog');
+    detailDialog.close();
+    assert.equal(d.getElementById('discoveryReviewPane').hidden, true, 'pane visibility is restored after detail close');
+    assert.equal(sandbox.discoveryRecheckView, owner);
+    assert.equal(recheckOptions.root, d.getElementById('discoveryRecheckRoot'));
+    const ref = { archiveRecordId: 3, attemptId: 4, bodySha256: 'b'.repeat(64) };
+    const controller = new AbortController();
+    recheckOptions.openPaper(ref, trigger, controller.signal);
+    assert.deepEqual(calls.at(-1), [ref, trigger, controller.signal]);
+    paperOptions.openVerification(82, 304, trigger);
+    assert.equal(sandbox.discoveryRecheckView, owner);
+});

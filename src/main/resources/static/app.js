@@ -2476,6 +2476,21 @@ function ensureDiscoveryPapers() {
         discoveryPapersView = window.DiscoveryPapers.mount({
             root: $("#taskProgressModal"), api,
             makeUrl: path => contextPath + path,
+            openVerification: (runId, itemId, trigger) => {
+                const view = ensureDiscoveryRecheck();
+                if (!view) return undefined;
+                // The recheck detail lives in the hidden review pane while the papers tab is active.
+                // Reveal the pane for the dialog only, then restore the tab's real visibility on close.
+                const pane = $("#discoveryReviewPane"), hidden = Boolean(pane?.hidden);
+                if (hidden) pane.hidden = false;
+                const opened = view.openDetail(runId, itemId, trigger);
+                if (hidden) {
+                    const dialog = [...$("#discoveryRecheckRoot").querySelectorAll("dialog")].find(d => d.open);
+                    if (dialog) dialog.addEventListener("close", () => { pane.hidden = true; }, { once: true });
+                    else pane.hidden = true;
+                }
+                return opened;
+            },
             onStatus: message => {
                 const target = $("#discoveryPapersPane [data-dp='error']");
                 if (target) { target.textContent = message; target.hidden = !message; }

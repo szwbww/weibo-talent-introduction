@@ -55,6 +55,7 @@ internal object ReprocessMysqlFixture {
     val dataSource by lazy { DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password).also { source ->
         ResourceDatabasePopulator(ClassPathResource("db/migration/V4__create_task_execution.sql"),
             ClassPathResource("db/migration/V137__task_execution_interruption_recovery.sql"),
+            ClassPathResource("db/migration/V158__create_discovery_verification.sql"),
             ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql"),
             ClassPathResource("db/migration/V163__paper_archive_lookup_indexes.sql"),
             ClassPathResource("db/migration/V173__create_discovery_paper_reprocess.sql")).execute(source)
@@ -73,6 +74,9 @@ internal object ReprocessMysqlFixture {
     fun repository() = DiscoveryPaperReprocessRepository(jdbc, manager, mapper, tasks)
     fun archive() = DiscoveryPaperArchiveRepository(jdbc, manager)
     fun clean() {
+        jdbc.update("DELETE FROM discovery_verification_attempt")
+        jdbc.update("DELETE FROM discovery_verification_item")
+        jdbc.update("DELETE FROM discovery_verification_run")
         jdbc.update("DELETE FROM discovery_paper_reprocess_item")
         jdbc.update("DELETE FROM discovery_paper_reprocess_run")
         jdbc.update("DELETE FROM discovery_paper_archive_attempt")
@@ -213,6 +217,121 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
         assertEquals(firstBodies, repository.item(run.executionId, all[0].id)!!.input.path("bodies"))
     }
 
+    @Test fun `whole source missing descriptors include deleted save error absent and unavailable blobs but not readable errors`() {
+        val source = f.task(); val records = f.seedPapers(source, 121)
+        // Include cases beyond both the first UI page and the freeze page of 100.
+        f.jdbc.update("UPDATE discovery_paper_archive_attempt SET status='DELETED' WHERE record_id=?", records[120].id)
+        f.jdbc.update("UPDATE discovery_paper_archive_attempt SET status='SAVE_ERROR' WHERE record_id=?", records[119].id)
+        f.jdbc.update("UPDATE discovery_paper_archive_blob SET state='MISSING' WHERE sha256 IN (SELECT blob_sha256 FROM discovery_paper_archive_attempt WHERE record_id=?)", records[118].id)
+        val absent = f.archive().beginRecord(source, "OPENALEX", "no-attempt", """{"schemaVersion":1}""", Instant.now())
+        val extra = f.archive().beginAttempt(records[117].id, f.hash("save-error-with-readable-body"),
+            ArchiveAttemptKind.PMC_XML, null, Instant.now())
+        f.jdbc.update("UPDATE discovery_paper_archive_attempt SET status='SAVE_ERROR' WHERE id=?", extra.id)
+        val other = f.task(9002)
+        f.archive().beginRecord(other, "OPENALEX", "other-source-missing", """{"schemaVersion":1}""", Instant.now())
+        assertEquals(4L, repository.missingSourcePapers(source))
+        val created = f.create(source); val owner = repository.claimRun("worker")!!
+        assertFalse(repository.freezePage(created.executionId, owner.leaseToken!!, owner.generation))
+        assertTrue(repository.freezePage(created.executionId, owner.leaseToken!!, owner.generation))
+        val frozen = (0..6).flatMap { repository.items(created.executionId, ReprocessKind.PAPER, it, 20).items }
+        assertEquals(122, frozen.size)
+        assertEquals(setOf(records[118].id, records[119].id, records[120].id, absent.id),
+            frozen.filter { it.input.path("bodies").isEmpty }.map { it.input.path("recordId").asLong() }.toSet())
+        assertEquals(4L, repository.summary(created.executionId).missingSourcePapers)
+    }
+
+    @Test fun `SQL summary spans121 targets preserves overlap and distinguishes unknown from absent qualification and proposals`() {
+        val source = f.task(); f.seedPapers(source, 121)
+        val created = f.create(source); val id = created.executionId
+        assertFalse(repository.summary(id).totalKnown)
+        assertFalse(repository.summary(id).targetTotalKnown)
+        assertNull(repository.summary(id).wouldCreate)
+        val owner = repository.claimRun("worker")!!
+        assertFalse(repository.freezePage(id, owner.leaseToken!!, owner.generation))
+        assertFalse(repository.summary(id).totalKnown)
+        assertTrue(repository.freezePage(id, owner.leaseToken!!, owner.generation))
+        assertTrue(repository.summary(id).totalKnown)
+        assertFalse(repository.summary(id).targetTotalKnown)
+        f.jdbc.update("UPDATE discovery_paper_reprocess_item SET state='COMPLETE',result_json=? WHERE execution_id=?", f.result().toString(), id)
+        f.jdbc.update("UPDATE discovery_paper_reprocess_run SET mode='ENFORCE',phase='REVIEW' WHERE execution_id=?", id)
+        fun verification(runId: Long, index: Int, state: String, qualification: String,
+            admitted: Boolean = false, projection: String = "NOT_REQUIRED", snapshot: String = "{}"): Long {
+            f.jdbc.update("""INSERT IGNORE INTO discovery_verification_run
+                (execution_id,mode,policy_version,apollo_requested,settings_json,created_at,updated_at)
+                VALUES (?,'ENFORCE',?,0,?,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))""",
+                runId, VerificationMode.ENFORCE.policyVersion, """{"paperReprocessParentId":$id}""")
+            f.jdbc.update("""INSERT INTO discovery_verification_item
+                (owner_execution_id,expert_doc_id,identity_hash,policy_version,source_name,source_item_key,
+                batch_number,snapshot_json,fact_fingerprint,state,qualification,outcome,admission_revision,
+                projection_state,created_at,updated_at)
+                VALUES (?,?,?,?, 'OPENALEX',?,1,?,?,?,?,?,?,?,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))""",
+                runId, "doc-$index", f.hash("identity-$runId-$index"), VerificationMode.ENFORCE.policyVersion,
+                "paper-$index", snapshot, f.hash("facts-$index"), state, qualification,
+                if (admitted) "DIRECT_CLEAR" else if (state == "COMPLETED") "PENDING" else null,
+                if (admitted) 1L else null, projection)
+            return f.jdbc.queryForObject("SELECT id FROM discovery_verification_item WHERE owner_execution_id=? AND expert_doc_id=?",
+                Long::class.java, runId, "doc-$index")!!
+        }
+        val linked = mapOf(
+            0 to verification(id, 0, "COMPLETED", "MET", true, "PROJECTED"),
+            1 to verification(id, 1, "QUEUED", "NOT_EVALUATED"),
+            4 to verification(id, 4, "COMPLETED", "UNKNOWN"),
+            5 to verification(id, 5, "COMPLETED", "NOT_MET"),
+            6 to verification(id, 6, "COMPLETED", "CONFLICT"),
+            9 to verification(id + 1000, 9, "COMPLETED", "MET", true, "PROJECTED"),
+            120 to verification(id + 1000, 120, "COMPLETED", "MET", true, "ERROR",
+                """{"identitySupplement":{"phase":"APPLIED","repairReceipt":{"reason":"REPAIRED"}}}"""))
+        // Same document in another review cannot duplicate a target or override its exact link.
+        verification(id + 2000, 9, "COMPLETED", "UNKNOWN")
+        val foreign = verification(id + 3000, 10, "COMPLETED", "MET", true, "ERROR")
+        f.jdbc.update("UPDATE discovery_verification_run SET settings_json='{}' WHERE execution_id=?", id + 3000)
+        repeat(121) { index ->
+            val result = f.result().put("docId", "doc-$index")
+                .put("businessExistenceEvaluated", true).put("wouldCreate", index == 0).put("wouldRepair", index == 120)
+                .put("actualNew", if (index == 0) 1 else 0)
+                .put("targetOutcome", when (index) { 0, 8 -> "NEW"; 2 -> "CONFLICT"; 3 -> "PROTECTED"; 7 -> "ERROR"; else -> "UNCHANGED" })
+            linked[index]?.let { itemId ->
+                result.put("verificationItemId", itemId).put("verificationRunId", if (index in setOf(9, 120)) id + 1000 else id)
+            }
+            if (index == 8) result.put("needsRecheck", true)
+            if (index == 10) result.put("verificationItemId", foreign).put("verificationRunId", id + 3000)
+            val input = f.mapper.createObjectNode().put("schemaVersion", 1).put("email", "target$index@fixture.edu")
+            f.jdbc.update("""INSERT INTO discovery_paper_reprocess_item
+                (execution_id,kind,item_key,state,input_json,result_json,created_at,updated_at)
+                VALUES (?,'TARGET',?,?,?,?,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))""",
+                id, f.hash("target-$index"), when (index) { 1, 8 -> "RUNNING"; 7 -> "ERROR"; else -> "COMPLETE" },
+                input.toString(), result.toString())
+        }
+        val before = f.jdbc.queryForList("SELECT * FROM discovery_paper_reprocess_item WHERE execution_id=? ORDER BY id", id)
+        val summary = repository.summary(id)
+        assertEquals(121L, summary.papers); assertEquals(121L, summary.targets)
+        assertTrue(summary.totalKnown); assertTrue(summary.targetTotalKnown)
+        assertEquals("PAPER", summary.paperUnit); assertEquals("TARGET", summary.targetUnit); assertTrue(summary.categoriesOverlap)
+        assertEquals(1, summary.actualNew); assertEquals(1, summary.actualUpdated); assertEquals(3, summary.actualAdmitted)
+        assertEquals(5L, summary.pendingVerification)
+        assertEquals(1L, summary.wouldCreate); assertEquals(1L, summary.wouldRepair)
+        assertEquals(115L, summary.unchanged); assertEquals(1L, summary.conflict); assertEquals(1L, summary.protected)
+        assertEquals(1L, summary.syncFailure)
+        assertEquals(ReprocessQualificationSummary(3, 1, 1, 1, 1, 114), summary.qualification)
+        val pages = (0..6).map { repository.items(id, ReprocessKind.TARGET, it, 20) }
+        assertEquals(listOf(20, 20, 20, 20, 20, 20, 1), pages.map { it.items.size })
+        assertTrue(pages.all { it.total == 121L })
+        assertEquals(summary, repository.summary(id))
+        assertEquals(before, f.jdbc.queryForList("SELECT * FROM discovery_paper_reprocess_item WHERE execution_id=? ORDER BY id", id))
+        // Real AUDIT results are identity candidates only: the two true flags do not establish existence.
+        f.jdbc.update("""UPDATE discovery_paper_reprocess_item SET result_json=?
+            WHERE execution_id=? AND kind='TARGET' AND item_key=?""",
+            f.result("AUDIT_CANDIDATE").put("businessExistenceEvaluated", false)
+                .put("wouldCreate", true).put("wouldRepair", true).toString(), id, f.hash("target-119"))
+        assertNull(repository.summary(id).wouldCreate); assertNull(repository.summary(id).wouldRepair)
+        assertNull(repository.summary(id).unchanged); assertNull(repository.summary(id).protected)
+        f.jdbc.update("UPDATE discovery_paper_reprocess_run SET phase='BIND' WHERE execution_id=?", id)
+        assertFalse(repository.summary(id).targetTotalKnown)
+        f.jdbc.update("UPDATE discovery_paper_reprocess_run SET mode='AUDIT' WHERE execution_id=?", id)
+        val audit = repository.summary(id)
+        assertEquals(0, audit.actualNew); assertEquals(0, audit.actualUpdated); assertEquals(0, audit.actualAdmitted)
+        assertEquals(0L, audit.pendingVerification)
+    }
     @Test fun `request retries concurrent tabs active uniqueness and task insertion are atomic`() {
         val source = f.task(); f.seedPapers(source, 1)
         val scope = f.scope(source); val request = f.request(source, scope); val hash = f.hash(f.mapper.writeValueAsString(request))

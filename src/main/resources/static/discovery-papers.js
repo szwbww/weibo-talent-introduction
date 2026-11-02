@@ -7,7 +7,7 @@
     const bytes = value => value == null ? "未知" : value >= GiB ? (value / GiB).toFixed(2) + " GiB" : (value / 1048576).toFixed(2) + " MiB";
     const states = { STORED: "已留存", NOT_STORED: "未留存", SAVE_ERROR: "保存异常", DELETED: "已删除", PROCESSING: "处理中" };
     const kinds = { ASSISTANT_PROFESSOR: "助理教授", ASSOCIATE_PROFESSOR: "副教授", PROFESSOR: "教授", COMPLETED_DOCTORATE: "已取得博士学位", DOCTORAL_STUDENT: "博士在读", CONFLICT: "存在冲突" };
-    function mount({ root, api, makeUrl, onStatus }) {
+    function mount({ root, api, makeUrl, openVerification, onStatus }) {
         const doc = root.ownerDocument;
         const find = name => root.querySelector('[data-dp="' + name + '"]');
         const action = name => root.querySelector('[data-dp-action="' + name + '"]');
@@ -38,7 +38,7 @@
         function revoke() { if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = null; find('pdf').removeAttribute('src'); }
         function close(name) { if (name === 'reader') { readerSeq++; contentSeq++; revoke(); detail = null; } if (name === 'delete') preview = null; if (dialogs[name].open) dialogs[name].close(); }
         function show(name, trigger) { focusTargets.set(dialogs[name], trigger || doc.activeElement); if (!dialogs[name].open) dialogs[name].showModal(); }
-        function suspend() {
+        function suspendArchive() {
             epoch++; controllers.forEach(c => c.abort()); controllers.clear();
             clearTimeout(timer); clearTimeout(debounce); timer = debounce = null;
             refreshing = busy = runLoading = false;
@@ -116,7 +116,7 @@
             if (stale(token)) return;
             refreshing = false; renderRows(); timer = setTimeout(refresh, 10000);
         }
-        function filterChanged() { suspend(); selected.clear(); page = 0; rows = []; snapshot = null; storage(false); if (visible) refresh(); }
+        function filterChanged() { suspendArchive(); selected.clear(); page = 0; rows = []; snapshot = null; storage(false); if (visible) refresh(); }
         function renderRun() {
             const host = find('runSummary'); if (!host) return;
             host.hidden = !pipeline || execution == null;
@@ -132,20 +132,23 @@
             finally { if (!stale(token)) { runLoading = false; renderRun(); clearTimeout(timer); timer = setTimeout(refreshRun, 10000); } }
         }
         function setExecution(id, runs = []) {
+            if (disposed) return;
             id = Number.isSafeInteger(Number(id)) && Number(id) > 0 ? Number(id) : null;
             const changed = execution !== id;
-            if (changed) { suspend(); execution = id; selected.clear(); page = 0; rows = []; snapshot = null; runStats = null; runFailed = false; find('execution').value = id == null ? '' : String(id); }
+            if (changed) { suspendArchive(); execution = id; selected.clear(); page = 0; rows = []; snapshot = null; runStats = null; runFailed = false; find('execution').value = id == null ? '' : String(id); }
             const select = find('execution'), value = changed ? (id == null ? '' : String(id)) : select.value;
             const ids = [...new Set(runs.map(r => Number(r.executionId)).filter(n => Number.isSafeInteger(n) && n > 0).concat(id == null ? [] : [id]))];
             select.replaceChildren(node('option', '', '全部任务')); select.children[0].value = '';
             ids.forEach(n => { const o = append(select, 'option', '', '执行 #' + n); o.value = String(n); }); select.value = value;
+            reprocess?.setExecution(select.value ? Number(select.value) : null);
             renderRun();
             if (changed) { storage(false); renderRows(); if (visible) refresh(); if (pipeline) refreshRun(); }
         }
         function setVisible(value, showPipeline = false) {
             if (disposed) return;
             if (visible === value && pipeline === showPipeline) { renderRun(); return; }
-            suspend(); visible = Boolean(value); pipeline = Boolean(showPipeline);
+            suspendArchive(); visible = Boolean(value); pipeline = Boolean(showPipeline);
+            reprocess?.setVisible(visible);
             renderRun(); if (visible) refresh(); else if (pipeline) refreshRun();
         }
         async function protect(value) {
@@ -270,7 +273,7 @@
             if (!a?.after?.length) append(find('mappingCards'), 'p', 'dp-muted', a ? '未提取到关联' : '尚未运行解析对照；首次提取结果见下方');
             if (!a?.qualificationFacts?.length) append(find('qualificationCards'), 'p', 'dp-muted', a ? '未提取到本人资格原句，不代表无资格' : '尚未运行解析对照；首次提取结果见下方');
         }
-        async function reader(id, trigger, ref, signal) {
+        async function reader(id, trigger, ref, signal, attemptId) {
             close('reader'); const seq = ++readerSeq, token = epoch;
             const abort = () => { if (seq === readerSeq) close('reader'); };
             signal?.addEventListener('abort', abort, { once: true });
@@ -283,10 +286,11 @@
                     if (fixed.bodySha256 !== ref.bodySha256) throw new Error('PAPER_SHA_CONFLICT：原文 SHA 与冻结记录不一致，请核对历史来源');
                     if (!fixed.readable) throw new Error('PAPER_SOURCE_UNAVAILABLE：固定原文已删除或不可读，已有证据仍保留');
                 }
+                if (attemptId != null && !value.attempts.some(a => a.id === attemptId)) throw new Error('PAPER_ATTEMPT_NOT_FOUND：原文尝试不存在，请核对来源记录');
                 detail = value; root.querySelector('#dpReaderTitle').textContent = value.record.title || value.record.paperKey;
                 text('readerSubtitle', '执行 #' + value.record.executionId + ' · ' + (states[value.record.state] || value.record.state)); error('analysisError', ''); text('readerFoot', '原文预览不会自动运行解析或改变专家准入。');
                 const select = find('attempts'); select.replaceChildren(); value.attempts.forEach(a => { const option = append(select, 'option', '', '#' + a.id + ' · ' + a.kind + ' · ' + a.status + ' · 记录采集 ' + value.record.firstCapturedAt + '（文件时间未提供）'); option.value = String(a.id); });
-                const readable = ref ? value.attempts.find(a => a.id === ref.attemptId) : value.attempts.find(a => a.readable); if (readable) select.value = String(readable.id);
+                const readable = ref ? value.attempts.find(a => a.id === ref.attemptId) : attemptId != null ? value.attempts.find(a => a.id === attemptId) : value.attempts.find(a => a.readable); if (readable) select.value = String(readable.id);
                 renderEvidence(); evidenceTabs('mappings'); show('reader', trigger); await loadOriginal({ signal });
                 if (ref && seq === readerSeq && !stale(token)) {
                     if (Number.isSafeInteger(ref.page) && ref.page > 0) locate({ page: ref.page, quote: ref.quote });
@@ -294,13 +298,18 @@
                 }
             } catch (e) {
                 if (!stale(token) && seq === readerSeq && e.name !== 'AbortError') {
-                    if (ref) throw e;
+                    if (ref || attemptId != null) throw e;
                     error('error', e.message);
                 }
             } finally { signal?.removeEventListener('abort', abort); }
         }
         function openPaper(ref, trigger, signal) {
             if (disposed) return Promise.resolve();
+            if (ref && ref.archiveRecordId == null && Number.isSafeInteger(ref.recordId) && ref.recordId > 0) {
+                if (ref.attemptId != null && (!Number.isSafeInteger(ref.attemptId) || ref.attemptId <= 0))
+                    return Promise.reject(new Error('PAPER_REFERENCE_INVALID：原文尝试编号无效'));
+                return reader(ref.recordId, trigger, null, signal, ref.attemptId);
+            }
             if (!ref || !Number.isSafeInteger(ref.archiveRecordId) || ref.archiveRecordId <= 0 ||
                 !Number.isSafeInteger(ref.attemptId) || ref.attemptId <= 0)
                 return Promise.reject(new Error('PAPER_REFERENCE_INVALID：缺少有效的固定 record / attempt，请核对来源'));
@@ -329,13 +338,14 @@
             else if (name === 'settings') openSettings(target);
             else if (name === 'analyze') analyze();
             else if (name === 'mappings' || name === 'qualifications') evidenceTabs(name);
-            else if (name === 'previous' || name === 'next') { const next = page + (name === 'previous' ? -1 : 1); suspend(); page = next; selected.clear(); refresh(); }
-            else if (name === 'open-run-papers') { find('execution').value = String(execution); filterChanged(); root.querySelector('#discoveryPapersTab').click(); }
+            else if (name === 'previous' || name === 'next') { const next = page + (name === 'previous' ? -1 : 1); suspendArchive(); page = next; selected.clear(); refresh(); }
+            else if (name === 'open-run-papers') { find('execution').value = String(execution); reprocess?.setExecution(execution); filterChanged(); root.querySelector('#discoveryPapersTab').click(); }
         }
         listen(root, 'click', click);
         listen(find('selectPage'), 'change', () => { selected = find('selectPage').checked ? new Set(rows.map(r => r.id)) : new Set(); selection(); });
-        ['execution', 'status', 'protected', 'gain'].forEach(name => listen(find(name), 'change', filterChanged));
-        listen(find('q'), 'input', () => { suspend(); selected.clear(); selection(); debounce = setTimeout(() => { debounce = null; filterChanged(); }, 400); });
+        listen(find('execution'), 'change', () => { reprocess?.setExecution(find('execution').value ? Number(find('execution').value) : null); filterChanged(); });
+        ['status', 'protected', 'gain'].forEach(name => listen(find(name), 'change', filterChanged));
+        listen(find('q'), 'input', () => { suspendArchive(); selected.clear(); selection(); debounce = setTimeout(() => { debounce = null; filterChanged(); }, 400); });
         listen(find('attempts'), 'change', loadOriginal); listen(find('settingsForm'), 'submit', saveSettings);
         Object.values(dialogs).forEach(dialog => {
             // Native cancel happens after keydown; stop the host's task-modal Escape handler first.
@@ -344,8 +354,10 @@
             listen(dialog, 'close', () => { const target = focusTargets.get(dialog); focusTargets.delete(dialog); if (target?.isConnected && !disposed) target.focus(); });
         });
         ['mappings', 'qualifications'].forEach(name => listen(action(name), 'keydown', event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); evidenceTabs(event.key === 'Home' ? 'mappings' : event.key === 'End' ? 'qualifications' : name === 'mappings' ? 'qualifications' : 'mappings', true); } }));
+        const reprocess = window.DiscoveryPaperReprocess?.mount({ root, api, makeUrl, openPaper, openVerification, onStatus });
+        function suspend() { suspendArchive(); reprocess?.suspend(); visible = pipeline = false; }
         renderRows(); storage(false);
-        return { setVisible, setExecution, openPaper, dispose() { if (disposed) return; disposed = true; suspend(); listeners.splice(0).forEach(remove => remove()); focusTargets.clear(); } };
+        return { setVisible, setExecution, openPaper, suspend, dispose() { if (disposed) return; disposed = true; suspendArchive(); reprocess?.dispose(); listeners.splice(0).forEach(remove => remove()); focusTargets.clear(); } };
     }
     window.DiscoveryPapers = Object.freeze({ mount });
 })();

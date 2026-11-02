@@ -25,6 +25,70 @@ import java.time.LocalDateTime
 import java.util.concurrent.CancellationException
 
 class DiscoveryPaperReprocessServiceTest {
+    @Test fun `readonly preview and detail expose persisted counts units overlap and null proposal semantics without parsing`() {
+        val mapper = jacksonObjectMapper().findAndRegisterModules()
+        val repository = Mockito.mock(DiscoveryPaperReprocessRepository::class.java)
+        val archive = Mockito.mock(DiscoveryPaperArchiveService::class.java)
+        val analyzer = Mockito.mock(PaperBodyAnalyzer::class.java)
+        val settings = Mockito.mock(DiscoveryApolloSettingsService::class.java)
+        val progress = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+        val service = DiscoveryPaperReprocessService(repository, archive, analyzer, mapper, settings, progress)
+        try {
+            val hash = "a".repeat(64)
+            Mockito.`when`(repository.watermark(9001)).thenReturn(ScopeWatermark(9001, "SUCCESS", 121, 130,
+                121, 121, 130, "130", hash))
+            Mockito.`when`(repository.missingSourcePapers(9001)).thenReturn(3)
+            val preview = service.preview(9001)
+            assertEquals(121L, preview.recordCount); assertEquals(hash, preview.expectedScopeHash)
+            assertEquals(3L, preview.missingSourcePapers); assertNull(preview.activeRun)
+            val time = java.time.Instant.parse("2026-11-01T01:02:03Z")
+            val run = ReprocessRun(9002, 9001, "request", hash, ReprocessMode.AUDIT,
+                ReprocessState.RUNNING, PaperReprocessPhase.BIND, mapper.createObjectNode().put("frozen", true),
+                0, null, null, 0, false, time, time, null)
+            val summary = ReprocessSummary(121, 121, 0, 0, 121, 121, 0,
+                conflict = 2, missingSourcePapers = 3, totalKnown = true, targetTotalKnown = false,
+                qualification = ReprocessQualificationSummary(unavailable = 121))
+            Mockito.`when`(repository.find(9002)).thenReturn(run)
+            Mockito.`when`(repository.summary(9002)).thenReturn(summary)
+            val detail = service.detail(9002)
+            assertEquals(summary, detail.summary); assertTrue(detail.totalKnown)
+            val json = mapper.valueToTree<JsonNode>(detail)
+            assertTrue(json.path("summary").get("wouldCreate").isNull)
+            assertTrue(json.path("summary").get("wouldRepair").isNull)
+            assertEquals(0, json.path("summary").path("actualNew").asInt())
+            assertEquals(0, json.path("summary").path("actualUpdated").asInt())
+            assertEquals(0, json.path("summary").path("actualAdmitted").asInt())
+            assertEquals("PAPER", json.path("summary").path("paperUnit").asText())
+            assertEquals("TARGET", json.path("summary").path("targetUnit").asText())
+            assertTrue(json.path("summary").path("categoriesOverlap").asBoolean())
+            assertFalse(json.path("summary").path("targetTotalKnown").asBoolean())
+            assertEquals(0, json.path("summary").path("qualification").path("unknown").asInt())
+            assertEquals(121, json.path("summary").path("qualification").path("unavailable").asInt())
+            Mockito.verifyNoInteractions(archive, analyzer, settings, progress)
+        } finally { service.shutdown() }
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "paperReprocessIt", matches = "true")
+    fun `preview HTTP uses full source descriptor absence including deleted and save error without changing archive`() {
+        Paper03RuntimeFixture().use { f ->
+            f.seed(121)
+            f.db.jdbc.update("UPDATE discovery_paper_archive_attempt SET status='DELETED' WHERE record_id=?", f.records[120].id)
+            f.db.jdbc.update("UPDATE discovery_paper_archive_attempt SET status='SAVE_ERROR' WHERE record_id=?", f.records[119].id)
+            f.archive.beginRecord(f.sourceId, "OPENALEX", "never-saved", f.mapper.readTree("""{"schemaVersion":1}"""))
+            val before = f.db.jdbc.queryForList("SELECT * FROM discovery_paper_archive_record ORDER BY id")
+            val attempts = f.db.jdbc.queryForList("SELECT * FROM discovery_paper_archive_attempt ORDER BY id")
+            val mvc = MockMvcBuilders.standaloneSetup(f.controller).build()
+            mvc.perform(get("/api/expert-discovery/paper-reprocess/preview").param("sourceExecutionId", f.sourceId.toString()))
+                .andExpect(status().isOk).andExpect(jsonPath("$.recordCount").value(122))
+                .andExpect(jsonPath("$.missingSourcePapers").value(3))
+            assertEquals(before, f.db.jdbc.queryForList("SELECT * FROM discovery_paper_archive_record ORDER BY id"))
+            assertEquals(attempts, f.db.jdbc.queryForList("SELECT * FROM discovery_paper_archive_attempt ORDER BY id"))
+            Mockito.verify(f.analyzer, Mockito.never()).versions()
+            Mockito.verifyNoInteractions(f.network, f.bounded, f.settings, f.progress)
+        }
+    }
+
     @Test fun `optional page checkpoints cancel qualification and contact scans without altering defaults or versions`() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
         val network = Mockito.mock(RestTemplate::class.java)

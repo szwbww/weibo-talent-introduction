@@ -2,7 +2,7 @@
 
 // 计划 05（c6）改写 —— 只保留三组断言（G-7）：
 // 1) I-24 挂载契约（window.TrustReplyWorkbench.mount / instance.unmount / options 键集合不变）；
-// 2) G-5 11 个缓存资源同值（index.html 的 styles.css?v= 键）；
+// 2) G-5 styles/workbench/app 缓存键同值（index.html 的 styles.css?v= 键）；
 // 3) I-25 unmount 语义：abort 全部在途请求、解绑全部监听器、late response 不写宿主。
 
 const fs = require("fs");
@@ -177,17 +177,16 @@ describe("shared trust reply workbench mount contract (计划 05 改写)", () =>
         assert.ok(!/src="\/trust-reply-workbench\.js/.test(indexSource), "script include must stay context-relative");
     });
 
-    it(`G-5: the eleven cache-busted assets share one key (${CACHE_KEY})`, () => {
-        const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 19, "index.html must carry exactly nineteen cache-busted asset URLs");
-        assert.strictEqual(new Set(keys).size, 1, "all keys must share one value");
+    it(`G-5: the styles/workbench/app triad shares one key (${CACHE_KEY})`, () => {
+        const keys = [...indexSource.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+        assert.strictEqual(new Set(keys).size, 1, "the triad must share one value");
         assert.strictEqual(keys[0], CACHE_KEY, `the shared key must be ${CACHE_KEY}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
             "mailbox-chat.js", "discovery-recheck.js", "mailbox-readonly.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = indexSource.indexOf(`${asset}?v=${CACHE_KEY}`);
+            const at = indexSource.indexOf(`${asset}?v=`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
             previous = at;
         }

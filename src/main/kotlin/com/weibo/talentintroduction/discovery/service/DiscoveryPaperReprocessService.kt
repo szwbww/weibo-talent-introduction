@@ -42,7 +42,8 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
     fun preview(sourceExecutionId: Long): ReprocessPreview {
         positive(sourceExecutionId)
         val w = repository.watermark(sourceExecutionId)
-        return ReprocessPreview(sourceExecutionId, w.recordCount, w.scopeHash, repository.active())
+        return ReprocessPreview(sourceExecutionId, w.recordCount, w.scopeHash, repository.active(),
+            repository.missingSourcePapers(sourceExecutionId))
     }
     fun create(request: CreateReprocessRequest): ReprocessRun {
         positive(request.sourceExecutionId)
@@ -76,7 +77,7 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
     fun detail(id: Long): ReprocessDetail {
         val run = requireRun(id)
         val summary = repository.summary(id)
-        val frozen = run.scope.path("frozen").asBoolean()
+        val frozen = summary.totalKnown
         return ReprocessDetail(run, summary, if (!frozen) "已固定${run.scope.path("frozenCount").asLong()}篇，统计中"
             else "已处理${summary.paperComplete + summary.paperErrors + summary.paperCancelled}/${summary.papers}篇，失败${summary.paperErrors}篇", frozen)
     }

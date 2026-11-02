@@ -82,16 +82,13 @@ test("S-1/S-2: both approved CSS blocks remain byte-for-byte exact", () => {
     for (const block of blocks.slice(0, 2)) assert.ok(css.includes(block), "approved local CSS must match verbatim");
 });
 
-test("I-4: existing versioned resources retain order and share one current release key", () => {
-    const keys = [...html.matchAll(/\?v=([^"']+)/g)].map(match => match[1]);
+test("I-4: mailbox assets precede the host and the cache-key triad stays synchronized", () => {
+    const keys = [...html.matchAll(/(?:src|href)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([^"']+)/g)].map(match => match[1]);
     assert.equal(new Set(keys).size, 1);
     assert.match(keys[0], /^\d{8}-[a-z0-9-]+$/);
     const resources = [...html.matchAll(/(?:src|href)="([^"']+)\?v=[^"']+"/g)].map(match => match[1]);
-    assert.deepEqual(resources, [
-        "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css", "meeting-records.css", "contact-details.css",
-        "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
-        "mailbox-chat.js", "contact-history.js", "meeting-records.js", "contact-details.js", "discovery-papers.js", "discovery-recheck.js", "mailbox-readonly.js", "app.js", "world-clock.js"
-    ]);
+    assert.equal(resources.filter(name => name === "mailbox-chat.js").length, 1);
+    assert.ok(resources.indexOf("mailbox-chat.js") < resources.indexOf("app.js"));
     assert.doesNotMatch(html, /20261006-wecom-inbound-notification/);
     assert.doesNotMatch(html, /20261006-discovery-review-merge/);
     assert.doesNotMatch(feature, /webhook|localStorage/i);

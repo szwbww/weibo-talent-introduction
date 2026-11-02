@@ -48,10 +48,24 @@ data class ReprocessItem(val id: Long, val executionId: Long, val kind: Reproces
     val state: ReprocessItemState, val input: JsonNode, val result: JsonNode?, val leaseToken: String?,
     val leaseUntil: Instant?, val generation: Long, val revision: Long)
 data class ReprocessPage<T>(val items: List<T>, val total: Long, val page: Int, val size: Int)
+/** Qualification counts use TARGET units, not papers or unique people. Unavailable is not UNKNOWN. */
+data class ReprocessQualificationSummary(val met: Long = 0, val unknown: Long = 0, val notMet: Long = 0,
+    val conflict: Long = 0, val notEvaluated: Long = 0, val unavailable: Long = 0)
+/**
+ * Counts cover all persisted items, never the requested detail page. Categories may overlap (for
+ * example a repaired target can be admitted with projection failure). totalKnown means the PAPER
+ * manifest is frozen; targetTotalKnown means TARGET enumeration is also complete. Otherwise counts
+ * are known-so-far, not a final total. Null proposal/unchanged/protected counts mean not evaluated.
+ */
 data class ReprocessSummary(val papers: Long, val paperComplete: Long, val paperErrors: Long,
     val paperCancelled: Long, val targets: Long, val targetComplete: Long, val targetErrors: Long,
-    val actualNew: Int = 0, val actualUpdated: Int = 0, val actualAdmitted: Int = 0)
+    val actualNew: Int = 0, val actualUpdated: Int = 0, val actualAdmitted: Int = 0,
+    val pendingVerification: Long = 0, val wouldCreate: Long? = null, val wouldRepair: Long? = null,
+    val unchanged: Long? = null, val conflict: Long = 0, val protected: Long? = null, val syncFailure: Long = 0,
+    val missingSourcePapers: Long = 0, val qualification: ReprocessQualificationSummary = ReprocessQualificationSummary(),
+    val totalKnown: Boolean = false, val targetTotalKnown: Boolean = false,
+    val paperUnit: String = "PAPER", val targetUnit: String = "TARGET", val categoriesOverlap: Boolean = true)
 data class ReprocessPreview(val sourceExecutionId: Long, val recordCount: Long, val expectedScopeHash: String,
-    val activeRun: ReprocessRun?)
+    val activeRun: ReprocessRun?, val missingSourcePapers: Long = 0)
 data class ReprocessDetail(val run: ReprocessRun, val summary: ReprocessSummary,
     val progressText: String, val totalKnown: Boolean)
