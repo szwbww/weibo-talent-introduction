@@ -1,20 +1,20 @@
 # Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (commit 5a31faaebf28001fb05d34c6b2aa195cc2a0e01d)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9
+- Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (commit d678780155fc4fac5ecc4896135806729efaee2f)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
 - Branch: fast/paper-reprocess-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-11-01T21:03:54+08:00
-- Current child: 04
-- Waiting role: N/A
+- Current child: 05
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: ff7e67506545a31bc38a3d3f674056c522c57917
+- Resume from: 736535ce9487782e52a73af6cb52517fa799b194
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -24,7 +24,7 @@
 | 02 | docs/plans/2026-11-01/paper-reprocess-02-identity.md | commit:9ce385c729c4b3a4c6fd0fff3aa06c126773cec3 | 01 | 2 | LIGHT_PASS | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 25fe0ef0d89257536bf0cf56a2d6ec5da80c8961 | 2 | b065357c8c6816cf7fea0651b370a924b7e920f0,47393695c8157c7033147ae4b041e5c5b3c52aa9 | 47393695c8157c7033147ae4b041e5c5b3c52aa9 | 03168d167a423fca98c1d593e9b3113e5e2a271e | F-01/F-02/F-03 resolved; fresh four-gate PASS |
 | 03 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | 02 | 4 | LIGHT_PASS_WITH_NOTES | 47393695c8157c7033147ae4b041e5c5b3c52aa9 | f4773fc4e517628fa9b527c85b75bf93908932c0 | 1 | ff7e67506545a31bc38a3d3f674056c522c57917 | ff7e67506545a31bc38a3d3f674056c522c57917 | 6b5b919b0e103c6b307c9937b0a2c98e4cb2432e | F-01/F-02 resolved, O-01 RECORD_ONLY; canonical fix binding corrected |
 | 04 | docs/plans/2026-11-01/paper-reprocess-04-apply.md | commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d | 03 | 2 | LIGHT_PASS_WITH_NOTES | ff7e67506545a31bc38a3d3f674056c522c57917 | dff7585906d8a628c87e4c385dba4c822f72e576 | 2 | 503e7e51bff189d57bf9da6bad26015e930c7478,736535ce9487782e52a73af6cb52517fa799b194 | 736535ce9487782e52a73af6cb52517fa799b194 | 520eedbf0c20df573365a6962c996d4cb7f296c9 | F01-F05 resolved; O01/O02/O03 RECORD_ONLY; fresh four-gate pass |
-| 05 | docs/plans/2026-11-01/paper-reprocess-05-frontend.md | sha256:3ee9c93f3ce58d0ae2eb8ad4ae7ebea9215248529333a19d614ac446aed4a615 | 04 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
+| 05 | docs/plans/2026-11-01/paper-reprocess-05-frontend.md | commit:d678780155fc4fac5ecc4896135806729efaee2f | 04 | 2 | PENDING | — | — | 0 | — | — | — | Epoch1 pre-edit readonly opener/query/test conflicts resolved A10/A11; no product edits |
 | 06 | docs/plans/2026-11-01/paper-reprocess-06-verification.md | sha256:ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 
 ## Amendments
@@ -39,6 +39,8 @@
 | A7 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:41ebff5468b8b57a56785bbb8e0bda961bd96815 | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | I-5/I-7/X-6 | Add affected TaskExecutionSummaryExtractorTest and covering command; retire incidental fixed lists/count instead of re-pinning | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
 | A8 | docs/plans/2026-11-01/paper-reprocess-master.md | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d | I-4/I-5/I-6/X-3/X-4/X-7/X-8 and 顺序与门禁 | Child04 cap13 for durable receipts and original consume/ordinary-worker parent permission seams | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
 | A9 | docs/plans/2026-11-01/paper-reprocess-04-apply.md | commit:3a425461dbe6088e4d4dda1a53141416a392670c | commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d | I-4/I-5/I-6/X-3/X-4/X-7/X-8 | Add three evidenced necessary receipt/owned-consume/epoch0 worker fences; preserve ordinary defaults and all acceptance | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
+| A10 | docs/plans/2026-11-01/paper-reprocess-master.md | commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d | commit:d678780155fc4fac5ecc4896135806729efaee2f | I-5/I-7/I-9/X-5/X-6/X-8/X-9 and 顺序与门禁 | Child05 cap19 for required existing readonly opener, authoritative summary/preview and directly broken resource tests | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
+| A11 | docs/plans/2026-11-01/paper-reprocess-05-frontend.md | commit:3a425461dbe6088e4d4dda1a53141416a392670c | commit:d678780155fc4fac5ecc4896135806729efaee2f | I-5/I-7/I-9/X-5/X-6/X-8/X-9 | Add readonly API totals/source-missing preview and original8-step opener; retire incidental resource inventories, retain exact CSS/DOM/browser acceptance | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
 
 ## Baseline
 - Repository original revision: b758eb0f1d62f2beda39742085b441fcbbdff5ea.
@@ -121,3 +123,5 @@ None.
 - Child04 round2directdependencyRegistrationService authorizedwithin13existingfiles tostoreactualpersonresult/retryability. Fix736535ce9487782e52a73af6cb52517fa799b194; writer52tests+FAILED/STALEruntimepass. Freshindependentattempt3 PaperApplyReverifier04E2R2 acquired.
 - Child04 epoch2 attempt3 LIGHT_PASS_WITH_NOTES by PaperApplyReverifier04E2R2; fresh52JVM/2018boundJS+actualSQLruntime pass, genuineFAILED/STALEoriginalpersonactionretry proved. NoopenAUTO_FIX, closing evidence; aggregate review remainsdeferred.
 - Child04 fullseven-childmanifest checkpoint --through-child04 --allow-dirty-artifacts VALIDexit0 at520eedbf0c20df573365a6962c996d4cb7f296c9, code736535ce9487782e52a73af6cb52517fa799b194. Commitmetadata/cleanmode then05.
+- Child04 cleanfullmanifest checkpoint VALIDexit0 atda02b04ad7a661d83714b1df3c8acfa5cbf5bed2;05briefa1d0f27 bindsactualAPI/browsercontract. PaperFrontendImplementer05 acquired withpreeditcollectivecachetestscopeaudit.
+- Child05 epoch1 pre-edit PLAN_CONFLICT: originaldetailopenerprivate, authoritativeAPIcounts/source-missingabsent, semanticcachetestsearch findsfixed19/rosterassertions (literalkeysearch0). A10/A11 plan-onlyd678780155fc4fac5ecc4896135806729efaee2f authorizes19filesreadonlydisplay/testseams, no productedits. Serverreadonlytotals chosenoverfrontendallpageaggregation.

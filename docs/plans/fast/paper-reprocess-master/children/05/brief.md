@@ -1,13 +1,13 @@
 # Child 05 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-05-frontend.md
-- Plan identity: sha256:3ee9c93f3ce58d0ae2eb8ad4ae7ebea9215248529333a19d614ac446aed4a615
+- Plan identity: commit:d678780155fc4fac5ecc4896135806729efaee2f
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 04
-- Amendments: N/A
+- Amendments: A10,A11; current epoch2, pre-edit epoch1 conflict retained.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
@@ -19,6 +19,18 @@ Read the complete exact child plan from this worktree. Links written as absolute
 - `src/test/js/discoveryPaperReprocess.test.js`
 - `src/test/js/discoveryPapers.test.js`
 - `src/main/resources/static/app.js`
+- `src/main/resources/static/discovery-recheck.js`
+- `src/test/js/discoveryRecheck.test.js`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPaperReprocess.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepositoryIntegrationTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessServiceTest.kt`
+- `src/test/js/discoveryReview.test.js`
+- `src/test/js/mailboxChatBehavior.test.js`
+- `src/test/js/mailboxGroupPush.test.js`
+- `src/test/js/meetingConfirmationAssets.test.js`
+- `src/test/js/trustReplyWorkbenchSharedMount.test.js`
 
 No other product/test/plan files may change. An unlisted necessary file or behavior requires PLAN_CONFLICT, not an improvised fix. Original PDFs stay outside Git in a safe local directory. No release, production write, original-file deletion, Apollo requests, push, merge, history rewriting, or modifications of unrelated user changes.
 
@@ -26,6 +38,7 @@ No other product/test/plan files may change. An unlisted necessary file or behav
 - node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js
 - node --check src/main/resources/static/discovery-paper-reprocess.js
 - Exercise the real UI against isolated backend data at 1440px/390px with 100%/125% zoom; capture browser evidence and compare CSS contract exactly.
+- Amended final commands also require full `node --test src/test/js/*.test.js` and JDK11 `mvn test -Dtest=DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest -DpaperReprocessIt=true -DmysqlIt=true`; SQL must actually run, not skip. No substitute for real browser proof.
 
 Use JDK11 explicitly: ambient Maven defaults to Java25. Skip build/lint/test/formatter runs mid-flight; run the required commands after the final changes as one verification phase. Missing evidence must be reported, never turned into PASS. Use actual runtime smoke in addition to tests.
 
@@ -111,3 +124,8 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Use actual browser tool and actual isolated backend/API for surface proof; scratch runtime harness allowed outside tracked product scope. Keep service alive for browser scenarios then stop it; disclose external provider/ES fixtures, never pretend static HTML or intercepted data is full backend proof. Backend failure/empty/long-message UI scenarios may use explicit scoped stubs as plan A3 allows, labelled distinctly from real backend cases.
 - Known execute-p worktree identity helper fails at line30 on unrelated stale publish registration ending `multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b`. Invoke it as required then assert native exact root/branch/gitdir/common-dir/registration/HEAD/ancestry at stage/commit/handoff. Expected gitdir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-paper-reprocess-master`, common-dir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`. Do not prune registrations/change helpers; actual mismatch stops.
 - Do not run review-fast-p, review-p, verify-p or repair-p; independent fast-p child verifier owns four-gate verdict, aggregate review is reserved to user's other agent.
+
+## Epoch 2 — Authorized Readonly Query/Detail/Test Completion
+- Exact current master/child commit `d678780155fc4fac5ecc4896135806729efaee2f`, nineteen files. Original S-1..S-6 CSS/DOM remain byte-for-byte contract, no business writer/qualification/lifecycle change authorized.
+- Authority adds existing private8-step openDetail readonly export; server-persisted authoritative category totals/preview missingSourcePapers with explicit unit/overlap/unknown semantics; directly affected tests. Do not fetch all item pages to fabricate global totals or treat NOT_STORED-only archive count as all missing sources.
+- Retire incidental fixed resource counts/full-list copies rather than re-pin20; preserve real resource/mount/old-feature behavior. Full exact pre-edit receipts in epoch1 execution log; no prior product/test/runtime acceptance to inherit.
