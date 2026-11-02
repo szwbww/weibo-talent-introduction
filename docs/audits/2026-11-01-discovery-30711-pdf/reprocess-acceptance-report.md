@@ -3,7 +3,7 @@
 生成时间：2026-11-02。执行状态：**READY_FOR_VERIFICATION**（授权 fixture 修正后所有指定测试全绿；见第 6 节）。本文件是执行证据，不是 PASS、不是独立复核、不是发布批准。
 
 - Plan：`docs/plans/2026-11-01/paper-reprocess-06-verification.md`
-- Plan SHA-256：`ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791`
+- Plan SHA-256：`ac6a7663526a7a5c3a74716a3be3b54db97b8afaa6b5576672d8b65f655a6bb2`
 - Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master`
 - Branch：`fast/paper-reprocess-master`
 - Plan base：`46bcb8a3875a6957ed18494200d158de09dd0f38`
@@ -280,7 +280,7 @@ BadSqlGrammarException: Table '<db>.discovery_paper_reprocess_run' doesn't exist
 - 6 条基线 `NOT_REPRODUCED`：没有一条被写成已修复；其中 1 条本轮变成 ALREADY_RECOVERED，按确认指纹计入 50 条新增正确绑定之一。
 - 中间页未覆盖：`AUDITED_PAGE_OUTSIDE_PRODUCTION_SELECTION=1`、`NAME_NOT_LITERAL_IN_PDFBOX_PAGE=4`、`EMAIL_NOT_LITERAL_IN_PDFBOX_PAGE=1` 单列，不混入“已修复”。
 - 真实生产数据/邮件/采集游标/Apollo 配置：本轮未读写生产；fixture 只使用一次性 MySQL 容器与本地临时目录。
-- 迁移、保护、错绑：迁移两路径通过；12 目标保护/冲突/缺源/错误均未准入；337 条无新错绑、无回归。但第 6 节测试门未全绿，不能给出“全部验证成功”。
+- 迁移、保护、错绑：迁移两路径通过；12 目标保护/冲突/缺源/错误均未准入；337 条无新错绑、无回归。第 6 节指定测试门全绿；真实生产 provider/线上批次仍为 NOT_RUN，不能给出“全部验证成功”。
 
 ## 附录 A：337 条逐条差异
 
