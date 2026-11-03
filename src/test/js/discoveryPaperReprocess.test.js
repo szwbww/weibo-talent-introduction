@@ -40,7 +40,7 @@ function dom() {
         closest(s) { return this.matches(s) ? this : this.parentElement?.closest(s) || null; }
         addEventListener(type, fn) { (this.listeners[type] ??= new Set()).add(fn); }
         removeEventListener(type, fn) { this.listeners[type]?.delete(fn); }
-        dispatch(type, props = {}) { const event = { target: this, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...props }; let el = this; do { event.currentTarget = el; [...(el.listeners[type] || [])].forEach(fn => fn(event)); el = event.stopped ? null : el.parentElement; } while (el); return event; }
+        dispatch(type, props = {}) { const event = { target: this, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...props }; const docCapture = this.ownerDocument?.listeners?.[type]?.capture; if (docCapture) { [...docCapture].forEach(fn => fn(event)); if (event.stopped) return event; } let el = this; do { event.currentTarget = el; [...(el.listeners[type] || [])].forEach(fn => fn(event)); el = event.stopped ? null : el.parentElement; } while (el); return event; }
         click() { if (!this.disabled) this.dispatch('click'); }
         focus() { document.activeElement = this; }
         showModal() { this.open = true; this.focus(); }
@@ -48,6 +48,16 @@ function dom() {
     }
     document.createElement = tag => new Element(tag);
     document.body = new Element('body');
+    // Minimal document-level event model: the component owns Escape at the document capture phase.
+    document.listeners = {};
+    document.addEventListener = function (type, fn, capture) {
+        const entry = (this.listeners[type] ??= { capture: new Set(), bubble: new Set() });
+        (capture ? entry.capture : entry.bubble).add(fn);
+    };
+    document.removeEventListener = function (type, fn, capture) {
+        const entry = this.listeners[type]; if (!entry) return;
+        (capture ? entry.capture : entry.bubble).delete(fn);
+    };
     const stack = [document.body], start = html.indexOf('<div id="taskProgressModal"'), end = html.indexOf('</template>', html.indexOf('<template id="rpTraceTemplate"', start)) + 11;
     for (const token of html.slice(start, end).match(/<!--[\s\S]*?-->|<[^>]+>|[^<]+/g)) {
         if (token.startsWith('<!--')) continue;
@@ -231,6 +241,48 @@ test('native Escape closes only the new dialog while the actual task host stays 
     h.document.body.dispatch('keydown', { key: 'Escape' });
     assert.equal(hostCloses, 1);
     assert.equal(h.calls.filter(c => c.url.endsWith('/cancel')).length, 0, 'no task cancellation is sent');
+    h.view.dispose();
+});
+
+test('pending create BODY focus still owns Escape and resumes the same run', async () => {
+    let resolveCreate = null;
+    const h = harness((url, options) => {
+        if (url.endsWith('/runs') && options.method === 'POST') return new Promise(r => { resolveCreate = r; });
+        // The initial list and the same-key lookup before the create both find nothing.
+        if (url.includes('/runs?')) return { items: [], total: 0 };
+    });
+    h.view.setExecution(9001); h.view.setVisible(true); await flush();
+    const app = fs.readFileSync(path.join(base, 'app.js'), 'utf8');
+    const start = app.indexOf('if (event.key === "Escape" && currentTaskModal)');
+    assert.ok(start > 0, 'host Escape handler source is present');
+    const end = app.indexOf('\n    });', start);
+    const handler = new Function('event', 'currentTaskModal', 'document', '$', 'closeTaskModal', app.slice(start, end));
+    let hostCloses = 0;
+    const hostDocument = { getElementById: () => null };
+    const $ = q => q === '#discoveryRecheckRoot' ? { querySelector: () => null } : null;
+    h.document.body.addEventListener('keydown', e => handler(e, {}, hostDocument, $, () => { hostCloses++; h.view.suspend(); }));
+    const confirm = h.root.querySelector('#paperReprocessConfirm'), trigger = h.act('open');
+    trigger.focus(); trigger.click(); await flush();
+    assert.equal(confirm.open, true);
+    h.act('start').click(); await flush();
+    assert.equal(h.act('start').disabled, true, 'a pending create disables the start button');
+    // Real Chrome moves focus to BODY once the only focusable button is disabled.
+    h.document.activeElement = h.document.body;
+    const pending = h.document.body.dispatch('keydown', { key: 'Escape' });
+    assert.equal(pending.stopped, true, 'document capture owns the BODY-targeted Escape');
+    assert.equal(hostCloses, 0, 'the host handler must not run during a pending create');
+    confirm.close(); // native dialog close still fires and restores focus to the trigger
+    assert.equal(confirm.open, false); assert.equal(h.document.activeElement, trigger);
+    assert.equal(h.calls.filter(c => c.url.endsWith('/cancel')).length, 0, 'closing never cancels');
+    // The deferred create still completes on the original key and run without a second business write.
+    resolveCreate(run()); await flush();
+    assert.equal(h.uuid(), 1, 'same request key is reused');
+    assert.equal(h.calls.filter(c => c.options.method === 'POST').length, 1, 'no duplicate business write');
+    assert.match(h.find('runTitle').textContent, /7001/);
+    // Control: with both dialogs closed the same BODY Escape reaches the host exactly once.
+    h.document.activeElement = h.document.body;
+    h.document.body.dispatch('keydown', { key: 'Escape' });
+    assert.equal(hostCloses, 1);
     h.view.dispose();
 });
 

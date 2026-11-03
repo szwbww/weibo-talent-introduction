@@ -20,7 +20,7 @@
         let tab = 'PAPER', historyPage = 0, selectedItem = null, renderedList = '';
         const pages = { PAPER: 0, TARGET: 0 }, totals = { PAPER: null, TARGET: null };
         const controllers = new Set(), listeners = [], focusTargets = new Map(), requests = new Map();
-        function listen(el, event, fn) { el.addEventListener(event, fn); listeners.push(() => el.removeEventListener(event, fn)); }
+        function listen(el, event, fn, capture = false) { el.addEventListener(event, fn, capture); listeners.push(() => el.removeEventListener(event, fn, capture)); }
         function text(name, v) { find(name).textContent = value(v); }
         function error(name, message) { text(name, message || ''); find(name).hidden = !message; }
         function stale(owner) { return disposed || !visible || owner !== epoch; }
@@ -312,6 +312,11 @@
             listen(dialog, 'keydown', e => { if (e.key === 'Escape') e.stopPropagation(); });
             listen(dialog, 'close', () => { focusTargets.get(dialog)?.focus(); });
         });
+        // A disabled start button can leave real focus on BODY, so the dialog's own keydown never
+        // sees the Escape. Own it at the document capture phase — before the host's document
+        // handler — but only while one of these dialogs is actually open. Stopping propagation never
+        // cancels the native dialog close (no preventDefault), and the listener is removed on dispose.
+        listen(doc, 'keydown', e => { if (e.key === 'Escape' && (confirm.open || detailDialog.open)) e.stopPropagation(); }, true);
         function suspend() { epoch++; runSeq++; itemSeq++; dialogSeq++; stop(); abort(); submitting = mutating = false; snapshot = null; preview = null; renderedList = ''; close(confirm); close(detailDialog); render(); scopeText(); }
         function setExecution(id) {
             const next = Number.isSafeInteger(Number(id)) && Number(id) > 0 ? Number(id) : null;

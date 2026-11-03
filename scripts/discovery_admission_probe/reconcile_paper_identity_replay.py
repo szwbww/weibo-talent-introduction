@@ -58,20 +58,21 @@ def normalized_email_hash(email):
     return hashlib.sha256(email.strip().lower().encode('utf-8')).hexdigest()[:24]
 
 
-def evidence(old_row, actual):
-    """Return BOUND, ABSENT or INVALID for actual evidence. Totals and names never establish identity."""
-    if actual is None:
+def flat_evidence(old_row, actual):
+    """Evidence protocol for a flat --new-replay receipt: only its own status decides."""
+    status = actual.get('status')
+    if status in REPLAY_ABSENT_STATUSES:
         return 'ABSENT'
-    if 'status' in actual:
-        status = actual.get('status')
-        if status in REPLAY_ABSENT_STATUSES:
-            return 'ABSENT'
-        if status not in REPLAY_BOUND_STATUSES or actual.get('reason') == 'CONFLICTING_PRODUCTION_BINDING':
-            return 'INVALID'
-        # A baseline-confirmed binding must remain confirmed; a fresh parse is not its proof.
-        if old_row['status'] == 'ALREADY_RECOVERED' and status != 'ALREADY_RECOVERED':
-            return 'INVALID'
-        return 'BOUND'
+    if status not in REPLAY_BOUND_STATUSES or actual.get('reason') == 'CONFLICTING_PRODUCTION_BINDING':
+        return 'INVALID'
+    # A baseline-confirmed binding must remain confirmed; a fresh parse is not its proof.
+    if old_row['status'] == 'ALREADY_RECOVERED' and status != 'ALREADY_RECOVERED':
+        return 'INVALID'
+    return 'BOUND'
+
+
+def run_evidence(old_row, actual):
+    """Evidence protocol for a real reprocess run: the actual target identity is always enforced."""
     outcome = actual.get('targetOutcome')
     if outcome == 'AMBIGUOUS_TARGETS' or outcome not in RUN_BOUND_OUTCOMES:
         return 'INVALID'
@@ -89,12 +90,23 @@ def evidence(old_row, actual):
     return 'BOUND'
 
 
-def classify(old_row, actual, external_reason):
+def evidence(old_row, actual, is_run):
+    """Return BOUND, ABSENT or INVALID for actual evidence. Totals and names never establish identity.
+
+    The evidence protocol is chosen by the CLI input origin (flat --new-replay vs --reprocess-run),
+    never by candidate self-reported fields: a run row that also carries a `status` key is still a run.
+    """
+    if actual is None:
+        return 'ABSENT'
+    return run_evidence(old_row, actual) if is_run else flat_evidence(old_row, actual)
+
+
+def classify(old_row, actual, external_reason, is_run):
     if external_reason:
         return 'EXTERNAL_DATA_CHANGED'
     if old_row['status'] == 'SOURCE_MISSING':
         return 'SOURCE_MISSING'
-    state = evidence(old_row, actual)
+    state = evidence(old_row, actual, is_run)
     if state == 'INVALID':
         return 'REGRESSION'
     if state == 'ABSENT':
@@ -196,6 +208,8 @@ def main():
     new = receipt(args.new_replay, manifest_hash, expected) if args.new_replay else None
     run_value, actual_rows = run_rows(args.reprocess_run, manifest_hash) if args.reprocess_run else (None, [])
     changes = external_changes(args.external_changes)
+    # The evidence protocol follows the CLI input origin, not the flattened row's own fields.
+    is_run = new is None
 
     actual_by_key = collections.defaultdict(list)
     for row in actual_rows:
@@ -224,8 +238,8 @@ def main():
         row['actualQualification'] = actual.get('qualification') if actual else None
         row['actualReasonCode'] = actual.get('reasonCode') if actual else None
         row['externalChange'] = external_reason_for(c, changes)
-        row['actualEvidence'] = evidence(old[k], actual)
-        row['classification'] = classify(old[k], actual, row['externalChange'])
+        row['actualEvidence'] = evidence(old[k], actual, is_run)
+        row['classification'] = classify(old[k], actual, row['externalChange'], is_run)
         merged.append(row)
     extras = []
     for tk, rows in actual_by_key.items():

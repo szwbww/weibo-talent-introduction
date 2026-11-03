@@ -141,12 +141,14 @@ class DiscoveryPaperIdentityReplayToolTest {
     }
 
     private fun target(outcome: String?, docId: String?,
-        email: JsonNode? = mapper.nodeFactory.textNode(targetEmail)): ObjectNode = mapper.createObjectNode().also { value ->
+        email: JsonNode? = mapper.nodeFactory.textNode(targetEmail),
+        candidateStatus: String? = null): ObjectNode = mapper.createObjectNode().also { value ->
         outcome?.let { value.put("targetOutcome", it) }
         docId?.let { value.put("docId", it) }
         // Absence of the key is a real counterexample; a JSON null is expressed with nullNode().
         email?.let { value.set<JsonNode>("email", it) }
-        value.putArray("candidates").add(combination().also { it.remove("page") })
+        // A run candidate may self-report a flat replay `status`; the CLI origin must still win.
+        value.putArray("candidates").add(combination().also { it.remove("page"); candidateStatus?.let { s -> it.put("status", s) } })
     }
 
     private fun runExport(dir: Path, vararg targets: ObjectNode): Path = dir.resolve("run.json").also {
@@ -208,6 +210,25 @@ class DiscoveryPaperIdentityReplayToolTest {
         // A skipped business outcome may prove the source identity but never a business/admission success.
         val skippedValid = case("skipped-valid-identity", target("SKIPPED", expectedDoc))
         assertEquals("EXPECTED_MATCH", skippedValid["classification"]); assertEquals("SKIPPED", skippedValid["actualTargetOutcome"])
+    }
+
+    @Test fun `run evidence origin is decided by CLI input, never candidate self-reported status`() {
+        fun case(name: String, email: JsonNode?): Map<String, String> {
+            val dir = inputs(Files.createDirectories(root.resolve(name)))
+            return reconcile(dir, listOf("--reprocess-run", runExport(dir,
+                target("REPAIRED", expectedDoc, email, "ALREADY_RECOVERED")).toString()))
+        }
+        // A candidate self-reporting a flat replay status must not turn a real run into a flat success:
+        // the actual target address is still enforced, and invalid rows stay INVALID/REGRESSION.
+        val wrong = case("run-status-wrong-email", mapper.nodeFactory.textNode("different.address@wrong.example"))
+        assertEquals("REGRESSION", wrong["classification"]); assertEquals("INVALID", wrong["actualEvidence"])
+        val missing = case("run-status-missing-email", null)
+        assertEquals("REGRESSION", missing["classification"]); assertEquals("INVALID", missing["actualEvidence"])
+        val nullEmail = case("run-status-null-email", mapper.nodeFactory.nullNode())
+        assertEquals("REGRESSION", nullEmail["classification"]); assertEquals("INVALID", nullEmail["actualEvidence"])
+        // With the correct actual address the same self-reported status still binds as a real run.
+        val valid = case("run-status-valid", mapper.nodeFactory.textNode(targetEmail))
+        assertEquals("EXPECTED_MATCH", valid["classification"]); assertEquals("BOUND", valid["actualEvidence"])
     }
 
     @Test fun `reconciliation requires the actual target address to reproduce the audited fingerprint`() {
