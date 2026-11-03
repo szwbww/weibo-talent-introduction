@@ -867,6 +867,42 @@ class DiscoveryReviewService(
         return stored
     }
 
+    /** Controlled recheck only. Ordinary persisted calls retain their unchanged-identity guard. */
+    fun recordAutomaticPersisted(docId: String, profile: ExpertProfile,
+        expectedAutomatic: AutomaticAdmissionResult, authority: RetainedIdentityAdmissionAuthority): ExpertDiscoveryAdmission {
+        check(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+        val item = authority.item
+        val s = authority.supplement
+        check(item.expertDocId == docId && item.reviewEpoch > 0 && s.beforeAdmissionIdentity == s.beforeIdentityHash &&
+            RetainedPaperIdentityService.valid(item, s) && item.identityHash == identityHashOf(docId, profile))
+        val jdbc = requireNotNull(jdbcTemplate)
+        // commit has already persisted the completed item in this same transaction. No reusable authority
+        // survives a cancellation, a replacement generation, another receipt, or another outcome.
+        val persisted = jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_item i
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE i.id=? AND i.review_epoch=? AND i.generation=? AND i.identity_hash=? AND i.fact_fingerprint=?
+            AND i.state='COMPLETED' AND i.admission_revision IS NULL AND i.snapshot_json=?
+            AND i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')
+            AND i.policy_version='APV_20261018_V1_ENFORCE'
+            AND JSON_UNQUOTE(JSON_EXTRACT(r.recheck_json,'$.control.phase'))='RUNNING'""",
+            Long::class.java, item.id, item.reviewEpoch, item.generation, item.identityHash, item.factFingerprint, item.snapshotJson)
+        check(persisted == 1L) { "Controlled identity receipt is not current" }
+        val before = repository.findAdmission(docId) ?: error("Original admission missing")
+        check(before.identityHash == s.beforeAdmissionIdentity && before.revision == s.beforeAdmissionRevision &&
+            !before.decisionEnum.manual && before.decision != "LEGACY_APPROVED" &&
+            !(before.decision == "AUTO_PASSED" && before.policyVersion != DiscoveryVerificationAdmissionGate.POLICY_VERSION)) {
+            "Original admission changed during controlled repair"
+        }
+        val outcome = recordAutomaticConclusion(docId, profile, expectedAutomatic)
+        val stored = repository.findAdmission(docId) ?: error("Automatic admission was not persisted")
+        check(outcome.identityChanged && !outcome.manual && stored.identityHash == item.identityHash &&
+            stored.decision == expectedAutomatic.status.name && stored.revision == before.revision + 1 &&
+            stored.revision == outcome.revision && stored.policyVersion == expectedAutomatic.policyVersion) {
+            "Controlled identity admission changed during verification commit"
+        }
+        return stored
+    }
+
     /**
      * 阶段 2：调用方已按新政策现算结论（`policy.evaluate(profile)`）时复用同一条写入路径，
      * 避免在存量刷新里重算或传入不同口径的结论。

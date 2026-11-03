@@ -1,0 +1,29 @@
+$ rg -n --no-ignore writeIdentityProofIfVersionMatches|writeDiscoveryNameAndProofIfVersionMatches|indexToRaw|indexToCandidate|indexToApplication|_bulk|_update_by_query src/main/kotlin/com/weibo/talentintroduction/expert src/main/kotlin/com/weibo/talentintroduction/discovery scripts
+scripts/test_build_sbir_expert_import.py:261:    def test_bulk_file_create_writes_raw_and_candidate_with_same_tagged_document(self) -> None:
+scripts/test_build_sbir_expert_import.py:265:        lines = (self.output / "experts_bulk.ndjson").read_text(encoding="utf-8").splitlines()
+scripts/apply_legacy_discovery_approval.py:98:        result = self.request('/_bulk', '\n'.join(lines) + '\n', ndjson=True)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:130:            when (expertIndexWriterService.writeIdentityProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:263:            when (expertIndexWriterService.writeDiscoveryNameAndProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1586:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2013:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:182:                    val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:237:     * 不写根级 `updatedAt`、不自动创建缺失文档（`doc_as_upsert=false`）、不使用 `_update_by_query`。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:263:                val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:611:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:961:    fun writeIdentityProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:996:     * [writeIdentityProofIfVersionMatches] 一致：绝不创建缺层，也绝不用旧快照盲目重试。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:998:    fun writeDiscoveryNameAndProofIfVersionMatches(
+scripts/update_sbir_employment.py:47:def run_bulk(args: argparse.Namespace, body: bytes) -> dict[str, object]:
+scripts/update_sbir_employment.py:52:        f"'{args.es_url.rstrip('/')}/_bulk?refresh=false' --data-binary @-"
+scripts/update_sbir_employment.py:89:            run_bulk(args, bulk_body(index, batch))
+scripts/build_sbir_expert_import.py:571:    with (output_dir / "experts_bulk.ndjson").open("w", encoding="utf-8") as handle:
+scripts/build_sbir_expert_import.py:621:            "bulk": str(output_dir / "experts_bulk.ndjson"),
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:8:    build_bulk_request,
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:44:    def test_bulk_request_can_only_request_native_work_email(self):
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:45:        url, body = build_bulk_request(["p-1", "p-2"])
+scripts/expert_discovery/enterprise_batch/import_es_documents.py:74:    response = client.request("POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson")
+scripts/expert_discovery/enterprise_batch/import_es_documents.py:102:        response = client.request("POST", "/{}/_update_by_query?refresh=true&conflicts=proceed".format(options.index), {
+scripts/expert_discovery/enterprise_batch/import_candidate_es.py:231:    response = client.request("POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson")
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py:96:def build_bulk_request(person_ids: list[str]) -> tuple[str, dict]:
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py:250:        url, body = build_bulk_request(ids)
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py:67:        "POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson"

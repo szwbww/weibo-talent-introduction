@@ -9,6 +9,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 import java.util.Locale
+import java.util.concurrent.CancellationException
 import javax.swing.text.MutableAttributeSet
 import javax.swing.text.html.HTML
 import javax.swing.text.html.HTMLEditorKit
@@ -21,7 +22,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 class PaperQualificationEvidenceExtractor {
     internal var nanoTime: () -> Long = System::nanoTime
     fun extract(bytes: ByteArray, format: String, authors: List<PaperAuthor>, paperYear: Int?, bodySha256: String,
-        publicationDate: LocalDate? = null): PaperQualificationResult {
+        publicationDate: LocalDate? = null, checkpoint: () -> Unit = {}): PaperQualificationResult {
         val names = authors.map { listOfNotNull(it.givenNames, it.familyNames).joinToString(" ").trim().replace(Regex("\\s+"), " ") }
         val start = nanoTime()
         val reasons = mutableListOf<String>()
@@ -35,6 +36,7 @@ class PaperQualificationEvidenceExtractor {
                     totalPages = doc.numberOfPages
                     for (page in 1..minOf(totalPages, MAX_PAGES)) {
                         if (nanoTime() - start >= SOFT_NANOS) { reasons += "SOFT_TIME_LIMIT"; break }
+                        checkpoint()
                         val sorted = PDFTextStripper().apply { startPage = page; endPage = page; sortByPosition = true }.getText(doc)
                         val biographyCandidate = names.any { namePattern(it).containsMatchIn(sorted) } &&
                             Regex("(?i)professor|Ph\\.?\\s?D|doctorate|doctoral|was born").containsMatchIn(sorted)
@@ -167,6 +169,10 @@ class PaperQualificationEvidenceExtractor {
                 distinct.isEmpty() -> PaperEvidenceStatus.NOT_FOUND
                 else -> PaperEvidenceStatus.FOUND
             }, scannedPages, totalPages, reasons.distinct()))
+        } catch (e: PaperParseCheckpointException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             return PaperQualificationResult(emptyList(), PaperAnalysisCoverage(PaperEvidenceStatus.ERROR, scannedPages, totalPages, listOf("PARSE_ERROR")))
         }

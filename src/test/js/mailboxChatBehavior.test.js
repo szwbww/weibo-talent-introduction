@@ -6786,14 +6786,15 @@ describe("专家备注冻结样式与缓存键", () => {
             assert.deepEqual(actual, [block]);
         });
     });
-    it("所有当前版本资源统一键，原资源顺序与非版本资源不变", () => {
+    it("缓存键三件套同值，聊天组件先于宿主且非版本资源不变", () => {
         const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
         const assets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
-        assert.deepEqual(assets.map((match) => match[1].split("?")[0]), [
-            "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css", "meeting-records.css", "contact-details.css",
-            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "contact-history.js", "meeting-records.js", "contact-details.js", "discovery-papers.js", "discovery-recheck.js", "mailbox-readonly.js", "app.js", "world-clock.js"
-        ]);
-        assert.equal(new Set(assets.map((match) => match[2])).size, 1);
+        const names = assets.map((match) => match[1].split("?")[0]);
+        assert.equal(names.filter(name => name === "mailbox-chat.css").length, 1);
+        assert.equal(names.filter(name => name === "mailbox-chat.js").length, 1);
+        assert.ok(names.indexOf("mailbox-chat.js") < names.indexOf("app.js"));
+        const triad = assets.filter(match => ["styles.css", "trust-reply-workbench.js", "app.js"].includes(match[1].split("?")[0]));
+        assert.equal(new Set(triad.map((match) => match[2])).size, 1);
         assert.match(assets[0][2], /^\d{8}-[a-z0-9-]+$/);
         assert.ok(html.includes('<script src="task-modal-runtime.js"></script>'));
     });

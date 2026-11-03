@@ -461,11 +461,10 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
         assert.ok(stylesCss.includes(s3), "S-3 CSS must be verbatim");
     });
 
-    it("keeps one cache key for all eighteen assets and other task modals at 700px", () => {
-        const keys = Array.from(indexHtml.matchAll(/[?"]v=([^"'&<>]+)/g)).map((m) => m[1]);
+    it("keeps the cache-key triad synchronized and other task modals at 700px", () => {
+        const keys = Array.from(indexHtml.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([^"'&<>]+)/g)).map((m) => m[1]);
         const unique = Array.from(new Set(keys));
-        assert.strictEqual(keys.length, 19, "exactly nineteen cache-busted assets");
-        assert.strictEqual(unique.length, 1, "all assets must share one cache key");
+        assert.strictEqual(unique.length, 1, "styles/workbench/app must share one cache key");
         assert.match(unique[0], /^[0-9]{8}-[a-z0-9-]+$/, "cache key must be <yyyymmdd>-<slug>");
         assert.notStrictEqual(unique[0], "20261004-mailbox-suspension-followup",
             "the previous release key must be bumped");
@@ -1077,8 +1076,7 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
         }
         assert.ok(indexHtml.includes('id="taskModalRunHead"'));
         assert.ok(indexHtml.includes('id="taskModalTrafficHead"'));
-        const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
-        assert.strictEqual(keys.length, 19);
+        const keys = [...indexHtml.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([^"<>]+)/g)].map(match => match[1]);
         assert.strictEqual(new Set(keys).size, 1);
         assert.ok(indexHtml.includes('<script src="task-modal-runtime.js"></script>'));
     });

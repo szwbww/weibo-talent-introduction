@@ -11,35 +11,47 @@ import com.weibo.talentintroduction.discovery.service.SourceAuthorEmailResolver
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import org.springframework.stereotype.Component
 import java.time.Instant
+import java.util.concurrent.CancellationException
 
 /** Value inputs only: neither computation entry owns storage, leases, clocks or provider clients. */
 data class PaperBodyInput(val hash: String, val kind: ArchiveAttemptKind, val bytes: ByteArray)
 data class PaperBodyComputation(val format: String, val emails: List<AuthorEmail>,
     val qualification: PaperQualificationResult, val reasons: List<String>)
 
+/** Caller-owned cancellation/budget signal; never a recoverable content parsing failure. */
+class PaperParseCheckpointException(val code: String) : IllegalStateException(code)
+
 @Component
 class PaperBodyAnalyzer(private val pdf: PdfEmailExtractor,
     private val qualification: PaperQualificationEvidenceExtractor, private val mapper: ObjectMapper) {
+    // pdfLayout versions the shared named-contact syntax as well as its physical PDF boundaries.
     fun versions(): Map<String, Int> = mapOf("identityExtraction" to DiscoveryIdentity.EXTRACTION_VERSION,
         "pdfLayout" to PdfAuthorContactLayout.RULE_VERSION, "format" to PaperContentFormat.VERSION,
         "qualification" to PaperQualificationEvidenceExtractor.RULE_VERSION)
 
-    fun parse(body: PaperBodyInput, metadata: JsonNode): PaperBodyComputation {
+    fun parse(body: PaperBodyInput, metadata: JsonNode, checkpoint: () -> Unit = {}): PaperBodyComputation {
         require(DiscoveryPaperArchiveService.sha(body.bytes) == body.hash) { "BODY_HASH_MISMATCH" }
         val authors = metadata.path("authors").mapNotNull {
             if (it.isObject) mapper.treeToValue(it, PaperAuthor::class.java) else null
         }
         val year = (metadata.get("pubYear") ?: metadata.get("year"))?.takeIf { it.isIntegralNumber }?.asInt()
         val format = PaperContentFormat.detect(body.bytes, body.kind)
-        val facts = qualification.extract(body.bytes, format, authors, year, body.hash)
+        val facts = qualification.extract(body.bytes, format, authors, year, body.hash, checkpoint = checkpoint)
         val reasons = mutableListOf<String>()
         val emails = try {
             when (format) {
-                "PDF" -> pdf.extractEmailsFromBytes(body.bytes, authors, null)
+                "PDF" -> pdf.extractContactsFromBytes(body.bytes, authors, null, checkpoint).let {
+                    if (it.selectedPages.size < it.totalPages) reasons += "PAGE_NOT_SCANNED"
+                    it.emails
+                }
                 "XML" -> { qualification.safeText(body.bytes, "XML"); JatsXmlEmailParser.parse(body.bytes) }
                 "HTML" -> SourceAuthorEmailResolver.resolveHtml(body.bytes.toString(Charsets.UTF_8), authors)
                 else -> SourceAuthorEmailResolver.resolveText(body.bytes.toString(Charsets.UTF_8), authors)
             }
+        } catch (e: PaperParseCheckpointException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { reasons += "EMAIL_PARSE_ERROR"; emptyList<AuthorEmail>() }
         return PaperBodyComputation(format, emails, facts, reasons)
     }

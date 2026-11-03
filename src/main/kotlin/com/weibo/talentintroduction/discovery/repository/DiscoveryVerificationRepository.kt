@@ -36,6 +36,144 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         val reasonsSha256: String = replayHash(item.reasonsJson))
     data class ReplayReceipt(val itemId: Long, val status: String)
 
+    private fun paperParentId(run: VerificationRun): Long? {
+        val node = replayMapper.readTree(run.settingsJson).get("paperReprocessParentId") ?: return null
+        require(node.isIntegralNumber && node.canConvertToLong() && node.longValue() > 0)
+        return node.longValue()
+    }
+
+    fun isPaperReprocessOwned(executionId: Long): Boolean = findRun(executionId)?.let { run ->
+        val parent = paperParentId(run) ?: return@let false
+        jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+            WHERE p.execution_id=? AND p.mode='ENFORCE' AND t.task_type='DISCOVERY_PAPER_REPROCESS'""",
+            Long::class.java, parent) == 1L
+    } == true
+
+    private fun cancelled(value: Any?): Boolean = value == true || value is Number && value.toInt() != 0
+    private fun sqlInstant(value: Any?): Instant? = when (value) {
+        is java.sql.Timestamp -> value.toInstant()
+        is java.time.LocalDateTime -> value.toInstant(java.time.ZoneOffset.UTC)
+        else -> null
+    }
+
+    fun paperRunPermission(executionId: Long): Boolean = findRun(executionId)?.let { paperAllowed(it) } == true
+
+    fun requirePaperSources(parentId: Long, docId: String,
+        refs: List<com.weibo.talentintroduction.discovery.service.PaperSourceRef>) {
+        require(refs.isNotEmpty() && refs.distinct().size == refs.size)
+        val targets = jdbc.queryForList("""SELECT input_json,result_json FROM discovery_paper_reprocess_item
+            WHERE execution_id=? AND kind='TARGET' AND JSON_UNQUOTE(JSON_EXTRACT(result_json,'$.docId'))=?""", parentId, docId)
+        require(targets.size == 1) { "PAPER_TARGET_NOT_OWNED" }
+        val input = replayMapper.readTree(targets.single().getValue("input_json").toString())
+        require(refs.all { ref -> input.path("paperRefs").any { candidate ->
+            candidate.path("recordId").asLong() == ref.archiveRecordId &&
+                candidate.path("sourceExecutionId").asLong() == ref.sourceExecutionId &&
+                candidate.path("sourceName").asText() == ref.sourceName &&
+                candidate.path("sourceItemKey").asText() == ref.sourceItemKey &&
+                candidate.path("bodyHash").asText() == ref.bodySha256 &&
+                candidate.path("attemptIds").any { it.asLong() == ref.attemptId } &&
+                candidate.path("email").asText().trim().lowercase() == input.path("email").asText() &&
+                !candidate.path("givenNames").asText().isBlank() && !candidate.path("familyNames").asText().isBlank() &&
+                com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(candidate.path("identityEvidence").asText(null))
+        } }) { "PAPER_SOURCE_NOT_VERIFIED" }
+    }
+
+    private fun paperAllowed(run: VerificationRun, locked: Boolean = false): Boolean {
+        val parentId = paperParentId(run) ?: return true
+        val rows = jdbc.queryForList("""SELECT p.* FROM discovery_paper_reprocess_run p
+            JOIN task_execution t ON t.id=p.execution_id WHERE p.execution_id=? AND t.task_type='DISCOVERY_PAPER_REPROCESS'
+            ${if (locked) "FOR UPDATE" else ""}""", parentId)
+        val parent = rows.singleOrNull() ?: return false
+        val until = sqlInstant(parent["lease_until"])
+        return parent["mode"] == "ENFORCE" && parent["state"] == "RUNNING" &&
+            !cancelled(parent["cancel_requested"]) && parent["lease_token"] != null &&
+            until?.isAfter(Instant.now()) == true &&
+            replayMapper.readTree(parent.getValue("scope_json").toString()).path("verificationSettings").let { settings ->
+                val actual = replayMapper.readTree(run.settingsJson).deepCopy<ObjectNode>()
+                actual.remove(listOf("paperReprocessParentId", "evaluationAt"))
+                actual == settings
+            }
+    }
+
+    /** A parent token/generation is checked under the first lock of every internal registration transaction. */
+    fun requirePaperParent(parent: ReprocessRun) {
+        check(TransactionSynchronizationManager.isActualTransactionActive())
+        val row = jdbc.queryForList("""SELECT p.* FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+            WHERE p.execution_id=? AND t.task_type='DISCOVERY_PAPER_REPROCESS' FOR UPDATE""", parent.executionId).singleOrNull()
+            ?: throw java.util.concurrent.CancellationException("PAPER_PARENT_NOT_FOUND")
+        val until = sqlInstant(row["lease_until"])
+        if (row["mode"] != "ENFORCE" || row["state"] != "RUNNING" || cancelled(row["cancel_requested"]) ||
+            row["lease_token"] != parent.leaseToken || (row.getValue("generation") as Number).toLong() != parent.generation ||
+            until?.isAfter(Instant.now()) != true ||
+            replayMapper.readTree(row.getValue("scope_json").toString()) != parent.scope)
+            throw java.util.concurrent.CancellationException("PAPER_PARENT_PERMISSION_LOST")
+    }
+
+    fun lockPaperRunPermission(executionId: Long): Boolean =
+        findRun(executionId)?.let { paperAllowed(it, locked = true) } ?: false
+
+    @Transactional
+    fun cancelPaperReprocessOrdinaryRun(parentId: Long) {
+        val row = jdbc.queryForList("""SELECT p.cancel_requested FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+            WHERE p.execution_id=? AND p.mode='ENFORCE' AND t.task_type='DISCOVERY_PAPER_REPROCESS' FOR UPDATE""", parentId).singleOrNull()
+            ?: error("PAPER_PARENT_NOT_FOUND")
+        check(cancelled(row["cancel_requested"]))
+        val run = findRun(parentId) ?: return
+        require(paperParentId(run) == parentId && run.recheckJson == null)
+        lockRun(parentId)
+        closeInput(parentId, Instant.now())
+        jdbc.query("""SELECT id FROM discovery_verification_item WHERE owner_execution_id=? AND review_epoch=0
+            AND state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT') AND admission_revision IS NULL ORDER BY id""",
+            RowMapper { rs, _ -> rs.getLong(1) }, parentId).forEach { id ->
+            val item = lockItem(id)
+            val now = Instant.now()
+            jdbc.update("""UPDATE discovery_verification_item SET state='CANCELLED',outcome=NULL,route='NONE',
+                completed_at=?,lease_token=NULL,lease_until=NULL,next_attempt_at=NULL,generation=generation+1,updated_at=?
+                WHERE id=? AND admission_revision IS NULL""", now.verificationUtc(), now.verificationUtc(), item.id)
+            DiscoveryVerificationTraceRepository(jdbc).cancelSteps(item.id, now)
+            jdbc.update("""UPDATE discovery_verification_attempt SET result_code='UNKNOWN_AFTER_CANCEL',completed_at=?
+                WHERE item_id=? AND completed_at IS NULL""", now.verificationUtc(), item.id)
+        }
+    }
+
+    fun paperReprocessRuns(parentId: Long): List<VerificationRun> = jdbc.query("""SELECT * FROM discovery_verification_run
+        WHERE JSON_EXTRACT(settings_json,'$.paperReprocessParentId')=? ORDER BY execution_id""", runMapper, parentId)
+
+    @Transactional
+    fun cancelPaperReprocessChildren(parentId: Long) {
+        cancelPaperReprocessOrdinaryRun(parentId)
+        paperReprocessRuns(parentId).filter { it.recheckJson != null }.forEach { cancelRecheck(it.executionId, Instant.now()) }
+    }
+
+    /**
+     * Explicit paper-reprocess retry resumes only its own cancelled child. The immutable spec, the
+     * completed peers and every cancellation receipt stay untouched; only unfinished, never-admitted
+     * items are queued again and the control phase returns to RUNNING under the same epoch.
+     */
+    @Transactional
+    fun resumeCancelledPaperRecheck(executionId: Long, parentId: Long, now: Instant): Boolean {
+        val run = lockRun(executionId)
+        require(paperParentId(run) == parentId && run.recheckJson != null) { "FOREIGN_VERIFICATION" }
+        val frozen = recheck(run)
+        if (frozen.control.phase != RecheckPhase.CANCELLED) return false
+        val requeued = jdbc.update("""UPDATE discovery_verification_item SET activated_at=COALESCE(activated_at,?),
+            state='QUEUED',outcome=NULL,route='NONE',qualification='NOT_EVALUATED',completed_at=NULL,lease_token=NULL,
+            lease_until=NULL,next_attempt_at=NULL,reasons_json='[]',generation=generation+1,updated_at=?
+            WHERE owner_execution_id=? AND state='CANCELLED' AND admission_revision IS NULL""",
+            now.verificationUtc(), now.verificationUtc(), executionId)
+        if (requeued == 0) return false
+        val json = replayMapper.readTree(run.recheckJson) as ObjectNode
+        json.set<com.fasterxml.jackson.databind.JsonNode>("control", replayMapper.valueToTree(frozen.control.copy(phase = RecheckPhase.RUNNING)))
+        check(jdbc.update("""UPDATE discovery_verification_run SET recheck_json=?,input_closed=1,revision=revision+1,
+            updated_at=? WHERE execution_id=? AND revision=?""", json.toString(), now.verificationUtc(),
+            executionId, run.revision) == 1)
+        jdbc.update("""UPDATE task_execution SET status='RUNNING',finished_at=NULL,error_message=NULL,
+            interruption_reason_code=NULL,interruption_reason_detail=NULL,heartbeat_at=?,updated_at=?
+            WHERE id=? AND task_type='DISCOVERY_RECHECK_PREPARE'""",
+            now.verificationUtc(), now.verificationUtc(), executionId)
+        return true
+    }
+
 
     fun replayAdmission(docId: String, locked: Boolean = false): ReplayAdmission? =
         jdbc.query("""SELECT identity_hash,decision,revision,policy_version FROM expert_discovery_admission
@@ -452,6 +590,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional
     fun savePreparationInputs(executionId: Long, inputs: List<Pair<String, String>>, now: Instant) {
         val run = lockRun(executionId)
+        check(paperAllowed(run, locked = true)) { "PAPER_PARENT_PERMISSION_LOST" }
         check(recheck(run).control.phase == RecheckPhase.PREPARING && !run.inputClosed)
         inputs.forEach { (docId, json) ->
             jdbc.update("INSERT INTO discovery_recheck_input(execution_id,doc_id,payload_json) VALUES (?,?,?) ON DUPLICATE KEY UPDATE doc_id=doc_id",
@@ -541,6 +680,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional
     fun startRecheck(executionId: Long, rosterHash: String, expectedRevision: Long, now: Instant): VerificationRun {
         val run = lockRun(executionId)
+        check(paperAllowed(run)) { "PAPER_PARENT_PERMISSION_LOST" }
         val control = recheck(run).control
         fun conflict(code: String): Nothing = throw org.springframework.web.server.ResponseStatusException(
             org.springframework.http.HttpStatus.CONFLICT, code)
@@ -692,6 +832,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional
     fun reserveRecheckItem(input: VerificationReservation, now: Instant): VerificationItem {
         val run = lockRun(input.ownerExecutionId)
+        check(paperAllowed(run, locked = true)) { "PAPER_PARENT_PERMISSION_LOST" }
         val config = recheck(run)
         require(run.policyVersion == input.policyVersion)
         val existing = jdbc.query("""SELECT * FROM discovery_verification_item WHERE expert_doc_id=?
@@ -773,10 +914,18 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     @Transactional
     fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
-        require(findRun(input.ownerExecutionId)?.recheckJson == null) { "Ordinary reservation requires an ordinary run" }
-        // Read duplicate identity without locks first: never lock two runs in one transaction.
+        val proposedRun = findRun(input.ownerExecutionId) ?: error("Verification run not found")
+        require(proposedRun.recheckJson == null) { "Ordinary reservation requires an ordinary run" }
+        if (paperParentId(proposedRun) != null) {
+            lockRun(input.ownerExecutionId)
+            check(paperAllowed(proposedRun)) { "PAPER_PARENT_PERMISSION_LOST" }
+        }
+        // Read duplicate identity without locks first: never lock two verification runs in one transaction.
         val existing = identity(input)
-        if (existing != null) return checkedIdentity(existing, input)
+        if (existing != null) {
+            if (paperParentId(proposedRun) != null) require(existing.ownerExecutionId == input.ownerExecutionId) { "FOREIGN_REGISTRATION" }
+            return checkedIdentity(existing, input)
+        }
         val run = lockRun(input.ownerExecutionId)
         require(run.recheckJson == null && run.policyVersion == input.policyVersion && !run.inputClosed)
         val inserted = jdbc.update("""INSERT IGNORE INTO discovery_verification_item
@@ -795,6 +944,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun activateItem(itemId: Long, batchNumber: Int, now: Instant): VerificationItem {
         require(batchNumber > 0)
         val item = lockItem(itemId)
+        check(paperAllowed(findRun(item.ownerExecutionId)!!)) { "PAPER_PARENT_PERMISSION_LOST" }
         if (item.reviewEpoch > 0) require(recheckRunning(lockRun(item.ownerExecutionId)))
         if (item.state == VerificationState.RESERVED) {
             jdbc.update("UPDATE discovery_verification_item SET state='QUEUED',batch_number=?,activated_at=?,updated_at=? WHERE id=? AND state='RESERVED'",
@@ -856,12 +1006,20 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         val candidates = jdbc.query("""SELECT i.* FROM discovery_verification_item i
             JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
             WHERE (i.review_epoch=0 OR (r.input_closed=1 AND JSON_UNQUOTE(JSON_EXTRACT(r.recheck_json,'$.control.phase'))='RUNNING'))
+            AND (JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId') IS NULL OR EXISTS (
+                SELECT 1 FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+                WHERE p.execution_id=JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')
+                  AND t.task_type='DISCOVERY_PAPER_REPROCESS' AND p.mode='ENFORCE' AND p.state='RUNNING'
+                  AND p.cancel_requested=0 AND p.lease_token IS NOT NULL AND p.lease_until>?
+                  AND JSON_REMOVE(r.settings_json,'$.paperReprocessParentId','$.evaluationAt')=
+                      JSON_EXTRACT(p.scope_json,'$.verificationSettings')))
             AND (i.state='QUEUED' OR (i.state='RETRY_WAIT' AND i.next_attempt_at<=?) OR (i.state='RUNNING' AND i.lease_until<=?)) ORDER BY i.id LIMIT 100""",
-            itemMapper, now.verificationUtc(), now.verificationUtc())
+            itemMapper, Instant.now().verificationUtc(), now.verificationUtc(), now.verificationUtc())
         // One run per transaction, even when all of its candidates lost a race.
         val owner = candidates.firstOrNull()?.ownerExecutionId ?: return null
         val run = lockRun(owner)
         if (run.recheckJson != null && !recheckRunning(run)) return null
+        if (!paperAllowed(run, locked = true)) return null
         for (candidate in candidates.filter { it.ownerExecutionId == owner }) {
             val item = lockedItem(candidate.id)
             if (!(item.state == VerificationState.QUEUED ||
@@ -963,17 +1121,97 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     /** Read-only control check; request reservation and commit repeat it under run -> item locks. */
     fun isRunAccepting(executionId: Long): Boolean = findRun(executionId)?.let {
-        it.recheckJson == null || recheckRunning(it)
+        paperAllowed(it) && (it.recheckJson == null || recheckRunning(it))
     } == true
 
     /** Commit holds this run lock until its outer transaction ends, before acquiring admission/item locks. */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     fun lockRunAccepting(executionId: Long): Boolean = lockRun(executionId).let {
-        it.recheckJson == null || recheckRunning(it)
+        paperAllowed(it) && (it.recheckJson == null || recheckRunning(it))
     }
 
     fun isOwned(itemId: Long, token: String, generation: Long, now: Instant): Boolean =
         findItem(itemId)?.let { owns(it, token, generation, now) } == true
+
+    /** Two short SQL phases around external ES CAS; neither transaction performs external work. */
+    @Transactional
+    fun stageIdentity(lease: VerificationItem, proposal: com.weibo.talentintroduction.discovery.service.RetainedIdentityProposal,
+        now: Instant): VerificationItem? {
+        require(lease.reviewEpoch > 0) { "Ordinary discovery cannot rebind identity" }
+        val item = lockForCommit(lease.id)
+        if (item.reviewEpoch != lease.reviewEpoch || !owns(item, requireNotNull(lease.leaseToken), lease.generation, now) || item.snapshotJson != lease.snapshotJson) return null
+        val service = com.weibo.talentintroduction.discovery.service.RetainedPaperIdentityService
+        val root = service.codec.readTree(item.snapshotJson) as ObjectNode
+        val prior = service.supplement(item)
+        if (prior != null) require(prior.proposalHash == service.hash(proposal)) { "Frozen proposal changed" }
+        val before = prior?.beforeSnapshot ?: root.deepCopy()
+        val review = before.path("reviewInput")
+        require(review.isObject && review.has("expectedAdmissionRevision"))
+        val admission = jdbc.query("SELECT identity_hash,revision FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+            RowMapper { rs, _ -> rs.getString(1) to rs.getLong(2) }, item.expertDocId).singleOrNull()
+        val revisionNode = review.path("expectedAdmissionRevision")
+        require(revisionNode.isNull || revisionNode.isIntegralNumber && revisionNode.canConvertToLong() && revisionNode.longValue() >= 0)
+        val revision = revisionNode.takeUnless { it.isNull }?.longValue()
+        if (admission?.second != revision || admission != null && admission.first != before.path("identityHash").asText() ||
+            prior != null && admission?.first != prior.beforeAdmissionIdentity)
+            throw java.util.ConcurrentModificationException("IDENTITY_BASELINE_CHANGED")
+        val s = com.weibo.talentintroduction.discovery.service.IdentitySupplement(item.id, item.reviewEpoch, item.generation,
+            replayHash(lease.leaseToken), before, before.path("identityHash").asText(), before.path("factFingerprint").asText(),
+            revision, prior?.beforeAdmissionIdentity ?: admission?.first, proposal, service.hash(proposal),
+            if (item.policyVersion == VerificationMode.AUDIT.policyVersion) VerificationMode.AUDIT else VerificationMode.ENFORCE,
+            if (item.policyVersion == VerificationMode.AUDIT.policyVersion) "PROPOSED" else "APPLYING")
+        root.set<com.fasterxml.jackson.databind.JsonNode>("identitySupplement", replayMapper.valueToTree(s))
+        jdbc.update("UPDATE discovery_verification_item SET snapshot_json=?,updated_at=? WHERE id=?", root.toString(), now.verificationUtc(), item.id)
+        bump(item.ownerExecutionId, now)
+        return findItem(item.id)
+    }
+
+    @Transactional
+    fun completeIdentity(lease: VerificationItem, receipt: com.weibo.talentintroduction.discovery.service.RetainedIdentityReceipt,
+        now: Instant): VerificationItem? {
+        require(lease.reviewEpoch > 0)
+        val item = lockForCommit(lease.id)
+        if (item.reviewEpoch != lease.reviewEpoch || !owns(item, requireNotNull(lease.leaseToken), lease.generation, now) || item.snapshotJson != lease.snapshotJson) return null
+        val service = com.weibo.talentintroduction.discovery.service.RetainedPaperIdentityService
+        val s = requireNotNull(service.supplement(item))
+        require(s.generation == item.generation && s.ownerHash == replayHash(item.leaseToken)) { "Repair ownership changed" }
+        require(s.proposalHash == service.hash(s.proposal)) { "Frozen proposal changed during persistence" }
+        val admission = jdbc.query("SELECT identity_hash,revision FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+            RowMapper { rs, _ -> rs.getString(1) to rs.getLong(2) }, item.expertDocId).singleOrNull()
+        if (admission?.first != s.beforeAdmissionIdentity || admission?.second != s.beforeAdmissionRevision)
+            throw java.util.ConcurrentModificationException("IDENTITY_BASELINE_CHANGED")
+        val root = service.codec.readTree(item.snapshotJson) as ObjectNode
+        val effective = receipt.effective
+        val rebind = effective != null && (s.mode == VerificationMode.AUDIT && receipt.phase == "PROPOSED" ||
+            s.mode == VerificationMode.ENFORCE && receipt.phase == "APPLIED")
+        if (rebind) {
+            val before = replayMapper.treeToValue(s.beforeSnapshot, VerificationSnapshot::class.java)
+            val incoming = requireNotNull(s.proposal.incoming)
+            val profile = effective!!.profile
+            require(profile.copy(givenNames = before.profile.givenNames, familyNames = before.profile.familyNames,
+                identityVerification = before.profile.identityVerification) == before.profile) { "Non-identity baseline changed" }
+            require(profile.givenNames == incoming.givenNames && profile.familyNames == incoming.familyNames &&
+                profile.identityVerification == com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+                    incoming.email, incoming.givenNames, incoming.familyNames, requireNotNull(incoming.identityEvidence),
+                    incoming.orcidId, incoming.openAlexAuthorId)) { "Receipt differs from frozen proposal" }
+        }
+        val updated = s.copy(phase = receipt.phase, repairReceipt = receipt,
+            effectiveProfile = if (rebind) effective!!.profile else null, effectiveHash = if (rebind) effective!!.identityHash else null)
+        if (rebind) {
+            root.set<com.fasterxml.jackson.databind.JsonNode>("profile", replayMapper.valueToTree(effective!!.profile))
+            root.put("identityHash", effective.identityHash); root.put("factFingerprint", effective.factFingerprint)
+            // The original review cache remains solely under beforeSnapshot, not available to the new identity.
+            val review = root.path("reviewInput") as ObjectNode
+            review.remove(listOf("evidence", "evidenceHash"))
+        }
+        root.set<com.fasterxml.jackson.databind.JsonNode>("identitySupplement", replayMapper.valueToTree(updated))
+        jdbc.update("""UPDATE discovery_verification_item SET snapshot_json=?,identity_hash=?,fact_fingerprint=?,
+            evidence_json=IF(? ,NULL,evidence_json),updated_at=? WHERE id=?""", root.toString(),
+            if (rebind) effective!!.identityHash else item.identityHash, if (rebind) effective!!.factFingerprint else item.factFingerprint,
+            rebind && (effective!!.identityHash != item.identityHash || effective.factFingerprint != item.factFingerprint), now.verificationUtc(), item.id)
+        bump(item.ownerExecutionId, now)
+        return findItem(item.id)
+    }
 
     /**
      * A cancelled worker may acknowledge only its already dispatched request, once. The ownership
@@ -986,8 +1224,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         require(httpStatus == null || httpStatus in 100..599)
         responseSha256?.let(::verificationHash)
         val item = lockItem(itemId)
-        if (item.reviewEpoch == 0L || item.state != VerificationState.CANCELLED &&
-            isRunAccepting(item.ownerExecutionId)) return false
+        if (item.reviewEpoch == 0L && !isPaperReprocessOwned(item.ownerExecutionId) ||
+            item.state != VerificationState.CANCELLED && isRunAccepting(item.ownerExecutionId)) return false
         val attempt = findAttempts(itemId).singleOrNull { it.id == attemptId && it.requestKey == requestKey } ?: return false
         if (attempt.completedAt != null) return false
         val receipt = replayMapper.readTree(attempt.requestJson).path("_dispatch")
@@ -1057,7 +1295,19 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     fun listReserved(limit: Int): List<VerificationItem> {
         require(limit in 1..500)
-        return jdbc.query("SELECT * FROM discovery_verification_item WHERE review_epoch=0 AND state='RESERVED' ORDER BY id LIMIT ?", itemMapper, limit)
+        // Filter before LIMIT: a full recovery window of parked parents must not hide
+        // unrelated reservations. Activation retains the authoritative locked check.
+        return jdbc.query("""SELECT i.* FROM discovery_verification_item i
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE i.review_epoch=0 AND i.state='RESERVED'
+            AND (JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId') IS NULL OR EXISTS (
+                SELECT 1 FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+                WHERE p.execution_id=JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')
+                  AND t.task_type='DISCOVERY_PAPER_REPROCESS' AND p.mode='ENFORCE' AND p.state='RUNNING'
+                  AND p.cancel_requested=0 AND p.lease_token IS NOT NULL AND p.lease_until>?
+                  AND JSON_REMOVE(r.settings_json,'$.paperReprocessParentId','$.evaluationAt')=
+                      JSON_EXTRACT(p.scope_json,'$.verificationSettings')))
+            ORDER BY i.id LIMIT ?""", itemMapper, Instant.now().verificationUtc(), limit)
     }
 
     /** Recovery may terminate an unactivated registration only after its owner's input is closed. */
@@ -1079,6 +1329,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         jdbc.query("SELECT expert_doc_id FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
             RowMapper { rs, _ -> rs.getString(1) }, item.expertDocId)
         val locked = lockedItem(itemId)
+        if (!paperAllowed(run)) return locked.copy(leaseToken = null, leaseUntil = null)
         check(locked.reviewEpoch == 0L || recheckRunning(run)) { "Recheck is not running" }
         return locked
     }
@@ -1162,6 +1413,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
     private fun lockRun(id: Long): VerificationRun {
         require(id > 0)
+        findRun(id)?.let { paperAllowed(it, locked = true) }
         return jdbc.query("SELECT * FROM discovery_verification_run WHERE execution_id=? FOR UPDATE", runMapper, id).singleOrNull()
             ?: throw IllegalStateException("Verification run not found")
     }
@@ -1174,7 +1426,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     private fun owns(item: VerificationItem, token: String, generation: Long, now: Instant): Boolean =
         item.state == VerificationState.RUNNING && item.leaseToken == token && item.generation == generation &&
             item.leaseUntil?.let { it > now } == true &&
-            (item.reviewEpoch == 0L || recheckRunning(findRun(item.ownerExecutionId)!!))
+            (item.reviewEpoch == 0L || recheckRunning(findRun(item.ownerExecutionId)!!)) &&
+            paperAllowed(findRun(item.ownerExecutionId)!!)
     private fun bump(owner: Long, now: Instant) {
         jdbc.update("UPDATE discovery_verification_run SET revision=revision+1,updated_at=? WHERE execution_id=?", now.verificationUtc(), owner)
     }

@@ -67,7 +67,7 @@ class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArc
                     failure = PaperSourceFailure(stage, code.take(80), error.javaClass.simpleName.take(80), code == "ARCHIVE_BUSY"))
             }
             try {
-                archive.analysisLease(ref.archiveRecordId).use { lease ->
+                archive.analysisLease(ref.archiveRecordId, listOf(ref.attemptId to ref.bodySha256)).use { lease ->
                     val r = lease.record
                     stage = "VALIDATE_REFERENCE"
                     require(r.executionId == ref.sourceExecutionId && r.sourceName == ref.sourceName && r.paperKey == ref.sourceItemKey)
@@ -76,9 +76,7 @@ class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArc
                     require(ref.attemptId to ref.bodySha256 in lease.fileSet)
                     stage = "READ_BODY"
                     val bytes = bodyBytes.getOrPut(ref.bodySha256) {
-                        val body = lease.bodies.singleOrNull { it.hash == ref.bodySha256 }
-                        if (body != null) body.input.readBytes()
-                        else archive.withContent(r.id, ref.attemptId) { _, input -> input.readBytes() }
+                        lease.bodies.single { it.hash == ref.bodySha256 }.input.readBytes()
                     }
                     stage = "VALIDATE_BODY_HASH"
                     require(DiscoveryPaperArchiveService.sha(bytes) == ref.bodySha256)

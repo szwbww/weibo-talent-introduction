@@ -25,7 +25,7 @@
         const doc = root.ownerDocument;
         const find = key => root.querySelector('[data-rr="' + key + '"]');
         const dialogs = { config: find("config"), history: find("history-dialog"), detail: find("detail") };
-        let mounted = false, epoch = 0, timer = null, run = null, prepared = null, preparedSpec = null;
+        let mounted = false, reviewMounted = false, epoch = 0, timer = null, run = null, prepared = null, preparedSpec = null;
         let rows = [], latest = {}, history = { kind: "runs", page: 0, total: 0 }, manifestPage = 0;
         let person = null, selectedStep = null, appliedRevision = null;
         let restoring = false, restoreFailed = false, submitting = false, requestKey = null, requestSpec = null;
@@ -273,6 +273,7 @@
             } catch (e) { error("history-status", e, "重新打开此人历史"); }
         }
         async function openDetail(runId, itemId, trigger) {
+            if (!mounted) mount(false);
             invalidate(); person = null; selectedStep = null;
             text("detail-person", "正在读取…");
             find("steps").replaceChildren(); find("step-body").replaceChildren(); find("detail-summary").replaceChildren(); find("sync-retry").hidden = true;
@@ -393,8 +394,12 @@
             else if (key === "manifest-prev" || key === "manifest-next") { manifestPage += key.endsWith("prev") ? -1 : 1; loadManifest(); }
             else if (key === "history-prev" || key === "history-next") { history.page += key.endsWith("prev") ? -1 : 1; loadHistory(); }
         }
-        function mount() {
-            if (mounted) return; mounted = true; invalidate();
+        function mount(restore = true) {
+            if (mounted) {
+                if (restore && !reviewMounted) { reviewMounted = true; restoreActive().then(schedule); }
+                return;
+            }
+            mounted = true; reviewMounted = restore; invalidate();
             if (!run) find("run").hidden = true;
             listen(root, "click", click);
             listen(root, "change", event => { if (event.target.matches('input[name^="rr-"]')) {
@@ -407,14 +412,15 @@
                 listen(dialog, "cancel", event => { event.preventDefault(); event.stopPropagation(); close(name); });
                 listen(dialog, "close", () => { const target = focusTargets.get(dialog); focusTargets.delete(dialog); if (mounted && target?.isConnected) target.focus(); });
             });
-            restoreActive().then(schedule);
+            if (restore) restoreActive().then(schedule);
         }
         function unmount() {
-            mounted = false; invalidate(); listeners.splice(0).forEach(remove => remove());
+            mounted = reviewMounted = false; invalidate(); listeners.splice(0).forEach(remove => remove());
             Object.values(dialogs).forEach(dialog => { if (dialog.open) dialog.close(); }); focusTargets.clear();
             person = null; rows = []; latest = {}; prepared = null; preparedSpec = null;
+            restoring = false;
         }
-        return { mount, unmount, onRows };
+        return { mount, unmount, onRows, openDetail };
     }
     global.createDiscoveryRecheck = createDiscoveryRecheck;
     if (typeof module !== "undefined" && module.exports) module.exports = { createDiscoveryRecheck, safeUrl };

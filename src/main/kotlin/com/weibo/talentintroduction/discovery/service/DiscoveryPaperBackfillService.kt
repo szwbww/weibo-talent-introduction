@@ -10,13 +10,13 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 
 /** A non-serializable parser permit, not a second identity or admission policy. */
-class ParsedArchivedPaper private constructor(private val paper: DiscoveryHistoricalReplayTool.Paper,
-    emails: List<AuthorEmail>, val analysis: PaperBodyComputation) {
+class ParsedArchivedPaper private constructor(private val metadata: PaperMetadata, private val source: PaperSourceRef,
+    emails: List<AuthorEmail>, val analysis: PaperBodyComputation, private val revalidate: () -> Unit) {
     val emails: List<AuthorEmail> = java.util.Collections.unmodifiableList(emails.toList())
     fun requireMatches(metadata: PaperMetadata, authors: List<AuthorEmail>, source: PaperSourceRef) {
-        require(metadata == paper.metadata && authors.distinct() == authors && authors.all { it in emails } &&
-            source == paper.source) { "ARCHIVED_PARSER_INPUT_CHANGED" }
-        DiscoveryHistoricalReplayTool.readBody(paper) // Recheck retained bytes immediately before the existing write seam.
+        require(metadata == this.metadata && authors.distinct() == authors && authors.all { it in emails } &&
+            source == this.source) { "ARCHIVED_PARSER_INPUT_CHANGED" }
+        revalidate()
         require(emails.all { !it.givenNames.isNullOrBlank() && !it.familyNames.isNullOrBlank() && DiscoveryIdentity.validEvidence(it.identityEvidence) })
     }
     companion object {
@@ -27,12 +27,61 @@ class ParsedArchivedPaper private constructor(private val paper: DiscoveryHistor
             val bound = parsed.emails.filter { !it.givenNames.isNullOrBlank() && !it.familyNames.isNullOrBlank() && DiscoveryIdentity.validEvidence(it.identityEvidence) }
             val conflicts = bound.groupBy { DiscoveryIdentity.normalizedEmail(it.email) }.filterValues { group ->
                 group.map { it.givenNames?.lowercase() to it.familyNames?.lowercase() }.distinct().size != 1 }.keys
-            return ParsedArchivedPaper(paper, bound.filterNot { DiscoveryIdentity.normalizedEmail(it.email) in conflicts }
-                .distinctBy { DiscoveryIdentity.normalizedEmail(it.email) }, parsed)
+            return ParsedArchivedPaper(paper.metadata, paper.source, bound.filterNot { DiscoveryIdentity.normalizedEmail(it.email) in conflicts }
+                .distinctBy { DiscoveryIdentity.normalizedEmail(it.email) }, parsed) { DiscoveryHistoricalReplayTool.readBody(paper) }
+        }
+
+        /** Server-only byte factory. Neither a filesystem path nor an author list is an input. */
+        internal fun archiveLease(archive: DiscoveryPaperArchiveService, analyzer: PaperBodyAnalyzer,
+            repository: com.weibo.talentintroduction.discovery.repository.DiscoveryPaperReprocessRepository,
+            parent: ReprocessRun, target: ReprocessItem, ref: PaperSourceRef): ParsedArchivedPaper {
+            repository.requirePermission(parent)
+            val persisted = repository.item(parent.executionId, target.id)
+            require(persisted?.kind == ReprocessKind.TARGET && persisted.input == target.input)
+            require(target.input.path("paperRefs").any {
+                it.path("recordId").asLong() == ref.archiveRecordId &&
+                    it.path("bodyHash").asText() == ref.bodySha256 &&
+                    it.path("attemptIds").any { attempt -> attempt.asLong() == ref.attemptId } &&
+                    it.path("sourceExecutionId").asLong() == ref.sourceExecutionId &&
+                    it.path("sourceName").asText() == ref.sourceName &&
+                    it.path("sourceItemKey").asText() == ref.sourceItemKey
+            }) { "ARCHIVED_SOURCE_NOT_FROZEN" }
+            val mapper = DiscoveryHistoricalReplayTool.mapper
+            fun read(): Pair<PaperMetadata, PaperBodyInput> {
+                repository.requirePermission(parent)
+                return archive.analysisLease(ref.archiveRecordId, listOf(ref.attemptId to ref.bodySha256)).use { lease ->
+                    require(lease.record.executionId == ref.sourceExecutionId && lease.record.sourceName == ref.sourceName &&
+                        lease.record.paperKey == ref.sourceItemKey) { "ARCHIVED_SOURCE_CHANGED" }
+                    // The exact PAPER is queried by its immutable key, independently of API pagination.
+                    val paper = repository.paper(parent.executionId, ref.archiveRecordId)
+                        ?: error("ARCHIVED_SOURCE_NOT_FROZEN")
+                    require(com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
+                        .replayHash(lease.record.metadataJson) == paper.input.path("metadataHash").asText()) { "ARCHIVED_METADATA_CHANGED" }
+                    val metadata = mapper.treeToValue(mapper.readTree(lease.record.metadataJson), PaperMetadata::class.java)
+                    metadata to PaperBodyInput(ref.bodySha256, lease.bodies.single().attempt.kind,
+                        lease.bodies.single().input.readBytes())
+                }
+            }
+            val (metadata, body) = read()
+            val parsed = analyzer.parse(body, mapper.valueToTree(metadata)) { repository.requirePermission(parent) }
+            require(parsed.reasons.isEmpty()) {
+                "SOURCE_IDENTITY_PARTIAL"
+            }
+            val bound = parsed.emails.filter { !it.givenNames.isNullOrBlank() && !it.familyNames.isNullOrBlank() &&
+                DiscoveryIdentity.validEvidence(it.identityEvidence) }
+            val unique = bound.groupBy { DiscoveryIdentity.normalizedEmail(it.email) }.filterValues { group ->
+                group.map { listOf(it.givenNames?.lowercase(), it.familyNames?.lowercase(), it.orcidId, it.openAlexAuthorId) }.distinct().size == 1
+            }.values.map { it.first() }
+            return ParsedArchivedPaper(metadata, ref, unique, parsed) {
+                val current = read()
+                require(current.first == metadata && current.second.hash == body.hash &&
+                    current.second.kind == body.kind && current.second.bytes.contentEquals(body.bytes)) { "ARCHIVED_SOURCE_CHANGED" }
+            }
         }
     }
 }
-data class ArchivedPaperExecution(val source: PaperSourceRef, val evaluationAt: Instant, val parsed: ParsedArchivedPaper)
+data class ArchivedPaperExecution(val source: PaperSourceRef, val evaluationAt: Instant, val parsed: ParsedArchivedPaper,
+    val parent: ReprocessRun? = null, val target: ReprocessItem? = null)
 
 /** The adapter reads current identity/revision and creates NEW tasks/runs; no historical item reset API. */
 interface HistoricalBindingsTarget {

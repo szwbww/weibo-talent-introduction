@@ -173,12 +173,29 @@ class DiscoveryVerificationQueryService(
     }
 
     fun recheckItem(id: Long, itemId: Long): RecheckItemView {
-        val item = requireRecheckItem(id, itemId)
+        require(id > 0)
+        val run = repository.findRun(id)
+        val item = when {
+            run?.recheckJson != null -> requireRecheckItem(id, itemId)
+            // Only a server-owned paper-reprocess parent exposes its ordinary epoch0 eight-step record.
+            run != null && repository.isPaperReprocessOwned(id) -> requirePaperOwnedItem(id, itemId)
+            else -> throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_NOT_FOUND")
+        }
         return recheckItemView(item, admissions.findAdmission(item.expertDocId))
+    }
+
+    /** Ordinary items are readable/reprojectable only through their exact parent-owned run and epoch. */
+    fun requirePaperOwnedItem(runId: Long, itemId: Long): VerificationItem {
+        require(itemId > 0)
+        if (!repository.isPaperReprocessOwned(runId))
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_NOT_FOUND")
+        return repository.findItem(itemId)?.takeIf { it.ownerExecutionId == runId && it.reviewEpoch == 0L }
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_ITEM_NOT_FOUND")
     }
 
     private fun recheckItemView(item: VerificationItem, current: ExpertDiscoveryAdmission?): RecheckItemView {
         val root = mapper.readTree(item.snapshotJson)
+        val frozen = root.path("identitySupplement").path("beforeSnapshot").takeIf { it.isObject } ?: root
         val review = root.path("reviewInput")
         val trace = repository.trace(item.id)
         val latest = trace.steps.groupBy { it.stepNo }.mapValues { it.value.last() }
@@ -193,8 +210,8 @@ class DiscoveryVerificationQueryService(
             else reason?.path("codes")?.takeIf { it.isArray }?.map { it.asText() }.orEmpty()
         }).distinct()
         return RecheckItemView(item.id, item.ownerExecutionId, item.expertDocId, item.batchNumber, item.state,
-            root.path("profile").path("givenNames").asText(null), root.path("profile").path("familyNames").asText(null),
-            root.path("profile").path("email").asText(null), item.identityHash, item.factFingerprint,
+            frozen.path("profile").path("givenNames").asText(null), frozen.path("profile").path("familyNames").asText(null),
+            frozen.path("profile").path("email").asText(null), item.identityHash, item.factFingerprint,
             mapper.valueToTree(mapOf("decision" to review.path("beforeDecision"),
                 "revision" to review.path("expectedAdmissionRevision"))),
             combined?.get("proposed"), current?.let { RecheckAdmissionView(it.decision, it.revision) },
@@ -202,7 +219,9 @@ class DiscoveryVerificationQueryService(
             item.outcome, item.qualification, item.route, item.projectionState, item.projectionError,
             item.admissionRevision != null, item.requestCount, trace, allReasons, review.path("paperSourceRefs"),
             review.path("evidenceHash").asText(null), review.path("baselineItemId").takeIf { it.isIntegralNumber }?.longValue(),
-            latest.values.mapNotNull { value(it.versionJson) }.distinct(), saved, item.updatedAt,
+            latest.values.mapNotNull { value(it.versionJson) }.distinct(),
+            root.get("identitySupplement")?.let { supplement -> mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(
+                mapOf("result" to saved, "identitySupplement" to supplement)) } ?: saved, item.updatedAt,
             recheckEvidence(item, review.path("paperSourceRefs")))
     }
 
@@ -250,8 +269,11 @@ class DiscoveryVerificationQueryService(
         recheckPage(page, size)
         val result = repository.recheckItems(id, page, size)
         return RecheckPage(result.first, page, size, result.second.map { item ->
-            val input = mapper.readTree(item.snapshotJson).path("reviewInput")
-            RecheckManifestItem(item.id, item.expertDocId, item.identityHash, item.factFingerprint, item.reviewEpoch,
+            val root = mapper.readTree(item.snapshotJson)
+            val frozen = root.path("identitySupplement").path("beforeSnapshot").takeIf { it.isObject } ?: root
+            val input = frozen.path("reviewInput")
+            RecheckManifestItem(item.id, item.expertDocId, frozen.path("identityHash").asText(item.identityHash),
+                frozen.path("factFingerprint").asText(item.factFingerprint), item.reviewEpoch,
                 input.get("expectedAdmissionRevision"), input.path("evidenceHash").asText(null),
                 input.path("paperSourceRefs"), item.state)
         })

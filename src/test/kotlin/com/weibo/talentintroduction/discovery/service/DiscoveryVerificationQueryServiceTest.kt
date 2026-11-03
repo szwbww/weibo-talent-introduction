@@ -19,6 +19,25 @@ class DiscoveryVerificationQueryServiceTest {
     private fun run(id: Long, mode: VerificationMode = VerificationMode.ENFORCE) =
         VerificationRun(id, mode, mode.policyVersion, true, "{}", true, 17, now, now)
 
+    @Test fun `rebound manifest exposes frozen identity and original cache hash without business lookups`() {
+        val f = AdmissionGateFixture()
+        val old = f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(ruleSnapshot())
+        old.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", f.mapper.readTree(
+            """{"expectedAdmissionRevision":7,"evidenceHash":"original-cache-hash","paperSourceRefs":[]}"""))
+        val root = old.deepCopy()
+        root.put("identityHash", "d".repeat(64)); root.put("factFingerprint", "e".repeat(64))
+        root.set<com.fasterxml.jackson.databind.JsonNode>("identitySupplement", f.mapper.createObjectNode().set<com.fasterxml.jackson.databind.JsonNode>("beforeSnapshot", old))
+        (root.path("reviewInput") as com.fasterxml.jackson.databind.node.ObjectNode).remove("evidenceHash")
+        val item = f.item().copy(reviewEpoch = 20, ownerExecutionId = 20, identityHash = "d".repeat(64),
+            factFingerprint = "e".repeat(64), snapshotJson = root.toString())
+        `when`(repository.findRun(20)).thenReturn(run(20).copy(recheckJson = "{}"))
+        `when`(repository.recheckItems(20, 0, 20)).thenReturn(1L to listOf(item))
+        val manifest = f.mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(service.recheckManifest(20, 0, 20)).path("items")[0]
+        assertEquals(ruleSnapshot().identityHash, manifest.path("identityHash").asText())
+        assertEquals("original-cache-hash", manifest.path("evidenceHash").asText())
+        verifyNoInteractions(admissions)
+    }
+
     @Test fun `cancelled rechecks retain separate counts frozen control full history and actual saved steps`() {
         val f = AdmissionGateFixture()
         val item = f.item().copy(id = 20, ownerExecutionId = 20, reviewEpoch = 20,

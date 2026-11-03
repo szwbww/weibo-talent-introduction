@@ -66,13 +66,14 @@ const setting = { revision: 3, enabled: false, maxBytes: 20 * 1073741824, minFre
 function stats(id = null) { return { executionId: id, counts: { papers: 3, attempts: 4, savedAttempts: 3, newFiles: 2, reusedAttempts: 1, failedAttempts: 1, notStoredPapers: 1 }, storage: { archiveUsedBytes: 3072, blobBytes: 3072, tempBytes: 0, fileCount: 2, protectedPaperCount: 1, diskTotalBytes: null, diskUsedBytes: null, diskAvailableBytes: null, measuredAt: '2026-10-24T00:00:00Z' } }; }
 function row(id = 1, protectedFlag = true) { return { id, revision: 2, executionId: 101, title: '<img src=x onerror=alert(1)>', paperKey: 'fixture-' + id, state: 'STORED', sourceName: 'fixture', protected: protectedFlag, storedBytes: 1024, readableAttemptIds: [id + 10], firstCapturedAt: '2023-01-01', extractionSummary: { emails: 2, resolved: 1 } }; }
 function deletion(ids = [1]) { return { ids, snapshotHash: 'a'.repeat(64), deletableFiles: 1, deletableBytes: 1024, protectedRecords: [], sharedFiles: [], busyFiles: [], notStored: [], items: [] }; }
-function harness(handler, contextPath = '/talent') {
+function harness(handler, contextPath = '/talent', hostOptions = {}) {
     const document = dom(), root = document.getElementById('taskProgressModal'), calls = [], timers = new Map(), blobs = new Set(), fetched = [], statuses = [];
     let timerId = 0;
     const sandbox = { window: {}, document, console, URLSearchParams, AbortController, DOMException, Blob, setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; }, clearTimeout: id => timers.delete(id), URL: { createObjectURL: () => { const url = 'blob:fixture/' + blobs.size; blobs.add(url); return url; }, revokeObjectURL: url => blobs.delete(url) }, fetch: async (url, options) => { fetched.push({ url, options }); return { ok: true, headers: { get: () => 'text/plain' }, blob: async () => new Blob(['<script>evil()</script> quote']) }; } };
+    sandbox.window.DiscoveryPaperReprocess = hostOptions.reprocess;
     vm.runInNewContext(source, sandbox);
     const api = async (url, options) => { calls.push({ url, options, body: options.body && JSON.parse(options.body) }); const result = handler && await handler(url, options, calls.at(-1)); if (result !== undefined) return result; if (url.endsWith('/settings')) return { ...setting }; if (url.includes('/stats')) return stats(); return { items: [row()], total: 1 }; };
-    const view = sandbox.window.DiscoveryPapers.mount({ root, api, makeUrl: p => contextPath + p, onStatus: m => statuses.push(m) });
+    const view = sandbox.window.DiscoveryPapers.mount({ root, api, makeUrl: p => contextPath + p, openVerification: hostOptions.openVerification, onStatus: m => statuses.push(m) });
     const find = name => root.querySelector('[data-dp="' + name + '"]');
     const act = name => root.querySelector('[data-dp-action="' + name + '"]');
     return { document, root, calls, timers, blobs, fetched, statuses, view, find, act, sandbox };
@@ -86,9 +87,19 @@ test('exact approved HTML/CSS contract, real IDs and asset keys', () => {
     const endMarker = '/* discovery-paper-archive-contract:end */';
     assert.equal(css.slice(css.indexOf('/* discovery-paper-archive-contract:start */'), css.indexOf(endMarker) + endMarker.length).trim(), expected);
     const blocks = [...plan.matchAll(/```html\n([\s\S]*?)\n```/g)].map(m => m[1]);
-    for (const i of [0, 3, 5]) assert.ok(html.includes(i === 0 ? blocks[i].split('\n').slice(1).join('\n') : blocks[i]));
+    const paperBlock = blocks[0].split('\n').slice(1).join('\n');
+    const insertion = paperBlock.indexOf('  <div class="dp-selection">');
+    assert.ok(html.includes(paperBlock.slice(0, insertion)));
+    assert.ok(html.includes(paperBlock.slice(insertion)));
+    for (const i of [3, 5]) assert.ok(html.includes(blocks[i]));
     assert.ok(app.includes(blocks[1]));
-    assert.equal((html.match(/\?v=/g) || []).length, 19);
+    const assets = [...html.matchAll(/(?:src|href)="([^"]+)\?v=([^"]+)"/g)];
+    const coordinated = new Set(['styles.css', 'trust-reply-workbench.js', 'app.js', 'discovery-paper-reprocess.js', 'discovery-papers.js', 'discovery-recheck.js']);
+    assert.equal(new Set(assets.filter(match => coordinated.has(match[1])).map(match => match[2])).size, 1);
+    const names = assets.map(match => match[1]);
+    for (const name of ['styles.css', 'discovery-paper-reprocess.js', 'discovery-papers.js', 'app.js']) assert.equal(names.filter(value => value === name).length, 1, name);
+    assert.ok(names.indexOf('discovery-paper-reprocess.js') < names.indexOf('discovery-papers.js'));
+    assert.ok(names.indexOf('discovery-papers.js') < names.indexOf('app.js'));
     assert.ok(!source.includes('localStorage')); assert.ok(!source.includes('innerHTML')); assert.ok(!source.includes('style.'));
 });
 
@@ -223,4 +234,68 @@ test('frozen reader host cancellation aborts transport without showing a late or
     resolve({ record: row(), attempts: [] }); await pending;
     assert.equal(h.root.querySelector('#discoveryPaperReader').open, false);
     assert.equal(h.fetched.length, 0); h.view.dispose();
+});
+
+test('reprocess shares authenticated host seams and only execution selection changes whole-source scope', async () => {
+    let mounted;
+    const lifecycle = [], verification = [];
+    const child = {
+        setExecution: id => lifecycle.push(['source', id]),
+        setVisible: visible => lifecycle.push(['visible', visible]),
+        suspend: () => lifecycle.push(['suspend']),
+        dispose: () => lifecycle.push(['dispose'])
+    };
+    const h = harness(undefined, '/talent', {
+        reprocess: { mount: options => { mounted = options; return child; } },
+        openVerification: (...args) => verification.push(args)
+    });
+    assert.equal(mounted.root, h.root);
+    assert.equal(mounted.makeUrl('/api/example'), '/talent/api/example');
+    assert.equal(mounted.openPaper, h.view.openPaper);
+    const trigger = h.act('settings');
+    mounted.openVerification(42, 9, trigger);
+    assert.deepEqual(verification, [[42, 9, trigger]]);
+    await mounted.api('/api/probe', {}); assert.equal(h.calls.at(-1).url, '/api/probe');
+    h.view.setExecution(101, [{ executionId: 101 }, { executionId: 202 }]);
+    h.view.setVisible(true); await flush();
+    const sourceCalls = () => lifecycle.filter(([kind]) => kind === 'source');
+    assert.deepEqual(sourceCalls(), [['source', 101]]);
+    h.find('selectPage').checked = true; h.find('selectPage').dispatch('change');
+    for (const name of ['status', 'protected', 'gain']) { h.find(name).value = 'filter'; h.find(name).dispatch('change'); await flush(); }
+    h.find('q').value = 'one matching paper'; h.find('q').dispatch('input');
+    const debounce = [...h.timers.entries()].find(([, timer]) => timer.ms === 400);
+    h.timers.delete(debounce[0]); debounce[1].fn(); await flush();
+    assert.deepEqual(sourceCalls(), [['source', 101]], 'row filters and selection never narrow batch scope');
+    assert.equal(lifecycle.filter(([kind]) => kind === 'suspend').length, 0, 'archive refresh does not reset reprocess history or dialogs');
+    h.find('execution').value = '202'; h.find('execution').dispatch('change'); await flush();
+    assert.deepEqual(sourceCalls(), [['source', 101], ['source', 202]]);
+    h.find('execution').value = ''; h.find('execution').dispatch('change'); await flush();
+    assert.equal(sourceCalls().at(-1)[1], null);
+    h.view.setVisible(false, true); h.view.setVisible(true); await flush();
+    assert.deepEqual(lifecycle.filter(([kind]) => kind === 'visible'), [['visible', true], ['visible', false], ['visible', true]]);
+    h.view.suspend(); h.view.setVisible(true); await flush();
+    assert.equal(lifecycle.filter(([kind]) => kind === 'suspend').length, 1);
+    h.view.dispose(); h.view.dispose();
+    assert.equal(lifecycle.filter(([kind]) => kind === 'dispose').length, 1);
+    assert.equal(h.timers.size, 0);
+    assert.ok(h.calls.every(call => !call.url.endsWith('/cancel')));
+});
+
+test('reprocess record references reuse the read-only reader, select exact attempts and retain frozen safeguards', async () => {
+    const hash11 = 'a'.repeat(64), hash12 = 'b'.repeat(64);
+    const h = harness(url => /\/1$/.test(url) ? { record: row(), analysis: null, outcome: null,
+        attempts: [{ id: 11, kind: 'EMBEDDED_TEXT', status: 'SAVED', readable: true, bodySha256: hash11 },
+            { id: 12, kind: 'EMBEDDED_TEXT', status: 'SAVED', readable: true, bodySha256: hash12 }] } : undefined);
+    await h.view.openPaper({ recordId: 1, attemptId: 12, bodySha256: hash12 });
+    assert.equal(h.find('attempts').value, '12');
+    assert.match(h.fetched.at(-1).url, /\/attempts\/12\/content$/);
+    await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: 12, bodySha256: hash11 }), /PAPER_SHA_CONFLICT/);
+    await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: 12, bodySha256: 'not-a-sha' }), /PAPER_REFERENCE_INVALID/);
+    await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: 99 }), /PAPER_ATTEMPT_NOT_FOUND/);
+    await assert.rejects(h.view.openPaper({ recordId: 1, attemptId: -1 }), /PAPER_REFERENCE_INVALID/);
+    await assert.rejects(h.view.openPaper({ archiveRecordId: 1, recordId: 1, attemptId: 12 }), /PAPER_SHA_UNKNOWN/);
+    await h.view.openPaper({ recordId: 1 });
+    assert.equal(h.find('attempts').value, '11');
+    assert.equal(h.calls.filter(call => call.options.method === 'POST').length, 0);
+    h.view.dispose();
 });

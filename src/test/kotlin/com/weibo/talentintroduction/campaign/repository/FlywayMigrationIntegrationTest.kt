@@ -200,6 +200,65 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `fresh empty database reaches V173 and creates the reprocess tables without seeded rows`() {
+        val flyway = flyway()
+        flyway.clean()
+        val result = flyway.migrate()
+        assertEquals("173", result.targetSchemaVersion)
+        connection().use { c ->
+            assertTrue(c.tableExists("discovery_paper_reprocess_run"))
+            assertTrue(c.tableExists("discovery_paper_reprocess_item"))
+            assertTrue(c.columnExists("inbound_mail_processing", "pending_owner_username"))
+            assertTrue(c.indexExists("inbound_mail_processing", "idx_inbound_pending_owner"))
+            listOf("chk_paper_reprocess_mode", "chk_paper_reprocess_state", "chk_paper_reprocess_phase",
+                "chk_paper_reprocess_active", "chk_paper_reprocess_scope_size").forEach {
+                assertTrue(c.checkConstraintExists("discovery_paper_reprocess_run", it), it)
+            }
+            listOf("chk_paper_reprocess_item_kind", "chk_paper_reprocess_item_state",
+                "chk_paper_reprocess_input_size", "chk_paper_reprocess_result_size").forEach {
+                assertTrue(c.checkConstraintExists("discovery_paper_reprocess_item", it), it)
+            }
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM discovery_paper_reprocess_run"))
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM discovery_paper_reprocess_item"))
+            assertEquals("admin", c.queryString("SELECT COLUMN_DEFAULT FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='inbound_mail_processing' AND column_name='pending_owner_username'"))
+        }
+    }
+
+    @Test
+    fun `V170 upgrades to V173 transferring only owned FULL unresolved pending mail and preserving other rows`() {
+        val before = flyway(MigrationVersion.fromVersion("170"))
+        before.clean()
+        assertEquals("170", before.migrate().targetSchemaVersion)
+        connection().use { c ->
+            c.execute("""INSERT INTO expert_contact (campaign_id,orcid_id,expert_email)
+                VALUES (1,'fixture-owner','fixture-owner@example.test')""")
+            val contact = c.queryLong("SELECT id FROM expert_contact WHERE orcid_id='fixture-owner'")
+            c.execute("""INSERT INTO expert_mail_read_access (username,expert_contact_id,granted_by,access_level,created_at)
+                VALUES ('user1',$contact,'fixture','FULL',NOW()), ('user2',$contact,'fixture','READ',NOW())""")
+            c.execute("""INSERT INTO inbound_mail_processing
+                (sender_account_code,imap_uid,from_email,received_at,process_status,process_reason,expert_contact_id)
+                VALUES ('REAL_ACCOUNT',1,'one@example.test',NOW(),'MANUAL_REVIEW','UNCLASSIFIED',$contact),
+                       ('SIMULATOR_NOOP',2,'two@example.test',NOW(),'MANUAL_REVIEW','UNCLASSIFIED',$contact),
+                       ('REAL_ACCOUNT',3,'three@example.test',NOW(),'RESOLVED','FAQ',$contact)""")
+        }
+        flyway().migrate()
+        connection().use { c ->
+            assertEquals("user1", c.queryString("SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=1"))
+            assertEquals("admin", c.queryString("SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=2"))
+            assertEquals("admin", c.queryString("SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=3"))
+            assertEquals(3L, c.queryLong("SELECT COUNT(*) FROM inbound_mail_processing"))
+            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM expert_mail_read_access WHERE username='user1' AND access_level='FULL'"))
+            c.execute("""INSERT INTO inbound_mail_processing
+                (sender_account_code,imap_uid,from_email,received_at,process_status,process_reason)
+                VALUES ('REAL_ACCOUNT',4,'four@example.test',NOW(),'MANUAL_REVIEW','UNCLASSIFIED')""")
+            assertEquals("admin", c.queryString("SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=4"))
+            assertTrue(c.tableExists("discovery_paper_reprocess_run"))
+            assertTrue(c.tableExists("discovery_paper_reprocess_item"))
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM discovery_paper_reprocess_run"))
+        }
+    }
+
+    @Test
     fun `V152 creates durable owner target draft table without business changes or foreign keys`() {
         val previous = flyway(MigrationVersion.fromVersion("151"))
         previous.clean()

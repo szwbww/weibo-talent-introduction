@@ -64,6 +64,36 @@ class DiscoveryPaperArchiveService(
         val first = r.outcomeJson?.let { mapper.readTree(it).path("first") }
         val anchors = first?.path("attemptIds")?.takeIf { it.isArray && !it.isEmpty }?.map { it.asLong() }?.toSet()
         val selected = files.filter { anchors == null || it.first in anchors }
+        openAnalysisLease(r, selected, files)
+    }
+    /** Reads only the frozen references; later attempts never replace a missing selected body. */
+    internal fun analysisLease(recordId: Long, attempts: List<Pair<Long, String>>): AnalysisLease = mutation {
+        val r = record(recordId)
+        if (attempts.isEmpty()) throw ArchiveException("SOURCE_MISSING", 410)
+        if (attempts.map { it.first }.distinct().size != attempts.size) throw ArchiveException("INVALID_ATTEMPT", 400)
+        val selected = attempts.toList()
+        val blobs = linkedMapOf<String, ArchiveBlob>()
+        selected.forEach { (attemptId, hash) ->
+            id(attemptId)
+            if (!hash.matches(Regex("[a-f0-9]{64}"))) throw ArchiveException("INVALID_HASH", 400)
+            val a = repository.attempt(attemptId) ?: throw ArchiveException("SOURCE_MISSING", 410)
+            if (a.recordId != r.id || a.blobSha256 != hash) throw ArchiveException("SOURCE_CHANGED", 409)
+            if (a.status != ArchiveAttemptStatus.SAVED) throw ArchiveException("SOURCE_MISSING", 410)
+            val b = repository.blob(hash)?.takeIf { it.state == ArchiveBlobState.AVAILABLE }
+                ?: throw ArchiveException("SOURCE_MISSING", 410)
+            blobs[hash] = b
+        }
+        // Validate every selected physical body before opening any of them.
+        blobs.forEach { (hash, blob) ->
+            val path = blobPath(hash)
+            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) != blob.sizeBytes)
+                throw ArchiveException("SOURCE_MISSING", 410)
+            if (hashFile(path) != hash) throw ArchiveException("SOURCE_CHANGED", 409)
+        }
+        openAnalysisLease(r, selected, selected)
+    }
+    private fun openAnalysisLease(r: ArchiveRecord, selected: List<Pair<Long, String>>,
+        files: List<Pair<Long, String>>): AnalysisLease {
         val opened = mutableListOf<AnalysisBody>()
         try {
             selected.distinctBy { it.second }.forEach { (id, hash) ->
@@ -72,7 +102,7 @@ class DiscoveryPaperArchiveService(
                 opened += body
                 analysisReaders[hash] = (analysisReaders[hash] ?: 0) + 1
             }
-            AnalysisLease(r, opened, files)
+            return AnalysisLease(r, opened, files)
         } catch (e: Exception) {
             AnalysisLease(r, opened, files).close()
             throw e

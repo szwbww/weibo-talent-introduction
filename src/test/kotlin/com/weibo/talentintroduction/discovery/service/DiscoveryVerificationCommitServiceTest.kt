@@ -25,6 +25,13 @@ class DiscoveryVerificationCommitServiceTest {
         completedAt = null, generation = 1, leaseToken = "current-token", leaseUntil = ruleClock.instant().plusSeconds(120))
     private fun proposed() = fixture.item().let { VerificationResult(it.state, it.outcome, it.qualification, it.route, it.evidenceJson!!, it.reasonsJson!!) }
 
+    @Test fun `controlled authority cannot be minted from ordinary epoch missing receipt or unrelated lease`() {
+        assertThrows(IllegalArgumentException::class.java) { RetainedIdentityAdmissionAuthority.from(lease()) }
+        val current = lease().copy(reviewEpoch = lease().ownerExecutionId)
+        assertThrows(IllegalArgumentException::class.java) { RetainedIdentityAdmissionAuthority.from(current) }
+        Mockito.verifyNoInteractions(review, writer, admissions)
+    }
+
     @Test fun `recheck compares launch revision including true absence not freshly prepared completion revision`() {
         val original = lease()
         val snapshot = DiscoveryVerificationAdmissionGate.snapshot(original.expertDocId, fixture.profile, fixture.config)

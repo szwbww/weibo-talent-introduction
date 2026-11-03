@@ -1,0 +1,930 @@
+$ rg -n --no-ignore writeDiscovery(NameAndProof|IdentityProof)|repair(EmptyNameProof|DuplicateIdentity)|indexToRaw\(|indexToCandidate\(|indexToApplication\(|identityVerification|givenNames src/main src/test scripts --glob !**/__pycache__/**
+scripts/discovery_paper_archive/verify_layout_gain.py:5:"bindings": [{"email": str, "givenNames": str, "familyNames": str}]}]}.
+scripts/discovery_paper_archive/verify_layout_gain.py:38:            name = norm((binding.get('givenNames') or '') + ' ' + (binding.get('familyNames') or ''))
+scripts/discovery_paper_archive/verify_layout_gain.py:40:            if binding.get('givenNames') and binding.get('familyNames'):
+scripts/import_contactout_visible_candidates.py:147:            "givenNames": given,
+scripts/apply_legacy_discovery_approval.py:22:BINDING_FIELDS = ('orcidId', 'email', 'givenNames', 'familyNames', 'institution', 'country', 'institutionType')
+scripts/apply_legacy_discovery_approval.py:23:FIELDS = list(BINDING_FIELDS) + ['identityVerification', 'operatorStatus', 'tags', 'expertClassification', 'filterResult']
+scripts/apply_legacy_discovery_approval.py:31:    return [s.get('orcidId', ''), normalized(s.get('email')), s.get('givenNames'), s.get('familyNames')]
+scripts/apply_legacy_discovery_approval.py:38:                givenNames=s.get('givenNames'), familyNames=s.get('familyNames'), evidenceHash=digest)
+scripts/apply_legacy_discovery_approval.py:53:        body = {'doc': {'identityVerification': row['approved']}}
+scripts/apply_legacy_discovery_approval.py:54:    elif 'identityVerification' in row['_source']:
+scripts/apply_legacy_discovery_approval.py:55:        body = {'doc': {'identityVerification': row['_source']['identityVerification']}}
+scripts/apply_legacy_discovery_approval.py:57:        body = {'script': {'lang': 'painless', 'source': "ctx._source.remove('identityVerification')"}}
+scripts/apply_legacy_discovery_approval.py:141:            if s.get('identityVerification') is not None:
+scripts/apply_legacy_discovery_approval.py:169:            proof = s.get('identityVerification')
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:7:    private val legacy = ExpertProfile(orcidId = "old-business-key", email = "a@example.org", givenNames = "Jane",
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:9:    private fun verified() = legacy.copy(emailSource = "PAPER_FULLTEXT", identityVerification =
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:17:        val profile = legacy.copy(emailSource = "PAPER_FULLTEXT", identityVerification =
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:20:        assertFalse(DiscoveryIdentity.allowed(profile.copy(givenNames = "Other")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:32:        assertFalse(DiscoveryIdentity.allowed(profile.copy(givenNames = "John")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:34:        assertFalse(DiscoveryIdentity.allowed(profile.copy(identityVerification = profile.identityVerification!!.copy(version = 0))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:39:            identityVerification = p.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:43:        val reviewed = p.copy(identityVerification = p.identityVerification!!.copy(source = "REVIEWED_SOURCE_SHA256"))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:46:        assertFalse(DiscoveryIdentity.allowed(reviewed.copy(givenNames = "Other")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:47:        assertFalse(DiscoveryIdentity.allowed(reviewed.copy(identityVerification = reviewed.identityVerification!!.copy(evidenceHash = null))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:49:            identityVerification = reviewed.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:58:        assertFalse(DiscoveryIdentity.allowed(profile.copy(identityVerification =
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:59:            profile.identityVerification!!.copy(version = 20261003))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:60:        assertFalse(DiscoveryIdentity.allowed(profile.copy(identityVerification =
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:61:            profile.identityVerification!!.copy(version = 20260929))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:82:        return base.copy(identityVerification = IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:86:            givenNames = base.givenNames, familyNames = base.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:91:        val proof = verified().identityVerification!!
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:97:            verified().copy(givenNames = "Other"),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:99:            verified().copy(identityVerification = proof.copy(version = 0)),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:100:            verified().copy(identityVerification = proof.copy(status = "UNRESOLVED")),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:101:            verified().copy(identityVerification = proof.copy(email = null)),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:102:            verified().copy(identityVerification = proof.copy(givenNames = null)),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:103:            verified().copy(identityVerification = proof.copy(familyNames = "")),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:104:            verified().copy(identityVerification = proof.copy(evidenceHash = "zz")),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:105:            verified().copy(identityVerification = proof.copy(source = "REVIEWED_SOURCE_SHA256")),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:106:            verified().copy(identityVerification = proof.copy(source = "REVIEWED_SOURCE_SHA256",
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:117:        val proof = verified().identityVerification!!
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:120:            identityCodes(verified().copy(identityVerification = proof.copy(status = "UNRESOLVED"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:122:            identityCodes(verified().copy(identityVerification = proof.copy(version = 1))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:124:            verified().copy(identityVerification = proof.copy(email = "other@example.org")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:126:        assertEquals("identityVerification.email", emailMismatch.single().field)
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:127:        assertEquals("identityVerification.givenNames",
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:128:            DiscoveryIdentity.explainIdentity(verified().copy(identityVerification = proof.copy(givenNames = "Other")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:131:            identityCodes(verified().copy(identityVerification = proof.copy(evidenceHash = "zz"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:145:        val proof = issued.identityVerification!!
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:155:                identityVerification = proof.copy(orcid = "0000-0001-0000-0001")),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:181:            identityVerification = issued.identityVerification!!.copy(orcid = "0000-0001-0000-0001")))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:15:    val givenNames: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:32:    fun isDiscovery(profile: ExpertProfile) = profile.identityVerification != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:40:    fun isDiscoveryMap(source: Map<String, Any?>): Boolean = source["identityVerification"] != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:44:        (!source.path("identityVerification").isMissingNode && !source.path("identityVerification").isNull) ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:51:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:54:            !proof.givenNames.isNullOrBlank() && !proof.familyNames.isNullOrBlank() &&
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:55:            proof.givenNames == profile.givenNames && proof.familyNames == profile.familyNames &&
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:67:        givenNames = source.path("givenNames").asText(null), familyNames = source.path("familyNames").asText(null),
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:70:        identityVerification = read(source.path("identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:79:        profile.givenNames, profile.familyNames, profile.institution, profile.country, profile.institutionType
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:83:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:87:            proof.givenNames == profile.givenNames && proof.familyNames == profile.familyNames &&
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:115:        val proof = profile.identityVerification ?: return null
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:155:        "${profile.givenNames.orEmpty()} ${profile.familyNames.orEmpty()}",
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:172:     * I-2 的签发前置：`identityVerification` 中非空的 ORCID/OpenAlex 作者 ID 与 `externalIds` 对应 ID 不得冲突；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:230:        val proof = profile.identityVerification ?: return listOf(AdmissionReason(
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:232:            "identityVerification", null, "VERIFIED 身份凭证", "profile.identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:236:            "identityVerification.status", proof.status.ifBlank { null }, "VERIFIED", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:239:            "identityVerification.version", proof.version.toString(), VERSION.toString(), IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:243:            "identityVerification.email", null, "与档案邮箱一致的规范邮箱", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:246:            "identityVerification.email", proof.email, profile.email, IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:247:        if (proof.givenNames.isNullOrBlank()) reasons += AdmissionReason(
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:249:            "identityVerification.givenNames", null, "与档案 givenNames 一致的非空名字", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:250:        else if (proof.givenNames != profile.givenNames) reasons += AdmissionReason(
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:252:            "identityVerification.givenNames", proof.givenNames, profile.givenNames, IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:255:            "identityVerification.familyNames", null, "与档案 familyNames 一致的非空姓氏", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:258:            "identityVerification.familyNames", proof.familyNames, profile.familyNames, IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:264:                "identityVerification.source / identityVerification.evidenceHash",
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:302:        val proof = profile.identityVerification ?: return emptyList()
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:314:        check("identityVerification.orcid", proof.orcid, "externalIds.orcid", ids["orcid"])
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:315:        check("identityVerification.openAlexAuthorId", proof.openAlexAuthorId,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:318:        check("orcidId", primaryOrcid, "identityVerification.orcid", proof.orcid)
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:8:    private val base = ExpertProfile(orcidId = "legacy-1", email = "a@example.org", givenNames = "Jürgen",
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:12:    private fun approve(p: ExpertProfile = base) = p.copy(identityVerification = IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:15:        givenNames = p.givenNames, familyNames = p.familyNames, evidenceHash = DiscoveryIdentity.legacyApprovalDigest(p)))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:38:        listOf(p.copy(orcidId="other"), p.copy(email="other@example.org"), p.copy(givenNames="Other"),
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:48:        val p=approve(); val proof=p.identityVerification!!
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:51:            proof.copy(givenNames="Other")).forEach {
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt:53:            assertTrue(scope.matchesEsTarget(p.copy(identityVerification=it)))
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:88:        Mockito.when(mock.indexToRaw(Mockito.anyString(), Mockito.anyMap())).thenReturn(success);
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:28:            orcidId = "", email = "bad", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:43:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:56:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:69:            givenNames = "John", familyNames = "Smith", country = "CN",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:79:            givenNames = "Test", familyNames = "User", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:92:            orcidId = "", email = "bad", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:107:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:121:            givenNames = "Test", familyNames = "User", country = "US",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:134:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:148:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:164:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:179:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:196:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:213:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:228:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:241:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:257:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceEnhancedTest.kt:269:            givenNames = "John", familyNames = "Smith", country = "GB",
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:7:    val givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:41:    val identityVerification: IdentityVerification? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:56:        get() = listOfNotNull(givenNames, familyNames)
+src/test/resources/discovery/apollo-verification-manual-fixture.sql:75:                JSON_OBJECT('orcidId',doc,'email',CONCAT(LOWER(doc),'@example.invalid'),'givenNames','Synthetic','familyNames',doc,
+src/test/kotlin/com/weibo/talentintroduction/expert/EsMappingContractTest.kt:64:        for (name in listOf("givenNames", "familyNames", "employment", "keyword")) {
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:57:                      "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:104:                      "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:144:                      "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:187:                      "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:253:                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "B", "country": "GB"}},
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:254:                  {"_source": {"orcidId": "0002", "email": "c@d.com", "givenNames": "C", "familyNames": "D", "country": "US"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:267:                  {"_source": {"orcidId": "0003", "email": "e@f.com", "givenNames": "E", "familyNames": "F", "country": "FR"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:335:                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "B", "country": "GB"}},
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:336:                  {"_source": {"orcidId": "0002", "email": "c@d.com", "givenNames": "C", "familyNames": "D", "country": "US"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:388:                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "B", "country": "GB"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:440:                      "givenNames": "John",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:496:                      "givenNames": "Jane",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:544:                  {"_source": {"orcidId": null, "orcid": null, "id": "id-only", "givenNames": "A", "familyNames": "B"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:569:                  {"_source": {"orcidId": null, "orcid": "0000-orcid", "givenNames": "A", "familyNames": "B"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:818:                      "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1179:                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "Ada", "familyNames": "Lovelace", "institution": "MIT"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1217:                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "One", "institution": "   "}},
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1218:                  {"_source": {"orcidId": "0002", "email": "b@b.com", "givenNames": "B", "familyNames": "Two", "institution": "MIT"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1251:                  {"_source": {"orcidId": "0001", "email": "a@b.com", "givenNames": "A", "familyNames": "One", "institution": ""}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1803:                      "givenNames": "John",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1842:                      "givenNames": "John",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:1850:                      "givenNames": "Jane",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2240:                      "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2283:        assertFalse(filter.toString().contains("identityVerification"))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2381:                 "_source": {"orcidId": "DOC-1", "email": "expert@example.com", "givenNames": "Ada",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2535:    /** 02：一份「单机构 + 三证齐全」的 ES 文档（`externalIds` 与 `identityVerification` 逐字对应）。 */
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2543:            "givenNames" to "Su", "familyNames" to "Kim", "source" to "JATS_SHA256",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2549:            givenNames = "Su", familyNames = "Kim", country = "Republic of Korea", keyword = null,
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2552:            identityVerification = DiscoveryIdentity.read(mapper.valueToTree(identity))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2558:            "orcidId" to "EMAIL-signed-1", "email" to "su.kim@snu.ac.kr", "givenNames" to "Su",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2561:            "externalIds" to externalIds, "identityVerification" to identity,
+src/test/resources/discovery/ownership-20260929-expected.json:11:  "authorMapping": "生产 OpenAlexDataSource.splitDisplayName：display_name 无逗号时按首个空格拆分为 givenNames/familyNames（测试不补中间名）",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt:75:        assertFieldExists(properties, "givenNames")
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt:182:            givenNames = "Expert",
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt:337:            givenNames = "Expert",
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt:366:            givenNames = "Expert",
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt:467:            givenNames = "Expert",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:504:            givenNames = source.nullableText("givenNames"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:536:            identityVerification = DiscoveryIdentity.read(source.path("identityVerification")),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:632:            "email", "givenNames", "familyNames",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:639:            "dataSource", "externalIds", "worksCount", "identityVerification",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:59:        val unknown = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "A", "familyNames" to "B")
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:62:        assertTrue(service.indexToRaw("new", unknown))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:72:            val doc = mapOf("email" to "a@example.org", "givenNames" to "Jane", "familyNames" to "Doe") + marker
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:73:            assertFalse(service.indexToRaw("EMAIL-existing", doc))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:82:        val doc = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "Jane", "familyNames" to "Doe", "identityVerification" to proof)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:85:        assertFalse(service.indexToRaw("EMAIL-existing", doc))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:99:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:137:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:177:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:219:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:254:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:289:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:343:                "givenNames": "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1076:        assertEquals("Jane", candidate["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1081:        assertEquals("A123", (candidate["identityVerification"] as Map<*, *>)["openAlexAuthorId"])
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1114:            "givenNames" to "Jane", "familyNames" to "Doe", "emailSource" to "PAPER_FULLTEXT",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1115:            "identityVerification" to mapper.convertValue(proof, Map::class.java),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1188:            "orcidId" to orcidId, "email" to "a@example.org", "givenNames" to "Jane",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1190:            "identityVerification" to mapper.convertValue(proof, Map::class.java),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1278:                orcidId = "DOC", email = "a@example.org", givenNames = "Jane", familyNames = "Doe",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1293:            "orcidId" to "DOC", "email" to email, "givenNames" to "Jane", "familyNames" to "Doe",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1296:            "identityVerification" to mapper.convertValue(proof, Map::class.java)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1342:        assertEquals(source["identityVerification"], doc["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1415:              {"_index":"orcid_info","_id":"EMAIL-a@example.org","_source":{"email":"a@example.org","givenNames":"Jane"}},
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1416:              {"_index":"orcid_info_candidate","_id":"EMAIL-a@example.org","_source":{"email":"a@example.org","givenNames":"Jane"}},
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1417:              {"_index":"orcid_info_application","_id":"EMAIL-a@example.org","_source":{"email":"a@example.org","givenNames":"Jane"}}
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1505:        assertEquals(setOf("identityVerification"), doc.keys)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1506:        assertEquals(proof, doc["identityVerification"])
+src/test/resources/discovery/source-email-ownership-cases.json:9:        "givenNames": "Manu",
+src/test/resources/discovery/source-email-ownership-cases.json:13:        "givenNames": "Michael",
+src/test/resources/discovery/source-email-ownership-cases.json:17:        "givenNames": "Edward",
+src/test/resources/discovery/source-email-ownership-cases.json:33:        "givenNames": "Xuanyu",
+src/test/resources/discovery/source-email-ownership-cases.json:37:        "givenNames": "Jianqiang",
+src/test/resources/discovery/source-email-ownership-cases.json:41:        "givenNames": "Hang",
+src/test/resources/discovery/source-email-ownership-cases.json:58:        "givenNames": "Pengjun",
+src/test/resources/discovery/source-email-ownership-cases.json:62:        "givenNames": "Yujia",
+src/test/resources/discovery/source-email-ownership-cases.json:66:        "givenNames": "Rui",
+src/test/resources/discovery/source-email-ownership-cases.json:70:        "givenNames": "Hang",
+src/test/resources/discovery/source-email-ownership-cases.json:74:        "givenNames": "Ke",
+scripts/test_apply_legacy_discovery_approval.py:25:        return dict(orcidId='legacy-1', email='a@example.org', givenNames='Jürgen', familyNames=None,
+scripts/test_apply_legacy_discovery_approval.py:48:        self.assertEqual({'identityVerification'}, set(updates[0][1]['doc']))
+scripts/test_apply_legacy_discovery_approval.py:51:        for live in (dict(row, _seq_no=8), self.row(identityVerification={'status': 'VERIFIED'})):
+scripts/test_apply_legacy_discovery_approval.py:57:        live['_source']['identityVerification'] = row['approved']
+scripts/test_apply_legacy_discovery_approval.py:66:        live['_source']['identityVerification'] = row['approved']; live['_seq_no'] = 9
+scripts/test_apply_legacy_discovery_approval.py:69:        self.assertEqual("ctx._source.remove('identityVerification')", updates[0][1]['script']['source'])
+scripts/test_apply_legacy_discovery_approval.py:70:        live['_source']['identityVerification'] = {'status': 'VERIFIED'}
+scripts/test_apply_legacy_discovery_approval.py:74:        null_row = self.row(identityVerification=None)
+scripts/test_apply_legacy_discovery_approval.py:75:        self.assertEqual({'doc': {'identityVerification': None}}, migration.make_update(null_row, rollback=True)[1])
+scripts/test_apply_legacy_discovery_approval.py:78:        application = self.row('orcid_info_application', identityVerification={'status': 'VERIFIED'})
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillServiceTest.kt:63:        givenNames = null,
+scripts/expert_discovery/enterprise_batch/import_personal_email_candidates.py:121:            "givenNames": given,
+scripts/expert_discovery/enterprise_batch/import_personal_email_candidates.py:163:        english_fields = ("givenNames", "familyNames", "country", "keyword", "employment", "institution", "researchFields")
+src/test/resources/discovery/email-text-recall.json:24:    {"kind":"synthetic-obfuscation-control","text":"Jane Doe: opaque(at)uni.edu","expected":["opaque@uni.edu"],"givenNames":"Jane","familyNames":"Doe"},
+src/test/js/discoveryReview.test.js:209:        givenNames: "Given" + index,
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:131:            esDocId = esDocId, orcidId = orcidId, email = email, givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:288:            esDocId = null, orcidId = "0009", email = "rnd@bosch.de", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:385:        esDocId = esDocId, orcidId = orcidId, email = email, givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:523:            "givenNames" to "Test", "familyNames" to "User", "emailSource" to "PAPER_FULLTEXT",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:524:            "identityVerification" to jacksonObjectMapper().convertValue(proof, Map::class.java),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationServiceTest.kt:41:        givenNames = null,
+scripts/expert_discovery/enterprise_batch/preview_primary_research_fields.py:34:            "name": " ".join(filter(None, [source.get("givenNames"), source.get("familyNames")])),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertProfileIdentityResolverTest.kt:61:        ExpertProfile(esDocId = docId, orcidId = orcidId, email = null, givenNames = null, familyNames = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:466:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:571:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:611:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:735:                "email", "givenNames", "familyNames", "identityVerification",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:769:        listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:777:            givenNames = text("givenNames"), familyNames = text("familyNames"), country = text("country"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:789:            identityVerification = source["identityVerification"]?.let {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:869:     * 只有复读身份一致才算「已存在」，否则身份冲突。**绝不**写 `filterResult`/`identityVerification`/
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:940:            if (doc["identityVerification"] != null) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:956:     * I-2/I-3：只写 `identityVerification` 的条件补丁 —— 带 `if_seq_no/if_primary_term`，
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:970:        val body = mapOf("doc" to mapOf("identityVerification" to proof))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:998:    fun writeDiscoveryNameAndProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1003:        givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1007:        val doc = linkedMapOf<String, Any?>("identityVerification" to proof)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1008:        givenNames?.let { doc["givenNames"] = it }
+src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceTest.kt:137:            givenNames = "Ada",
+scripts/discovery_admission_probe/probe.py:199:            w.writerow([r['id'],r['expert_doc_id'],r['owner_execution_id'], ' '.join(str(profile.get(k) or '') for k in ('givenNames','familyNames')),
+scripts/discovery_admission_probe/probe.py:243:    for k in ['email','givenNames','familyNames','institution','employment','degree','age','country','institutionType','institutionEvidence','identityVerification']:
+scripts/expert_discovery/enterprise_batch/import_candidate_es.py:135:            "givenNames": given,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:321:                    identityVerification = identityProof("p@example.org")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:417:        val candidateDuplicate = candidate.copy(orcidId = canonicalId, givenNames = "Later candidate")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:418:        val applicationDuplicate = candidate.copy(orcidId = "email-DEDUP@EXAMPLE.ORG", givenNames = "Application")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:419:        val retryProfile = candidate.copy(orcidId = canonicalId, givenNames = "Retry")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3109:                    docId, email, profile.givenNames, profile.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4876:                    orcidId = "0003", email = null, givenNames = "G", familyNames = "F",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:7710:            givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:7724:            givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:7746:            identityVerification = identityProof(email, orcidId)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:8164:        assertFalse(actual.toString().contains("identityVerification"), "batch selection must use configured filters only")
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexPromotionServiceTest.kt:53:            givenNames = "Ada",
+scripts/discovery_admission_probe/source_contract_29254.py:42:  matching=[b for b in bindings if b.get('email','').lower()==lead['email'] and ' '.join(x for x in [b.get('givenNames'),b.get('familyNames')] if x).lower().strip()==lead['name'].lower().strip()]
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionServiceTest.kt:95:        givenNames = "Given",
+scripts/discovery_admission_probe/smoke_bridge.py:11:        profile={'orcidId':'synthetic-probe','givenNames':'Test','familyNames':'Person',
+scripts/build_contactout_enterprise_es_import.py:221:            "givenNames": given,
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ClassificationWireFormatTest.kt:54:        givenNames = "Wire", familyNames = "Fixture", country = "US", keyword = null,
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ClassificationWireFormatTest.kt:83:                        for (key in listOf("email", "givenNames", "familyNames", "operatorStatus", "updatedAt")) {
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ClassificationWireFormatTest.kt:88:                            for (field in listOf("identityVerification", "email", "givenNames", "familyNames", "externalIds")) {
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationServiceTest.kt:870:        givenNames = "Given",
+src/test/js/discoveryRecheck.test.js:67:    return { itemId: id, runId: 42, docId: 'doc-' + id, givenNames: '<b>Person ' + id + '</b>', state: 'COMPLETED', before: { decision: 'NEEDS_REVIEW', revision: 2 }, proposed: 'AUTO_PASSED', current: { decision: 'NEEDS_REVIEW', revision: 2 }, applied: null, projection: 'NONE', actualAdmitted: false, allReasons: ['IDENTITY_UNRESOLVED'], sourceRefs: [{ archiveRecordId: 3, attemptId: 4, bodySha256: 'b'.repeat(64), sourceName: 'paper', sourceItemKey: 'source' }], trace: { recorded: true, blockingStep: 3, steps: Array.from({ length: 8 }, (_, index) => ({ stepNo: index + 1, attemptNo: 1, state: index === 2 ? 'INSUFFICIENT' : index < 2 ? 'SUCCESS' : 'SKIPPED', inputJson: '{"value":{"name":"<script>unsafe</script>"}}', reasonJson: '{"value":["IDENTITY_UNRESOLVED"]}', versionJson: '{"value":{"parser":3}}', outputJson: '{"value":{"quote":"<img src=x>"}}', startedAt: '2026-10-25T00:00:00Z', finishedAt: '2026-10-25T00:00:01Z' })) }, versions: [{ parser: 3 }], updatedAt: '2026-10-25T00:00:01Z' };
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillServiceTest.kt:128:        givenNames = "A",
+scripts/expert_discovery/workflow.py:645:            if not entry.get("givenNames") and not entry.get("familyNames"):
+scripts/expert_discovery/workflow.py:648:            c = base_candidate(clean(entry.get("givenNames")) + " " + clean(entry.get("familyNames")), url or fingerprint)
+scripts/discovery_admission_probe/paper_counterfactual_29254.py:20: doc.close();authors=[' '.join(v for v in [a.get('givenNames'),a.get('familyNames')] if v) for a in meta[record]['authors']]
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:39:            esDocId = esDocId, orcidId = orcidId, email = email, givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:111:            orcidId = "0001", email = null, givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:144:            .thenReturn(mapOf("orcidId" to "0001", "email" to "user@oxford.ac.uk", "givenNames" to "A", "familyNames" to "B"))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:281:            mapOf("orcidId" to "x", "email" to "x@x.com", "givenNames" to "A", "familyNames" to "B"))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:297:            "givenNames" to "Test", "familyNames" to "User", "emailSource" to "PAPER_FULLTEXT",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:298:            "identityVerification" to com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().convertValue(proof, Map::class.java),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:427:            "orcidId" to "DOC", "email" to "researcher@example.org", "givenNames" to "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:429:            "identityVerification" to com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().convertValue(proof, Map::class.java),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:468:            "orcidId" to "APP", "email" to "researcher@example.org", "givenNames" to "Test",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:470:            "identityVerification" to com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().convertValue(proof, Map::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:524:                profile.givenNames,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:618:            "email" to "$docId@example.test", "givenNames" to "Given", "familyNames" to "Family",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:620:            "identityVerification" to com.weibo.talentintroduction.expert.domain.IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1312:            givenNames = "Given", familyNames = "Family", country = "China",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1322:            identityVerification = com.weibo.talentintroduction.expert.domain.IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1324:                email = "$orcidId@example.test", givenNames = "Given", familyNames = "Family",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1503:            docId, normalized, profile.givenNames, profile.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1553:        givenNames = "Given",
+scripts/discovery_admission_probe/cross_old_papers_29254.py:11: if p.get('email'):byemail[p['email'].lower().strip()].append({'itemId':item,'docId':doc,'name':' '.join(v for v in [p.get('givenNames'),p.get('familyNames')] if v),'knownHashes':[x['bodySha256'] for x in refs]})
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:802:        givenNames = "Dr.",
+scripts/discovery_admission_probe/evidence_inventory_29254.py:9:  row={'itemId':itemid,'docId':doc,'fullName':' '.join(x for x in [profile.get('givenNames'),profile.get('familyNames')] if x),'email':profile.get('email'),'identityValid':None,'sources':[],'oldState':r['state'],'oldOutcome':r['outcome'],'evidenceProviders':dict(collections.Counter(x['provider'] for x in ev)),'academicReasons':(ctx.get('academic') or {}).get('reasonCodes',[]),'orcidCachedDocuments':len(p.get('orcidCompleted') or []),'blockingReasons':json.loads(r['reasons_json'] or '[]')}
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:1165:                profile.givenNames,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:1178:            givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:1196:            identityVerification = IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:1200:                givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt:81:        ExpertProfile(esDocId = "doc1", orcidId = "0000-0001", email = email, givenNames = given, familyNames = family,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt:600:                        AdmissionReason(AdmissionReasonCodes.IDENTITY_MISSING, "身份凭证缺失", "identityVerification",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt:790:                givenNames = "Ada", familyNames = "Lovelace", institution = "X Univ", country = "US",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt:89:        givenNames = doc.given,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt:97:        identityVerification = IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt:101:            givenNames = doc.given,
+scripts/build_sbir_expert_import.py:403:        "givenNames": given_names,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/OutreachTargetIteratorTest.kt:620:            givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/OutreachTargetIteratorTest.kt:631:            givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:299:                    givenNames = null,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientPreflightServiceTest.kt:56:        givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepositoryTest.kt:144:            "givenNames" to given,
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepositoryTest.kt:148:            "identityVerification" to IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:31:        f.service.finishExtraction(p.id, f.mapper.readTree("""{"schemaVersion":1,"first":{"outcome":{"emails":[{"email":"a@x.org","givenNames":"Alice","familyNames":"Smith"},{"email":"b@x.org","givenNames":"Bob","familyNames":"Jones"},{"email":"c@x.org","givenNames":"Carol"}]}}}"""))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloMatchingV2Test.kt:90:            val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = example.given,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloMatchingV2Test.kt:92:                institution = example.institution, identityVerification = proof)) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt:471:        jdbc.update("UPDATE discovery_verification_item SET snapshot_json=JSON_SET(snapshot_json,'$.profile.givenNames',?) WHERE id=?","Literal%_\\! Needle",first.itemId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentServiceTest.kt:393:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:288:                    givenNames = null,
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextServiceTest.kt:41:        givenNames = "Dr.",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:29:        assertEquals("John", results[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:104:        assertEquals("Bob", results[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:347:        assertEquals("Jane", results[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:518:        assertEquals("M", results[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:547:            assertEquals("Multi", it.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:640:        result.forEach { assertNull(it.identityEvidence); assertNull(it.givenNames); assertNull(it.familyNames); assertNull(it.orcidId); assertNull(it.affiliation) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:649:            assertEquals("Shibao", result.getValue("spinelu@163.com").givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:650:            assertEquals("Jie", result.getValue("imaginglu@hotmail.com").givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:651:            assertEquals("Wei", result.getValue("wangwei37@buaa.edu.cn").givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:659:        assertEquals(listOf("Fuqiang", "Fuqiang", "Sébastien", "Weiguo"), result.map { it.givenNames })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:666:        assertEquals(listOf("Sajjad", "Sajjad", "Sajjad", "Ali Akbar", "Ali Akbar"), result.map { it.givenNames })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:673:            assertNull(result.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:680:        assertNull(result.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:686:        assertEquals("John", JatsXmlEmailParser.parse(xml).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:688:        assertTrue(JatsXmlEmailParser.parse(duplicate).all { it.givenNames == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:695:        assertNull(JatsXmlEmailParser.parse(xml).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:706:        assertEquals("John", result.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:713:        assertNull(result.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:733:        assertEquals("Jane", alt.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:736:        assertEquals("Jane", numbered.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:772:        assertEquals("K. Jarrod Millman", listOf(results.getValue("millman@berkeley.edu").givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:774:        assertEquals("Stéfan J. van der Walt", listOf(results.getValue("stefanv@berkeley.edu").givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:776:        assertEquals("Ralf Gommers", listOf(results.getValue("ralf.gommers@gmail.com").givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:799:        assertEquals("Jane", results.getValue("english@example.org").givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:802:            assertNull(results.getValue(email).givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:818:        assertNull(contact.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:833:        assertNull(result.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:821:            orcidId = orcidId, email = email, givenNames = null, familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchDemandExecutionTest.kt:479:            orcidId = "o$n", esDocId = "d$n", email = "expert$n@example.org", givenNames = "Given", familyNames = "Family",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:1004:            val unbound = snapshot.copy(profile = snapshot.profile.copy(identityVerification = null))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClientTest.kt:66:        val bad = ruleSnapshot().let { it.copy(profile = it.profile.copy(identityVerification = null)) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:3252:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt:56:            assertEquals(setOf("Alice", "Bob"), resolved.mapNotNull { it.givenNames }.toSet())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt:68:            assertNull(shared.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt:86:                assertEquals(expected, address.givenNames, label)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt:88:                observations += "$label email=${address.email} owner=${address.givenNames} ${address.familyNames} validEvidence=$valid contacts=${contacts.size}"
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceServiceTest.kt:18:    val p = ExpertProfile(orcidId = "EMAIL-$suffix",email=email,givenNames=name.substringBefore(' '),familyNames=name.substringAfter(' '),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceServiceTest.kt:20:        identityVerification=if (verified) DiscoveryIdentity.verified(email,name.substringBefore(' '),name.substringAfter(' '),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceServiceTest.kt:179:            assertTrue(s.identityValid); assertEquals("A123",s.profile.identityVerification!!.openAlexAuthorId)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceServiceTest.kt:233:                people=listOf(b.authors.first().copy(givenNames="Smith",familyNames="Alice")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceServiceTest.kt:300:                    people=listOf(b.authors.first().copy(givenNames="Smith",familyNames="Alice")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientServiceTest.kt:73:        givenNames = "Given",
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/AuthorEmail.kt:12:    val givenNames: String?,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:101:        orcidId = "", email = null, givenNames = null, familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:244:        "email" to email, "givenNames" to given, "familyNames" to family,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:248:        if (proof != null) put("identityVerification", proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:293:            it.containsKey("givenNames") && it.containsKey("familyNames") && it.containsKey("identityVerification")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:295:        assertEquals("Jane", docs[key(ExpertIndexLevel.RAW, id)]!!.source["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:322:        assertTrue(docs.values.all { it.source["identityVerification"] == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:352:        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:353:        assertEquals("Jane", docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:521:        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:522:        assertNotNull(docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:530:        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:551:        docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"] = thirdParty
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:562:        assertEquals(thirdParty, docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"], "第三方值不被覆盖")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:563:        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:578:        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:579:        assertNotNull(docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:605:        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:606:        assertNotNull(docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:634:        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:652:        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"], "来源编号不符不得签出 proof")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:62:            val given = expert.givenNames?.trim().orEmpty()
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:105:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:191:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:261:            givenNames = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:324:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:375:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt:435:        givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt:96:            val profile = old.profile.copy(givenNames = "Adaline", identityVerification = DiscoveryIdentity.verified(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:110:        assertEquals("John", paper.authors[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:116:        assertEquals("Alice", paper.authors[1].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:187:        assertEquals("Jan", authors[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:189:        assertEquals("Jane", authors[1].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:192:            assertNull(ambiguous.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1235:        assertEquals("Klaus H. Maier-Hein", "${outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.givenNames} " +
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1668:                email, author?.givenNames, author?.familyNames, false, author?.affiliation,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:893:        orcidId = "0000-0002-1825-0097", email = "john@ox.ac.uk", givenNames = "John",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:928:        Mockito.`when`(indexWriterService.indexToRaw(Mockito.anyString(), Mockito.anyMap())).thenReturn(true)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:969:                "_id" to existingDocId, "_source" to mapOf("email" to "john@ox.ac.uk", "givenNames" to "John", "familyNames" to "Smith",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:970:                    "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1422:                        orcidId = "0000-0002-1825-0097", givenNames = "John", familyNames = "Smith",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1900:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1952:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1961:        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2052:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2070:        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(docIdCaptor.capture() ?: "", Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2622:                }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:107:            val base = ExpertProfile(orcidId = "EMAIL-ada", email = "ada@example.invalid", givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:112:                identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:126:            val base = ExpertProfile(orcidId = ORCID, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:129:                identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:245:        val base = ExpertProfile(orcidId = "EMAIL-ada", email = "ada@example.invalid", givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:250:            identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:270:        val base = ExpertProfile(orcidId = ORCID, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:273:            identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:281:        val base = ExpertProfile(orcidId = ORCID, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt:285:            identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsServiceTest.kt:214:    private fun profile(id: String) = ExpertProfile(esDocId = id, orcidId = id, email = "$id@example.org", givenNames = "Ada",
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:46: * 02（I-2）：身份键的规范算法 = SHA-256(真实 docId ␀ 规范化邮箱 ␀ givenNames ␀ familyNames)。
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:50:    fun hash(docId: String, email: String?, givenNames: String?, familyNames: String?): String =
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:52:            listOf(docId, DiscoveryIdentity.normalizedEmail(email), givenNames.orEmpty(), familyNames.orEmpty())
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:103:    val givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:188: * 02（I-2/I-3）：列表行。`email`/`givenNames`/`familyNames` 只在登录态 API 返回。
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:197:    val givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:174:                    DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt:131:        val expert = ExpertProfile(orcidId = "orcid", email = contact.expertEmail, givenNames = "Expert",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt:191:        val expert = ExpertProfile(orcidId = "orcid", email = contact.expertEmail, givenNames = "Expert",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt:113:        "email" to email, "givenNames" to given, "familyNames" to family,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt:118:                "identityVerification",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt:530:                    "identityVerification",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt:594:                    "identityVerification",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSourceTest.kt:224:        assertEquals("John", records[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSourceTest.kt:234:            givenNames = "John",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSourceTest.kt:243:        assertEquals("John", emails[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:50:        givenNames: String = "Sample",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:56:        givenNames = givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:71:        identityVerification = DiscoveryIdentity.verified(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:72:            email, givenNames, familyNames, "JATS_SHA256:" + "a".repeat(64), null, null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:81:        identityVerification = IdentityVerification(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:86:            givenNames = profile.givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:221:            identityVerification = complete.identityVerification!!.copy(orcid = "0000-0001-0000-0001")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:264:            givenNames = "Sample", familyNames = "Business", country = null, keyword = null, employment = null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:331:        val profile = complete.copy(country = null, institutionEvidence = null, identityVerification = null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:352:            givenNames = "Sample", familyNames = "Pending", country = "Germany", keyword = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:363:        assertEquals("identityVerification", result.blockingReasons.single().field)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt:410:            complete.copy(identityVerification = null),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoverySelfAndNameTest.kt:13:        it.copy(profile = it.profile.copy(givenNames = first, familyNames = last, email = email, institution = institution,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoverySelfAndNameTest.kt:14:            identityVerification = DiscoveryIdentity.verified(email, first, last, "ORCID_RECORD_SHA256:" + "a".repeat(64), "0000-0002-1825-0097", null)))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2167:            givenNames = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/PaperAuthor.kt:4:    val givenNames: String?,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt:147:        esDocId = docId, orcidId = "0000-$docId", email = email, givenNames = "Ada", familyNames = "Lovelace",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:237:        assertNull(email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:255:        assertEquals("Jane", email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:270:        assertNull(email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:283:        assertEquals("Jane", result.emails.first { it.email == "opaque@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:284:        assertNull(result.emails.first { it.email == "thirdparty@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:297:        assertEquals("Jane", result.emails.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:335:        assertEquals("Jan", authors[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:337:        assertEquals("Jane", authors[1].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:340:            assertNull(ambiguous.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:80:            "bindings" to listOf(mapOf("email" to "alice@example.org", "givenNames" to "Alice", "familyNames" to "Smith")))))))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionAliasTest.kt:36:            val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = first, familyNames = last,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionAliasTest.kt:37:                email = email, institution = english.name, identityVerification = DiscoveryIdentity.verified(email, first, last,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt:152:        val ordinary = f.profile.copy(identityVerification = null, tags = null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt:173:        assertEquals("FACT_CHANGED", f.policy.evaluate(f.docId, f.profile.copy(identityVerification = null, tags = null)).blockingReasons.last().code)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:157:            ExpertProfile(esDocId = "doc-a", orcidId = "expert-a", email = "expert1@example.test", givenNames = "Expert",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementServiceTest.kt:83:            email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee", source = "JATS_SHA256",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementServiceTest.kt:86:            givenNames = "Ada", familyNames = "Lee", country = case.country, keyword = null, employment = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementServiceTest.kt:89:            identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementServiceTest.kt:97:                PaperAuthor(givenNames = "Ada", familyNames = "Lee", orcidId = it.orcidId, affiliation = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:216:            "givenNames familyNames orcidId affiliation isCorresponding email institutionType openAlexAuthorId institutionName institutionCountry institutionSource")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:409:    private fun triple(binding: JsonNode): List<String?> = listOf(binding["email"].asText(), binding["givenNames"].takeUnless { it.isNull }?.asText(), binding["familyNames"].takeUnless { it.isNull }?.asText())
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:413:        return mapOf("identityLoss" to bindings.count { it["givenNames"].isNull || it["givenNames"].asText().isBlank() ||
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:475:                        requireFields(binding, "email givenNames familyNames")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:476:                        if (listOf("email", "givenNames", "familyNames").any { !binding[it].isTextual || binding[it].asText().isBlank() }) throw Invalid("INPUT_MISMATCH")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:172:            "email" to email, "givenNames" to given, "familyNames" to family,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:175:        if (proof != null) map["identityVerification"] = proof
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:192:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:199:        assertTrue(updateBodies.all { it.keys == setOf("identityVerification") }, updateBodies.toString())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:201:        docs.values.forEach { assertEquals(targetProof(), it.source["identityVerification"]) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:209:        val result = service.repairDuplicateIdentity("EMAIL-jane@uni.edu", incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:213:        assertTrue(docs.values.all { it.source["identityVerification"] == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:224:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:233:        assertEquals(null, docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:234:        assertEquals(targetProof(), docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:242:            givenNames = "Jane", familyNames = "Doe",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:248:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:254:        assertEquals(legacy, docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:255:        assertEquals(targetProof(), docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:263:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:267:        assertEquals(null, docs[key(ExpertIndexLevel.RAW, id)]!!.source["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:275:        val result = service.repairDuplicateIdentity(id, incoming(given = null))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:286:        val result = service.repairDuplicateIdentity(id, incoming(evidence = "not-a-source-hash"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:297:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:309:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:321:        assertEquals(IdentityRepairOutcome.CONFLICT, service.repairDuplicateIdentity(id, incoming()).outcome)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:329:            service.repairDuplicateIdentity(id, incoming(orcid = "0000-0002-1825-0099")).outcome
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:339:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:357:        val first = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:367:        val retry = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:372:        assertEquals(targetProof(), docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:383:        val result = service.repairDuplicateIdentity(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:398:        val result = service.repairEmptyNameProof(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:408:        assertEquals(targetProof(), docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:416:            givenNames = "Jane", familyNames = "Doe",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:422:        val result = service.repairEmptyNameProof(id, incoming())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:426:        assertEquals(thirdParty, docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:427:        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt:486:        val result = localService.repairDuplicateIdentity(id, incoming())
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:80:    val givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:122:        hasDiscoverySource(profile.identityVerification != null, profile.emailSource) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:127:        hasDiscoverySource(source["identityVerification"] != null, source["emailSource"] as? String) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:154:    fun normalizedFullName(givenNames: String?, familyNames: String?): String =
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:156:            listOf(givenNames.orEmpty(), familyNames.orEmpty()).joinToString(" ").trim(),
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:167:        val proofs = profiles.mapNotNull { it.identityVerification }
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:176:        val names = profiles.map { normalizedFullName(it.givenNames, it.familyNames) }.distinct()
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:190:        givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:197:            normalizedFullName(givenNames, familyNames),
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:213:        val proof = profile.identityVerification ?: return false
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:128:        assertEquals("John", paper.authors[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:133:        assertEquals("Alice", paper.authors[1].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:138:        assertEquals("Bob", paper.authors[2].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:396:        assertEquals("Jörg", result[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:436:        assertEquals("Jörg", result[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:607:        assertEquals("Actual", outcome.emails.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:622:                    givenNames = "Alice",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:638:        assertNull(outcome.emails[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingInvitationMailComposerTest.kt:23:            givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:154:            EmailExtractionOutcome(listOf(complete.copy(givenNames = " ")), null, "PDF_DOWNLOAD_FAILED"), null))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:184:        assertEquals("Alice", paper.authors[0].givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt:67:            parsed.emails.map { it.copy(givenNames = "Forged") }, paper.source) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt:85:        givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:205:        val base = ExpertProfile(orcidId = orcid, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:208:            identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:216:        val base = ExpertProfile(orcidId = orcid, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:219:            identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:226:            PaperAuthor(givenNames = "Ada", familyNames = "Lee", orcidId = orcid, affiliation = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:234:        val base = ExpertProfile(orcidId = orcid, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt:237:            identityVerification = proof)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:378:                primary.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:149:                if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) continue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:150:                val namePattern = (author.givenNames + " " + author.familyNames).trim().split(Regex("\\s+"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:168:        if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) return false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:170:        val given = author.givenNames.split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:186:                AuthorEmail(email, author.givenNames, author.familyNames, author.isCorresponding,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:195:        if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) ""
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:196:        else normalize("${author.givenNames} ${author.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:105:        givenNames = "Given",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:494:            val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = "Duncan", familyNames = "S. Sutherland")) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:497:            val robert = snapshot.copy(profile = snapshot.profile.copy(givenNames = "Robert", familyNames = "H. Hadfield"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:504:            val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = "Markus", familyNames = "Kästner")) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:508:            val max = snapshot.copy(profile = snapshot.profile.copy(givenNames = "Max C.", familyNames = "Lemme"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:1109:                        return if (valid) p else p.copy(identityVerification = null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:109:    private fun verifiedAuthorEmail(email: String, givenNames: String?, familyNames: String?, isCorresponding: Boolean,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:113:        AuthorEmail(email, givenNames, familyNames, isCorresponding, affiliation, orcidId, institutionType, openAlexAuthorId,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:243:            orcidId = "any", email = null, givenNames = null, familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:601:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:648:        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:783:                enriched.emails.map { mapOf("email" to it.email, "givenNames" to it.givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:827:            "unknownIdentity" to listOf(owner.copy(givenNames = null, familyNames = null, identityEvidence = null)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:850:                listOf(owner.copy(givenNames = "Changed")), "FULLTEXT_XML")), DiscoveryVerificationExecution(null)) else null
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:862:                    mapOf("email" to it.email, "givenNames" to it.givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:869:                    mapOf("document" to key, "email" to doc["email"], "givenNames" to doc["givenNames"]) },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:871:                    mapOf("document" to key, "email" to doc["email"], "givenNames" to doc["givenNames"]) },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:889:        val expectedOwned = extraction.emails.count { it.givenNames != null && it.familyNames != null }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1127:                    assertEquals(name, "${owned.givenNames} ${owned.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1140:                        mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1147:                        assertNull(parsed.emails.single { it.email == clue }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1165:                        mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1270:            assertEquals(expected.keys, parsed.emails.filter { it.givenNames != null }.map { it.email }.toSet(), id)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1275:                assertEquals(name, "${contact.givenNames} ${contact.familyNames}", id)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1292:                    mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1415:                assertEquals(name, "${result.givenNames} ${result.familyNames}", "$id: $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1421:                assertNull(result.givenNames, "$id: $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1427:            assertTrue(parsed.emails.filter { it.givenNames != null }.all { it.email in explicit },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1429:            for (email in parsed.emails.filter { it.givenNames != null }) {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1459:                    mapOf("email" to email.email, "givenNames" to email.givenNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1506:            assertNull(email.givenNames, label)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1510:                "givenNames" to email.givenNames, "familyNames" to email.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1530:                    "givenNames" to doc["givenNames"], "familyNames" to doc["familyNames"],
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1531:                    "identityVerification" to doc["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1620:            assertTrue(created.none { "${it["givenNames"]} ${it["familyNames"]}" == wrongOwner }, email)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1626:                    (it["identityVerification"] as? com.weibo.talentintroduction.expert.domain.IdentityVerification)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1643:                assertTrue(created.all { "${it["givenNames"]} ${it["familyNames"]}" == owner }, "$id $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1644:                val author = authors.single { "${it.givenNames} ${it.familyNames}" == owner }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1648:                        (it["identityVerification"] as? com.weibo.talentintroduction.expert.domain.IdentityVerification)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1686:        assertTrue(rejectionDocs.values.none { "${it["givenNames"]} ${it["familyNames"]}" == "Jitendra Kumar" },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1732:                "unownedEmails" to parsed.emails.filter { it.givenNames == null }.map { it.email },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1738:                    mapOf("email" to it["email"], "givenNames" to it["givenNames"],
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1783:                    mapOf("email" to it["email"], "givenNames" to it["givenNames"],
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1785:                        "openAlexAuthorId" to (it["identityVerification"]
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1825:                    "${document["givenNames"]} ${document["familyNames"]}" == "Mette B. Gaarde"
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1850:            document["givenNames"] == "Davide" && document["familyNames"] == "Chicco" &&
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1861:            assertTrue(pair.all { it["givenNames"] == "Jane" && it["familyNames"] == "Doe" &&
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1909:        assertTrue(docs.values.all { it["givenNames"] == "Edward" && it["familyNames"] == "Raff" })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1935:                givenNames = value["givenNames"] as String, familyNames = value["familyNames"] as String,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1949:        Mockito.doReturn(IdentityRepairResult(outcome)).`when`(repair).repairDuplicateIdentity(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2154:            .`when`(repair).repairDuplicateIdentity(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2217:        val conflicting = parsed.copy(emails = listOf(parsed.emails.single().copy(givenNames = "Other")), identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2224:        docs[key] = docs.getValue(key) - "identityVerification" - "emailSource" - "tags"
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2236:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2447:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2507:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2515:            "orcidId", "email", "givenNames", "familyNames", "country", "keyword", "employment",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2519:        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification", "expertClassification"), map.keys)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2540:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2571:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2604:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2639:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2676:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2905:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2911:            """{"hits":{"total":{"value":1},"hits":[{"_id":"EXISTING-FIRST","_source":{"email":"first@ox.ac.uk","givenNames":"Original","familyNames":"Identity"}}]}}"""
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3369:            orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3406:            orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3444:            orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3497:            orcidId = "0000-000$it", givenNames = "O", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3532:            orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3573:                givenNames = "Test", familyNames = "$i",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3673:            givenNames = "Test", familyNames = "ThirtyOne",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3713:                givenNames = "Test", familyNames = "$i",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3750:                givenNames = "Test", familyNames = "$i",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3799:                givenNames = "Test", familyNames = "$i",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3831:            givenNames = "Test", familyNames = "One",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3871:            givenNames = "Test", familyNames = "One",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3895:                givenNames = "Test", familyNames = "One",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3900:                givenNames = "Test", familyNames = "Two",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4011:            givenNames = "Test", familyNames = "Stem",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4055:            givenNames = "Test", familyNames = "Upd",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4109:            givenNames = "Test", familyNames = "Null",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4153:            givenNames = "Test", familyNames = "Null",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4196:            givenNames = "Test", familyNames = "Classify",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4240:            givenNames = "Test", familyNames = "Comp",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4288:            givenNames = "Test", familyNames = "Year",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4336:            givenNames = "Test", familyNames = "NoYear",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4407:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4418:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4442:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4453:            orcidId = "0000-0009-other", givenNames = "Other", familyNames = "Person",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4476:                givenNames = "Test", familyNames = "$i",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4488:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4505:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4516:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4538:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4549:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4567:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4578:            orcidId = "https://orcid.org/0000-0001-2345", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4596:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4607:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4627:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4638:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4657:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4668:            orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4689:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4700:            orcidId = "https://orcid.org/0000-0001-2345", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4717:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4728:            orcidId = "0000-0001-2345", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:5013:                    OrcidDataSource.OrcidRecord("ORCID-$index", author.givenNames, author.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:5034:            Mockito.doReturn(true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:5087:        Mockito.doReturn(true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:5115:        Mockito.verify(indexWriterService, Mockito.times(2)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:5135:        Mockito.doReturn(true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:5962:                orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6491:        assertEquals("Test", raw["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6494:        val proof = raw["identityVerification"] as com.weibo.talentintroduction.expert.domain.IdentityVerification
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6504:        assertEquals(raw["identityVerification"], candidate["identityVerification"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6519:        assertEquals("Test", raw["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6521:        val proof = raw["identityVerification"] as com.weibo.talentintroduction.expert.domain.IdentityVerification
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6535:            givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6592:            for (key in listOf("identityVerification", "email", "givenNames", "familyNames", "externalIds")) {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6750:            .copy(emailSource = "PAPER_FULLTEXT", identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6783:                identityVerification = DiscoveryIdentity.verified(email, "Test", "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6821:            assertEquals(original.identityVerification, params["identity"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6823:            assertEquals(original.givenNames, params["given"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6829:            for (identityKey in listOf("email", "givenNames", "familyNames", "externalIds", "identityVerification")) {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6864:            email = parsed.email, givenNames = parsed.givenNames, familyNames = parsed.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:6865:            emailSource = "PAPER_FULLTEXT", identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7186:            "email" to "replay@example.com", "givenNames" to "A", "familyNames" to "B",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7187:            "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7199:            "email" to email, "givenNames" to given, "familyNames" to family,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7204:            source["identityVerification"] = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7258:                    orcidId = "0000-0005", givenNames = "Test", familyNames = "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7467:                identityVerification = DiscoveryIdentity.verified("e@example.com", "Test", "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7795:                orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7840:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7940:        givenNames = "Su", familyNames = "Kim", country = "Republic of Korea",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7943:        identityVerification = DiscoveryIdentity.verified(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:8017:                profile.copy(identityVerification = null), DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:8213:                }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:150:                    "identityVersion" to lease.snapshotJson.let { mapper.readTree(it).path("profile").path("identityVerification").path("version").asText() })),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt:18:        givenNames = "Ada", familyNames = "Lee", country = null, keyword = null, employment = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt:19:        institution = "Example University", identityVerification = proof))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt:223:        val middleName = snapshot.copy(profile = snapshot.profile.copy(givenNames = "Ada M", identityVerification = proof))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt:267:        val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(identityVerification = null)) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt:485:        return original.copy(profile = original.profile.copy(givenNames = given, familyNames = family, identityVerification = proof))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:226:                    "should" to listOf("email", "givenNames", "familyNames", "orcidId", "institution")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:291:                    givenNames = profile.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:317:        DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:358:            "orcidId", "email", "givenNames", "familyNames", "country", "age", "degree", "nationality",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:361:            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:168:                    "${authors[it.authorIndex].givenNames} ${authors[it.authorIndex].familyNames}"
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:188:            assertEquals(name, "${result.givenNames} ${result.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:206:                    assertNull(result.emails.single { it.email == email }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:230:            "email" to email.email, "givenNames" to email.givenNames, "familyNames" to email.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:254:                        mapOf("givenNames" to it.givenNames, "familyNames" to it.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:269:                    "authors" to control.authors.map { "${it.givenNames} ${it.familyNames}" },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:304:                assertEquals("Mette B. Gaarde", "${author.givenNames} ${author.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:306:                assertEquals("Mette B. Gaarde", "${restored.givenNames} ${restored.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:310:                assertNull(email.givenNames, "${observation.case} ${email.email}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:336:        assertEquals("Davide Chicco", "${realOwned.givenNames} ${realOwned.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:341:            it.givenNames == "Jane" && it.familyNames == "Doe" && it.openAlexAuthorId == "A123" &&
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:365:        assertEquals("Jane", result.emails.single { it.email == "owner@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:367:        assertNull(unknown.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:380:        assertEquals("Jane", result.emails.single { it.email == "owner@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:381:        assertNull(result.emails.single { it.email == "foreign@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:424:                assertEquals(name, "${resolved.givenNames} ${resolved.familyNames}", "$id $mailbox")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:435:                    assertNull(unknown.givenNames, mailbox)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:447:        assertEquals("Jane", result.emails.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:456:        assertNull(result.emails.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:467:                if (expected.isNull) assertNull(email.givenNames, email.email)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:468:                else assertEquals(expected.asText(), "${email.givenNames} ${email.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:505:        assertEquals("Jane", result.emails.first { it.email == "opaque@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:506:        assertNull(result.emails.first { it.email == "thirdparty@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:762:        assertNull(email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:780:        assertNull(email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:815:        assertEquals("Jane", email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:832:        assertNull(email.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:1246:                        givenNames = null, familyNames = null, country = null, keyword = null, employment = null),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:57:    fun repairDuplicateIdentity(docId: String, incoming: AuthorEmail): IdentityRepairResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:60:        if (incoming.givenNames.isNullOrBlank() || incoming.familyNames.isNullOrBlank()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:99:            val given = (source["givenNames"] as? String)?.takeIf { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:104:            if (given != incoming.givenNames || family != incoming.familyNames) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:112:            incoming.email, incoming.givenNames, incoming.familyNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:176:     * [repairDuplicateIdentity] 的既有语义。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:183:    fun repairEmptyNameProof(docId: String, incoming: AuthorEmail): IdentityRepairResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:185:        if (incoming.givenNames.isNullOrBlank() || incoming.familyNames.isNullOrBlank()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:216:            incoming.email, incoming.givenNames, incoming.familyNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:225:            val given = (source["givenNames"] as? String)?.takeIf { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:228:            if (given != null && given != incoming.givenNames) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:252:            val givenBlank = (source["givenNames"] as? String).isNullOrBlank()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:254:            val givenToWrite = incoming.givenNames.takeIf { givenBlank }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:263:            when (expertIndexWriterService.writeDiscoveryNameAndProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:274:                        snap.source["givenNames"] == incoming.givenNames &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:346:        val node: JsonNode = source["identityVerification"]?.let { mapper.valueToTree(it) } ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:542:            docId, normalizedEmail, rawProfile.givenNames, rawProfile.familyNames, authorKeys
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:182:                    givenNames = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchTemplateGateParityTest.kt:43:        orcidId = "0001", email = "expert@example.org", givenNames = "G", familyNames = "F",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:75:        givenNames = "Ada",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:369:        val specialExpert = expert.copy(givenNames = "Ada &", familyNames = "Lovelace <PhD>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:416:            givenNames = "Ada", familyNames = "Lovelace",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:426:            givenNames = null, familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:435:            givenNames = "EMAIL-6b9d5416e939bbe8ea0", familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:444:            givenNames = "0000-0001-2345-6789-x", familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:453:            givenNames = null, familyNames = "test@example.com",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:462:            givenNames = "Ada", familyNames = "EMAIL-abc123",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:471:            givenNames = "test@example", familyNames = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:481:        val noNameExpert = expert.copy(givenNames = null, familyNames = null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:498:        val emailExpert = expert.copy(givenNames = "EMAIL-abc123", familyNames = null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:513:        val normal = expert.copy(givenNames = "Ada", familyNames = "Lovelace")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailVariableServiceTest.kt:532:        val techExpert = expert.copy(givenNames = "EMAIL-6b9d5416", familyNames = null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:99:    PaperAuthor(it.path("givenNames").asText(), it.path("familyNames").asText(), null, null, false)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:207:            "authors" to authors.map { "${it.givenNames} ${it.familyNames}" },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:211:                    "author" to "${authors[it.authorIndex].givenNames} ${authors[it.authorIndex].familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:214:                mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:268:        assertEquals(listOf("Bernd", "Alessandro Maria", "Francesco"), resolved.map { it.givenNames })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:272:        assertEquals(listOf("Bernd", null, "Alessandro Maria"), isolated.map { it.givenNames })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:283:            assertTrue(actual.all { it.givenNames == null && it.identityEvidence == null }, text)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:286:        assertEquals("Francesco", faveroOnly.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:287:        assertNotEquals("Alessandro Maria", faveroOnly.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:297:        assertEquals("Bob", SourceAuthorEmailResolver.resolvePdf(text, authors, emptyList()).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:298:        assertNull(SourceAuthorEmailResolver.resolvePdf(text, authors, fresh).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:300:        assertNull(SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, listOf(marker) + fresh).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:301:        assertEquals("Alice", SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, fresh).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:375:                assertNotEquals(wrongOwner, "${row.givenNames} ${row.familyNames}", "$id $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:380:                assertEquals(allowed.path("owner").asText(), "${row.givenNames} ${row.familyNames}", "$id $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:398:                    assertEquals(expected, "${row.givenNames} ${row.familyNames}", "$id $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:402:                assertNull(row.givenNames, "$id $email")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:414:                    mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:438:        assertNull(resolved.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:449:        assertEquals("Jane", result.single { it.email == "jane@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:450:        assertEquals("John", result.single { it.email == "john@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:455:        assertEquals("Jane", normalized.single { it.email == "jane@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:466:        assertEquals("Jane", result.single { it.email == "jane@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:467:        assertNull(result.single { it.email == "john@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:481:        assertEquals("Jitendra", result.single { it.email == "jitendra@nitt.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:482:        assertNull(result.single { it.email == "ashutosh@nitkkr.ac.in" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:505:                assertEquals(expected.value.asText(), "${email.givenNames} ${email.familyNames}", id)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:520:        assertEquals("Jane", result("Corresponding author", link).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:521:        assertTrue(result("Author biographies", link).none { it.givenNames != null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:523:            .none { it.givenNames != null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:525:            .none { it.givenNames != null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:527:            .none { it.givenNames != null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:529:            "<a href='mailto:opaque@uni.edu'>John Smith</a>").none { it.givenNames != null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:537:            independent.associate { it.email to it.givenNames })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:542:        assertNull(conflicting.single { it.email == "opaque@uni.edu" }.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:546:                .none { it.givenNames != null }, href)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:549:            .none { it.givenNames != null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:557:        assertNull(result.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:571:            assertNull(resolved.givenNames, label)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:581:        assertTrue(result.emails.all { it.givenNames == "Jane" && it.familyNames == "Doe" &&
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:594:        assertTrue(resolved.all { it.givenNames == null && it.identityEvidence == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:617:                    assertNull(email.givenNames, "${case.path("id")}: ${email.email}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:624:                    assertEquals(expected.asText(), "${email.givenNames} ${email.familyNames}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:642:        assertNull(clue.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:652:        assertNull(ambiguous.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:661:        assertEquals(listOf("Jane", "Jane", "John"), result.map { it.givenNames })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:666:        assertEquals("Jane", wrapped.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:679:                assertNull(email.givenNames, text)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:689:        assertNull(SourceAuthorEmailResolver.resolveText("Jane Doe: opaque@uni.edu", duplicateNames).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:691:        assertNull(shared.single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:701:        assertNull(SourceAuthorEmailResolver.resolveHtml(html, listOf(jane)).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:709:        assertNull(result.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:719:        assertNull(SourceAuthorEmailResolver.resolveHtml(node, listOf(jane, jane.copy(orcidId = "different"))).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:721:        assertEquals("Jane", SourceAuthorEmailResolver.resolveHtml(nested, listOf(jane, john)).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:728:        assertEquals(plain.givenNames, obfuscated.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:737:        assertEquals("Jane", wrapped.givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:750:        assertTrue(braceResults.all { it.givenNames == null && it.familyNames == null && it.identityEvidence == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:752:        assertTrue(wrapped.any { it.email == "kairouz@google.com" && it.givenNames == null && it.identityEvidence == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:772:        assertEquals("Jane", row("continuousMarkerGroupSharesOneSignature", "jane@uni.edu")["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:779:        assertEquals("Jane", row("unmatchedSecondSignatureJoinsTheSharedMarker", "jane@uni.edu")["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:780:        assertNull(row("unmatchedSecondSignatureJoinsTheSharedMarker", "unknown@uni.edu")["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:786:            assertNull(row("damagedSignatureAreaCannotProve", email)["givenNames"], email)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:796:        assertEquals("Jane", independent["givenNames"])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt:107:        "email" to email, "givenNames" to given, "familyNames" to family,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt:112:                "identityVerification",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt:565:        put("doc-legacy", source = mutableMapOf("email" to "legacy@uni.edu", "givenNames" to "Jane", "familyNames" to "Doe"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:111:            item.state, item.outcome, item.qualification, snapshot.profile.identityVerification,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:196:            root.path("profile").path("givenNames").asText(null), root.path("profile").path("familyNames").asText(null),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:417:    val state: VerificationState, val givenNames: String?, val familyNames: String?, val email: String?,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceServiceTest.kt:92:            base.copy(profile=base.profile.copy(identityVerification=base.profile.identityVerification!!.copy(version=1))),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceServiceTest.kt:94:            base.copy(profile=base.profile.copy(identityVerification=null,tags=null,externalIds="""{"openAlexAuthorId":"A123"}""")),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceServiceTest.kt:95:            base.copy(profile=base.profile.copy(identityVerification=base.profile.identityVerification!!.copy(openAlexAuthorId=null),orcidId="0000-0002-1825-0097"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceServiceTest.kt:102:        assertEquals("A123",service.trustedId(base.copy(profile=base.profile.copy(identityVerification=base.profile.identityVerification!!.copy(openAlexAuthorId="https://openalex.org/A123")))))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:596:            docId, normalizedEmail, profile.givenNames, profile.familyNames, authorKeys
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:185:                    givenNames = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1586:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1714:            givenNames = record.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1721:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2013:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2510:        author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() -> "IDENTITY_UNRESOLVED"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2515:        DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2535:        val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2541:        val mismatch = source != null && (source.path("givenNames").asText(null) != incoming.givenNames ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2557:            identityRepairService?.repairDuplicateIdentity(docId, incoming)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2639:            givenNames = authorEmail.givenNames, familyNames = authorEmail.familyNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2648:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2668:            "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2675:            "identityVerification" to profile.identityVerification,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3477:                "if (ctx._source.identityVerification != params.identity || ctx._source.email != params.email || ctx._source.givenNames != params.given || ctx._source.familyNames != params.family || ctx._source.externalIds != params.externalIds) { ctx.op = 'none'; } else { for (entry in params.doc.entrySet()) { ctx._source[entry.getKey()] = entry.getValue(); } }",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3478:                "params" to mapOf("identity" to profile.identityVerification, "email" to profile.email,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3479:                    "given" to profile.givenNames, "family" to profile.familyNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3537:            return if (DiscoveryIdentity.allowed(profile)) normalizeOpenAlexAuthorId(profile.identityVerification?.openAlexAuthorId) else null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3551:            return profile.identityVerification?.orcid?.takeIf {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3702:            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:302:                givenNames = nameParts.getOrNull(0), familyNames = nameParts.getOrNull(1),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1757:            givenNames = profile.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1834:        DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:98:            repairService.repairEmptyNameProof(docId, incoming)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:278:            incoming.email, incoming.givenNames, incoming.familyNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:294:            val given = (source["givenNames"] as? String)?.takeIf { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:296:            if ((given != null && given != incoming.givenNames) || (family != null && family != incoming.familyNames)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:307:                !(source["givenNames"] as? String).isNullOrBlank() &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:332:            proposedGivenNames = incoming.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:437:        val distinct = proven.distinctBy { "${it.givenNames}|${it.familyNames}|${it.identityEvidence}" }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:440:        if (candidate.givenNames.isNullOrBlank() || candidate.familyNames.isNullOrBlank()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:479:        givenNames = snap?.source?.get("givenNames") as? String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:486:    private fun hasProof(source: Map<String, Any?>): Boolean = source["identityVerification"] != null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:523:        val node: JsonNode = source["identityVerification"]?.let { mapper.valueToTree(it) } ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:553:                snap.source["givenNames"]?.toString().orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:565:            docId, incoming.givenNames.orEmpty(), incoming.familyNames.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:598:    val givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:197:                    PaperAuthor(givenNames = parts.getOrNull(0), familyNames = parts.getOrNull(1),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:93:            val identity = DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:100:                "identityVerification" to profile.identityVerification, "institutionEvidence" to profile.institutionEvidence,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:147:            !authors[it].givenNames.isNullOrBlank() && !authors[it].familyNames.isNullOrBlank()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:148:        }.groupBy { name("${authors[it].givenNames} ${authors[it].familyNames}") }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:339:        val given = author.givenNames?.split(Regex("[\\s.-]+"))?.filter { it.isNotEmpty() } ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:346:        val given = author.givenNames?.split(Regex("[\\s.-]+"))?.filter { it.isNotEmpty() } ?: return false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:360:        if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:361:        else "${author.givenNames} ${author.familyNames}"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt:18:    val identityValid: Boolean get() = profile.identityVerification?.status == "VERIFIED" && DiscoveryIdentity.allowed(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt:19:    val fullName: String get() = listOfNotNull(profile.givenNames, profile.familyNames).joinToString(" ")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt:22:        val proofId = normalizeOrcid(profile.identityVerification?.orcid) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:317:        val identity = DiscoveryReviewIdentity.hash(item.expertDocId, profile.email, profile.givenNames, profile.familyNames)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceService.kt:136:                fun name(n: JsonNode) = listOf(n.path("givenNames").asText(""), n.path("familyNames").asText("")).joinToString(" ").trim()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceService.kt:141:                        normalized(listOfNotNull(it.givenNames,it.familyNames).joinToString(" ")) == normalized(snapshot.fullName) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceService.kt:149:                val proof = snapshot.profile.identityVerification
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:81:        outcome!!.emails.any { it.givenNames.isNullOrBlank() || it.familyNames.isNullOrBlank() } -> DiscoverySampleBucket.IDENTITY_UNRESOLVED
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:183:                DiscoveryPersonIdentity.normalizedFullName(it.givenNames, it.familyNames)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:236:            docId, normalizedEmail, rawProfile.givenNames, rawProfile.familyNames, authorKeys
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:246:                givenNames = rawProfile.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:255:    /** 层间身份一致：`orcidId/email/givenNames/familyNames/externalIds/identityVerification` 逐键相同。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:466:            .map { DiscoveryPersonIdentity.normalizedFullName(it.givenNames, it.familyNames) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:507:            listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:148:            "identityVerification", null, "VERIFIED 身份凭证", "RecipientScope.DISCOVERY_PENDING_TAG"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillService.kt:20:        require(emails.all { !it.givenNames.isNullOrBlank() && !it.familyNames.isNullOrBlank() && DiscoveryIdentity.validEvidence(it.identityEvidence) })
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillService.kt:27:            val bound = parsed.emails.filter { !it.givenNames.isNullOrBlank() && !it.familyNames.isNullOrBlank() && DiscoveryIdentity.validEvidence(it.identityEvidence) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillService.kt:29:                group.map { it.givenNames?.lowercase() to it.familyNames?.lowercase() }.distinct().size != 1 }.keys
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSource.kt:144:                        givenNames = parts.getOrNull(0),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:226:        if (bound == null || !bound.equals(normalizedAuthorId(profile.identityVerification?.openAlexAuthorId), ignoreCase = true)) return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:426:        val proofId = normalizeOrcid(profile.identityVerification?.orcid) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:440:        normalizeOrcid(profile.identityVerification?.orcid)?.let(::add)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:97:                it.givenNames.isNullOrBlank() || it.familyNames.isNullOrBlank() } ?: 0,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:28:        val name = listOfNotNull(identity.givenNames, identity.familyNames).joinToString(" ")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:52:            val given = name?.let(::givenNames)?.takeIf { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:151:                identityEvidence = if (!owner.identity.givenNames.isNullOrBlank() && !owner.identity.familyNames.isNullOrBlank())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:157:    private fun givenNames(name: Element): String? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceService.kt:135:        val proof = snapshot.profile.identityVerification ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt:25:        val names = authors.map { listOfNotNull(it.givenNames, it.familyNames).joinToString(" ").trim().replace(Regex("\\s+"), " ") }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:32:        val givenNames: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:173:                        givenNames = node.path("given-names").asText(null),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:191:                givenNames = record.givenNames,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:197:                    listOf(record.orcidId, record.givenNames, record.familyNames, email, record.institutionName).joinToString("\u0000"))
+src/main/resources/static/app.js:2664:    const given = typeof row.givenNames === "string" ? row.givenNames.trim() : "";
+src/main/resources/static/app.js:3624:        const who = item.givenNames || item.familyNames ? discoveryReviewExpertName(item) + " · " : "";
+src/main/resources/es/orcid_info_candidate.json:13:      "givenNames": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:34:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_candidate.json:36:        "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSource.kt:132:                        givenNames = given,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:122:        fun binding(a: AuthorEmail): String? = if (a.givenNames.isNullOrBlank() || a.familyNames.isNullOrBlank()) null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:123:            else email(a) + "|" + DiscoveryIdentity.hash(listOf(a.givenNames, a.familyNames).joinToString(" ").lowercase().trim().replace(Regex("\\s+"), " "))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:131:        val historyBindings = scope.experts.mapNotNull { e -> binding(AuthorEmail(e.profile.email.orEmpty(), e.profile.givenNames, e.profile.familyNames, false, null, null)) }.toSet()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:317:            email = null, givenNames = null, familyNames = null, country = null, keyword = null, employment = null)
+src/main/resources/es/orcid_info_application.json:13:      "givenNames": { "type": "text" },
+src/main/resources/es/orcid_info_application.json:45:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_application.json:47:        "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:356:                it.path("givenNames").isTextual && it.path("givenNames").asText().isNotBlank() &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:511:            docId, normalizedEmail, rawProfile.givenNames, rawProfile.familyNames, authorKeys
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:513:        val proof = rawProfile.identityVerification
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:711:            listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/resources/es/orcid_info_raw.json:13:      "givenNames": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:33:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:35:        "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt:77:                    listOfNotNull(e.givenNames, e.familyNames).joinToString(" ").trim()
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt:78:                        .takeIf { !e.givenNames.isNullOrBlank() && !e.familyNames.isNullOrBlank() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:279:                        givenNames = authorNode.path("firstName").asText(null),
+src/main/resources/static/discovery-recheck.js:250:                    const fields = h.kind === "items" ? [[item.givenNames, item.familyNames].filter(Boolean).join(" ") + " / " + item.docId, item.state, item.before, "建议 " + value(item.proposed) + " / 应用 " + value(item.applied), "当前 " + value(item.current) + " / 同步 " + item.projection] : [value(item.createdAt) + " / #" + item.taskId, item.mode + " / " + item.evidenceMode, value(item.counts.total) + " 人 / " + item.scope, "预计 " + value(item.counts.wouldAdmit) + " / 实际 " + value(item.counts.actualAdmitted), states[item.phase] || item.phase];
+src/main/resources/static/discovery-recheck.js:285:            text("detail-person", [person.givenNames, person.familyNames].filter(Boolean).join(" ") + " · " + person.docId + " · " + person.state);
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:359:                CONCAT_WS(' ',JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.givenNames')),
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql:8:--     givenNames/familyNames（I-2）：同身份的人工批准在研究方向/机构/国家/指标/分类
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:20:        val profileGiven = expertProfile?.givenNames?.trim().orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:55:        val given = expertProfile.givenNames?.trim().orEmpty()

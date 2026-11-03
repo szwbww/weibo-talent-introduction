@@ -1,0 +1,30 @@
+{
+  "execution": 30711,
+  "scan_status": "STATUS 1718 1718 35390 []",
+  "people": 333,
+  "papers": 244,
+  "paper_bindings": 337,
+  "recovered_in_same_batch": 7,
+  "same_name_unconfirmed": 1,
+  "without_complete_binding_in_batch": 325,
+  "representative_rules": {
+    "email_parenthesized_name": 21,
+    "owner_label_on_email": 51,
+    "immediate_name_email": 199,
+    "single_manual": 40,
+    "unique_author_marker": 16,
+    "explicit_correspondence": 9,
+    "initials_in_contact_block": 1
+  },
+  "inputs_sha256": {
+    "30711_fitz_live.py": "5537d66b11f6f695772bb0f8013067635983a2f5ebba8c507cd919d744c44184",
+    "30711_fitz_live.log": "ee0ae97e27afd1e5d074cddea93ea491cdf8e66a050b8e8acc3c385c43578fd5",
+    "30711_single_evidence.log": "36e7c18549d2c9c65671081d559210e22c376be7b916691ac6a8ce8e1f0e7b4e",
+    "30711_columns.log": "5c7f93b586c3b09c2d4ae4d729e978b6d2351b27417595d0c74792f477e7d2ab",
+    "30711_baseline_hashes": "d390296538afb421a93114fb8446a35be9d993e1aa2f1a41f78d85848ac4ddf4",
+    "30711_merge.py": "2334c55feaa296df291eb384ce033df5a6d955830899af3ee2cf59b0c8dc4ba6",
+    "30711_group.py": "e47f39b2e05e9da7f77c0e5ef1298ad33f1d3492ff26c472ea38a701ffc2bbe3",
+    "30711_decide.py": "743d60e4fd31b3a01d40b8066e5b0764b93c2f1fe78d435145754f1660fa175f",
+    "30711_31742.log": "14528ce94407e6fcc492f35e1d575c1148902b8913d46706181b65836e952dbb"
+  }
+}

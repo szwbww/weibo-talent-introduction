@@ -1,8 +1,7 @@
 "use strict";
 
 // fast-p 05 资源激活测试（T3；I-1/I-2/S-1）+ 02 注册回归：
-// 1) index.html 恰好 11 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js 与
-//    world-clock.css/.js），全部同值 index.html 的 styles.css?v= 键，无重复注册；
+// 1) styles/workbench/app 缓存键同值，无重复注册；无关组件保留各自版本键；
 // 2) S-1 注册顺序：meeting CSS 紧跟 mailbox-chat.css 之后；meeting JS 在 mailbox-chat.js
 //    与 app.js 之前；world-clock CSS/JS 分别位于最后；link 全在 head、script 全在 body；
 //    task-modal-runtime.js 保持未版本化原位；
@@ -27,37 +26,32 @@ const CACHE_KEY = (() => {
     if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
     return match[1];
 })();
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const CSS_ORDER = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
     "world-clock.css"];
 const JS_ORDER = ["trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
     "mailbox-chat.js", "discovery-recheck.js", "app.js", "world-clock.js"];
-const ALL_ASSETS = [...CSS_ORDER, ...JS_ORDER];
 
-describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
-    it(`恰好 11 个带 ?v= 资源且全部等于 ${CACHE_KEY}，无旧键残留`, () => {
-        const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 19, `index.html 必须恰好注册 19 个带版本资源，实际 ${keys.length}`);
-        assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
+describe("T3: 缓存键三件套与资源注册（I-1/S-1）", () => {
+    it(`缓存键三件套使用 ${CACHE_KEY}，无过时键残留`, () => {
+        const keys = [...html.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+        assert.ok(keys.every((key) => key === CACHE_KEY), `三件套键必须等于 ${CACHE_KEY}: ${keys}`);
         assert.ok(html.indexOf("discovery-recheck.js?v=") < html.indexOf("app.js?v="), "重审组件必须先于宿主");
         assert.ok(!html.includes("20260910-mailbox-spacing"),
             "上一缓存键 20260910-mailbox-spacing 必须 0 命中 index.html");
     });
 
-    it("11 个资源 = 9 旧资源 + world-clock.css/.js，各恰好注册 1 次（无重复）", () => {
+    it("meeting-confirmation 资源各注册一次且所有资源名无重复", () => {
         const refs = [];
         const linkRe = /<link rel="stylesheet" href="([^"]+\.css)\?v=([0-9a-z-]+)">/g;
         const scriptRe = /<script src="([^"]+\.js)\?v=([0-9a-z-]+)"><\/script>/g;
         let match;
         while ((match = linkRe.exec(html)) !== null) refs.push({ tag: "link", name: match[1] });
         while ((match = scriptRe.exec(html)) !== null) refs.push({ tag: "script", name: match[1] });
-        assert.strictEqual(refs.length, 19, "link+script 带版本注册行合计必须为 19");
-        for (const asset of ALL_ASSETS) {
+        for (const asset of ["meeting-confirmation.css", "meeting-confirmation.js"]) {
             const hits = refs.filter((ref) => ref.name === asset).length;
             assert.strictEqual(hits, 1, `${asset} 必须恰好注册 1 次，实际 ${hits}`);
         }
-        // 无重名：11 个名字互不重复
-        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 19,
+        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, refs.length,
             "注册资源名不得重复");
     });
 
@@ -65,8 +59,8 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
         const headEnd = html.indexOf("</head>");
         const bodyEnd = html.lastIndexOf("</body>");
         assert.ok(headEnd > 0 && bodyEnd > headEnd, "index.html 结构异常");
-        const linkRe = new RegExp('<link rel="stylesheet" href="[^"]+\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '">', "g");
-        const scriptRe = new RegExp('<script src="[^"]+\\.js\\?v=' + escapeRegExp(CACHE_KEY) + '"><\\/script>', "g");
+        const linkRe = /<link rel="stylesheet" href="[^"]+\.css\?v=[0-9a-z-]+">/g;
+        const scriptRe = /<script src="[^"]+\.js\?v=[0-9a-z-]+"><\/script>/g;
         let match;
         while ((match = linkRe.exec(html)) !== null) {
             assert.ok(match.index < headEnd, "样式 link 必须位于 head 内");
@@ -85,7 +79,7 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
     it("CSS 顺序：meeting-confirmation.css 紧跟 mailbox-chat.css 之后（S-1）", () => {
         let previous = -1;
         for (const asset of CSS_ORDER) {
-            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+            const at = html.indexOf(`${asset}?v=`);
             assert.ok(at > previous,
                 `CSS 顺序违规：${asset} 必须注册在上一 CSS 之后（meeting CSS 在 mailbox-chat.css 之后）`);
             previous = at;
@@ -95,7 +89,7 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
     it("脚本顺序：meeting-confirmation.js 在 mailbox-chat.js 之前、app.js 之前（S-1）", () => {
         let previous = -1;
         for (const asset of JS_ORDER) {
-            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+            const at = html.indexOf(`${asset}?v=`);
             assert.ok(at > previous,
                 `脚本顺序违规：${asset} 必须注册在上一脚本之后（meeting JS 在 mailbox-chat.js/app.js 之前）`);
             previous = at;

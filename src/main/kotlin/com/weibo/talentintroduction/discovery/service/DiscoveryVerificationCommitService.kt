@@ -16,6 +16,19 @@ import java.time.Clock
 /** All network reads finish in prepare/project, outside commit's SQL transaction. */
 data class VerificationCommitInput(val snapshot: VerificationSnapshot?, val admission: ExpertDiscoveryAdmission?, val protection: String?)
 
+/** Not a bypass flag: minted only from a complete server receipt under the current locked lease. */
+class RetainedIdentityAdmissionAuthority private constructor(internal val item: VerificationItem,
+    internal val supplement: IdentitySupplement) {
+    companion object {
+        internal fun from(item: VerificationItem): RetainedIdentityAdmissionAuthority {
+            val s = requireNotNull(RetainedPaperIdentityService.supplement(item))
+            require(RetainedPaperIdentityService.valid(item, s) && s.mode == VerificationMode.ENFORCE &&
+                s.ownerHash == DiscoveryVerificationRepository.replayHash(requireNotNull(item.leaseToken)))
+            return RetainedIdentityAdmissionAuthority(item, s)
+        }
+    }
+}
+
 @Service
 class DiscoveryVerificationCommitService(
     private val repository: DiscoveryVerificationRepository,
@@ -63,6 +76,16 @@ class DiscoveryVerificationCommitService(
             if (revision.isNull) null else revision.longValue()
         } else input.admission?.revision
         val traceRecorded = traces.read(item.id).recorded
+        val supplement = RetainedPaperIdentityService.supplement(item)
+        val validSupplement = supplement?.let { RetainedPaperIdentityService.valid(item, it) &&
+            it.ownerHash == DiscoveryVerificationRepository.replayHash(lease.leaseToken) } == true
+        val beforeSnapshot = if (validSupplement) mapper.treeToValue(supplement!!.beforeSnapshot, VerificationSnapshot::class.java) else null
+        val comparison: VerificationSnapshot? = if (validSupplement && supplement!!.mode == VerificationMode.AUDIT) beforeSnapshot else
+            mapper.readValue(item.snapshotJson, VerificationSnapshot::class.java)
+        val effective = if (validSupplement) mapper.readValue(item.snapshotJson, VerificationSnapshot::class.java) else input.snapshot
+        val controlledOldAdmission = validSupplement &&
+            current?.identityHash == supplement!!.beforeAdmissionIdentity && current?.revision == supplement.beforeAdmissionRevision &&
+            current?.identityHash == supplement.beforeIdentityHash
         val combined = if (traceRecorded) traces.startStep(item.id, lease.leaseToken!!, lease.generation, 7,
             mapper.writeValueAsString(mapOf("beforeDecision" to (reviewInput?.path("beforeDecision")?.asText(null) ?: input.admission?.decision),
                 "expectedAdmissionRevision" to expectedRevision, "proposedOutcome" to proposed.outcome,
@@ -70,13 +93,16 @@ class DiscoveryVerificationCommitService(
             "{}", now) else null
         val changed = when {
             input.snapshot == null -> "SOURCE_MISSING"
-            input.snapshot.identityHash != item.identityHash -> "IDENTITY_CHANGED"
-            input.snapshot.factFingerprint != item.factFingerprint -> "FACT_CHANGED"
+            supplement != null && !validSupplement && !(supplement.proposal.incoming == null &&
+                supplement.phase in setOf("UNCHANGED", "UNAVAILABLE", "CONFLICT", "PROTECTED")) -> "INVALID_IDENTITY_SUPPLEMENT"
+            input.snapshot.identityHash != comparison!!.identityHash -> "IDENTITY_CHANGED"
+            input.snapshot.factFingerprint != comparison.factFingerprint -> "FACT_CHANGED"
             else -> null
         }
         val protection = input.protection ?: when {
-            current?.identityHash == item.identityHash && (current.decisionEnum.manual || current.decision == "LEGACY_APPROVED") -> "REVIEW_PROTECTED"
-            current?.identityHash == item.identityHash && current.decision == "AUTO_PASSED" && current.policyVersion != DiscoveryVerificationAdmissionGate.POLICY_VERSION -> "LEGACY_AUTO_PROTECTED"
+            supplement?.phase in setOf("PROTECTED", "CONFLICT") -> supplement!!.proposal.reason
+            (current?.identityHash == item.identityHash || controlledOldAdmission) && (current?.decisionEnum?.manual == true || current?.decision == "LEGACY_APPROVED") -> "REVIEW_PROTECTED"
+            (current?.identityHash == item.identityHash || controlledOldAdmission) && current?.decision == "AUTO_PASSED" && current.policyVersion != DiscoveryVerificationAdmissionGate.POLICY_VERSION -> "LEGACY_AUTO_PROTECTED"
             input.snapshot != null && contacted(input.snapshot) -> "CONTACT_PROTECTED"
             else -> null
         }
@@ -88,7 +114,7 @@ class DiscoveryVerificationCommitService(
         var result = when {
             changed != null -> withheld(if (item.reviewEpoch > 0) "STALE_INPUT" else changed)
             protection != null -> withheld(protection, true)
-            current != null && current.identityHash != item.identityHash -> withheld("IDENTITY_CHANGED")
+            current != null && current.identityHash != item.identityHash && !controlledOldAdmission -> withheld("IDENTITY_CHANGED")
             current?.revision != expectedRevision || item.reviewEpoch == 0L && current?.identityHash != input.admission?.identityHash -> withheld("ADMISSION_CHANGED")
             else -> proposed
         }
@@ -100,8 +126,8 @@ class DiscoveryVerificationCommitService(
                 route = result.route, evidenceJson = result.evidenceJson, reasonsJson = result.reasonsJson,
                 apolloPersonId = result.apolloPersonId, personMatchedAt = result.personMatchedAt,
                 completedAt = now, leaseToken = null, leaseUntil = null, policyVersion = VerificationMode.ENFORCE.policyVersion)
-            automatic = policy.evaluate(item.expertDocId, input.snapshot!!.profile,
-                VerificationAdmissionContext(item.expertDocId, input.snapshot.profile, listOf(staged)))
+            automatic = policy.evaluate(item.expertDocId, effective!!.profile,
+                VerificationAdmissionContext(item.expertDocId, effective.profile, listOf(staged)))
             if (automatic.status != DiscoveryAdmissionStatus.AUTO_PASSED) {
                 result = withheld("HARD_BLOCKED").copy(reasonsJson = mapper.writeValueAsString(automatic.blockingReasons.map { it.code }))
             }
@@ -121,7 +147,10 @@ class DiscoveryVerificationCommitService(
         check(repository.saveEvidenceAndOutcome(item.id, lease.leaseToken!!, lease.generation, result, now))
         if (item.policyVersion == VerificationMode.ENFORCE.policyVersion && result.outcome in ADMITTED) {
             // Evidence is already visible in this transaction. The shared CAS path must confirm a real row.
-            val persisted = review.recordAutomaticPersisted(item.expertDocId, input.snapshot!!.profile, requireNotNull(automatic))
+            val persisted = if (controlledOldAdmission && current?.identityHash != item.identityHash)
+                review.recordAutomaticPersisted(item.expertDocId, effective!!.profile, requireNotNull(automatic),
+                    RetainedIdentityAdmissionAuthority.from(item))
+            else review.recordAutomaticPersisted(item.expertDocId, effective!!.profile, requireNotNull(automatic))
             repository.attachAdmission(item.id, persisted.revision, now)
         }
         val persisted = repository.findItem(item.id) ?: return null
@@ -136,6 +165,23 @@ class DiscoveryVerificationCommitService(
                 null, now))
         }
         return persisted
+    }
+
+    /** Baseline refusal is terminal only while the original run/lease still owns the item. */
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    fun finishStaleIdentity(lease: VerificationItem, result: VerificationResult, stepId: Long?): Boolean {
+        require(lease.reviewEpoch > 0 && result.state == VerificationState.COMPLETED &&
+            result.outcome == VerificationOutcome.PENDING && result.admissionRevision == null &&
+            result.reasonsJson == "[\"STALE_INPUT\"]")
+        if (!repository.lockRunAccepting(lease.ownerExecutionId)) return false
+        val now = clock.instant()
+        if (!repository.saveEvidenceAndOutcome(lease.id, requireNotNull(lease.leaseToken), lease.generation, result, now)) return false
+        stepId?.let {
+            check(traces.finishCommittedStep(lease.id, lease.generation, it, VerificationStepState.SUCCESS,
+                mapper.writeValueAsString(mapOf("applied" to false, "projection" to "NOT_REQUIRED",
+                    "reason" to "STALE_INPUT")), null, now))
+        }
+        return true
     }
 
     /** Projection retries never redo qualification or call providers. Historical admission events stay intact. */

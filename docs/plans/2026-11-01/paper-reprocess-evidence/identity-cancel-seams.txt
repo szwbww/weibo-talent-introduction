@@ -1,0 +1,107 @@
+$ rg -n --no-ignore writeIdentityProofIfVersionMatches|writeDiscoveryNameAndProofIfVersionMatches|cancelRecheckItem|claimDue|cancelSteps src/main src/test scripts
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1482:    fun `writeIdentityProofIfVersionMatches writes only the proof under the version guard`() {
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1491:        val result = service.writeIdentityProofIfVersionMatches(
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1510:    fun `writeIdentityProofIfVersionMatches classifies conflict missing and failure`() {
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1522:            service.writeIdentityProofIfVersionMatches(ExpertIndexLevel.RAW, "D", 1L, 1L, proof)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1527:            service.writeIdentityProofIfVersionMatches(ExpertIndexLevel.RAW, "D", 1L, 1L, proof)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1532:            service.writeIdentityProofIfVersionMatches(ExpertIndexLevel.RAW, "D", 1L, 1L, proof)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:961:    fun writeIdentityProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:996:     * [writeIdentityProofIfVersionMatches] 一致：绝不创建缺层，也绝不用旧快照盲目重试。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:998:    fun writeDiscoveryNameAndProofIfVersionMatches(
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:168:            jobService.claimDue(10, now.plusSeconds(30)).map { it.expertDocId },
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:197:            jobService.claimDue(10, now.plusDays(1)).map { it.expertDocId },
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:206:        assertEquals(listOf("DOC-FAILED"), jobService.claimDue(10, now).map { it.expertDocId })
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:222:    fun `claimDue takes only due rows and skips not-yet-due, leased and terminal rows (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:254:        val claimed = jobService.claimDue(10, now)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:272:            jobService.claimDue(10, now.plusMinutes(5)).map { it.expertDocId }
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:289:            jobService.claimDue(10, now.plusMinutes(29)).map { it.expertDocId },
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:293:        val reclaimed = jobService.claimDue(10, now.plusMinutes(30)).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:300:    fun `claimDue never claims more than the requested limit (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:306:        val claimed = jobService.claimDue(2, now)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:330:                        results += jobService.claimDue(1, now)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:364:        val reclaimed = jobService.claimDue(1, now).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:443:            jobService.claimDue(10, now.plusYears(1)).map { it.expertDocId },
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:509:            val claimed = jobService.claimDue(1, claimNow).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:529:        val fifthAttempt = jobService.claimDue(1, claimNow).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:536:            jobService.claimDue(1, claimNow.plusDays(30)).map { it.expertDocId },
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:562:            jobService.claimDue(10, budgetRow.nextAttemptAt.minusSeconds(1)).map { it.expertDocId }
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:566:            jobService.claimDue(1, budgetRow.nextAttemptAt).map { it.expertDocId }
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:631:            jobService.claimDue(10, now.plusDays(1)).map { it.expertDocId },
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepositoryIT.kt:651:        val claimed = jobService.claimDue(1, now)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:225:                                    val lease = f.repository.claimDue(f.clock.instant(), 120) ?: break
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:443:                val lease = f.repository.claimDue(f.clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:483:                val lease = f.repository.claimDue(f.clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:662:                val lease = f.repository.claimDue(f.clock.instant(), 120) ?: break
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:679:                val lease = f.repository.claimDue(f.clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:848:            val old = f.repository.claimDue(f.clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:850:            val reclaimed = f.repository.claimDue(f.clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:863:            val lease = f.repository.claimDue(f.clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:165:    fun claim() = repository.claimDue(clock.instant(), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:613:                        "lease" -> { f.clock.now = f.clock.now.plusSeconds(121); f.repository.claimDue(f.clock.instant(), 120) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:90:    private fun claim(now: Instant = NOW) = repository.claimDue(now, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:217:        assertNull(repository.claimDue(NOW.plusSeconds(59), 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:293:        val claimed = repository.claimDue(NOW.plusSeconds(1), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:607:        assertNull(repository.claimDue(NOW, 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:621:        assertNull(repository.claimDue(NOW, 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:628:        assertNull(repository.claimDue(NOW, 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:636:        val leases = parallel(10) { repository.claimDue(NOW, 120) }.filterNotNull()
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:758:        assertFalse(repository.cancelRecheckItem(first.id, NOW))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:759:        items.filter { it.id != first.id }.forEach { assertTrue(repository.cancelRecheckItem(it.id, NOW)) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:761:        assertNull(repository.claimDue(NOW.plusSeconds(200), 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:788:        assertNull(repository.claimDue(NOW.plusSeconds(121), 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:789:        assertTrue(repository.cancelRecheckItem(item.id, NOW))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:874:        assertNull(repository.claimDue(NOW, 120))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:884:        val second = repository.claimDue(NOW.plusSeconds(121), 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:55:        val lease = repository.claimDue(now, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:95:        val lease = repository.claimDue(now, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:104:        val lease = repository.claimDue(now, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:113:        val replacement = repository.claimDue(later, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:123:        val lease = repository.claimDue(now, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:140:        val lease = repository.claimDue(now, 120)!!
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt:148:        assertTrue(repository.cancelRecheckItem(item.id, now))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3621:            .claimDue(Mockito.anyInt(), anyDateTime())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3645:            .claimDue(Mockito.anyInt(), anyDateTime())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7349:            .`when`(enrichmentJobService).claimDue(Mockito.anyInt(), anyLocalDateTime())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7351:        val claimed = svc.claimDueEnrichmentJobs(props.autoEnrichmentBatchSize)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7354:        Mockito.verify(enrichmentJobService).claimDue(eqValue(100), anyLocalDateTime())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7361:        val claimed = svc.claimDueEnrichmentJobs(100)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7364:        Mockito.verify(enrichmentJobService, Mockito.never()).claimDue(Mockito.anyInt(), anyLocalDateTime())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:7376:        Mockito.doReturn(jobs).`when`(enrichmentJobService).claimDue(Mockito.anyInt(), anyLocalDateTime())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:89:        Mockito.verify(discoveryService, Mockito.never()).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:104:        Mockito.doReturn(claimed).`when`(discoveryService).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:117:        Mockito.verify(discoveryService).claimDueEnrichmentJobs(eqValue(100))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:150:        Mockito.verify(discoveryService, Mockito.never()).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:162:        Mockito.verify(discoveryService, Mockito.never()).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:172:            .`when`(discoveryService).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:193:        Mockito.doReturn(claimed).`when`(discoveryService).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:225:        Mockito.verify(discoveryService, Mockito.never()).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:237:        Mockito.verify(discoveryService, Mockito.never()).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:249:            .`when`(discoveryService).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:269:        Mockito.doReturn(claimed).`when`(discoveryService).claimDueEnrichmentJobs(Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:275:        Mockito.verify(discoveryService).claimDueEnrichmentJobs(eqValue(7))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:71:                        val reclaimed = f.repository.claimDue(f.clock.instant(),120)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:110:        Mockito.`when`(repo.claimDue(ruleClock.instant(), 120)).thenAnswer {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:156:        Mockito.`when`(repo.claimDue(ruleClock.instant(), 120)).thenAnswer {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:527:            Mockito.verify(repo, Mockito.timeout(2000).atLeastOnce()).claimDue(ruleClock.instant(), 120)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:1152:                        check(!trace.read(item.id).recorded && f.repository.claimDue(f.clock.instant(), 120) == null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:1174:                            f.repository.cancelRecheckItem(item.id, f.clock.instant())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobServiceTest.kt:43:    fun `claimDue never hands out rows whose conditional claim lost the race (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobServiceTest.kt:57:        val claimed = service.claimDue(10, now)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobServiceTest.kt:66:    fun `claimDue issues a distinct lease token and a ten minute lease per row (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobServiceTest.kt:74:        service.claimDue(2, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:99:                                val lease = repository.claimDue(clock.instant(), properties.leaseSeconds) ?: return@execute
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:130:            when (expertIndexWriterService.writeIdentityProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:263:            when (expertIndexWriterService.writeDiscoveryNameAndProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3189:        val jobs = claimDueEnrichmentJobs(discoveryProperties.autoEnrichmentBatchSize)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3219:     * 到期判定谓词与 [claimDueEnrichmentJobs] 完全一致（同一份 `findDueCandidates`），只读一次；
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3241:    fun claimDueEnrichmentJobs(limit: Int): List<ExpertAcademicEnrichmentJob> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3247:        return enrichmentJobService.claimDue(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:19: * - **I-2 租约和竞争**：[claimDue] 用「候选查询 + 事务内条件 UPDATE + `lease_token`」领取，租期
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:21: *   完成返回 `false` 且不写任何列。崩溃后过期 `RUNNING` 由 [claimDue] 谓词重新纳入候选。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:56:    fun claimDue(limit: Int, now: LocalDateTime): List<ExpertAcademicEnrichmentJob> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:89:            val claimed = discoveryService.claimDueEnrichmentJobs(discoveryProperties.autoEnrichmentBatchSize)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:583:            RowMapper { rs, _ -> rs.getLong(1) }, executionId).forEach { cancelRecheckItem(it, now) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:737:    fun cancelRecheckItem(itemId: Long, now: Instant): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:746:        DiscoveryVerificationTraceRepository(jdbc).cancelSteps(itemId, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:854:    fun claimDue(now: Instant, leaseSeconds: Long): VerificationItem? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepository.kt:78:    fun cancelSteps(itemId: Long, now: Instant) {

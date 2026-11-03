@@ -54,7 +54,8 @@ class DiscoveryVerificationRegistrationService(
     private val countrySupplement: DiscoveryCountrySupplementService? = null,
     private val traces: com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository =
         com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository(jdbc),
-    private val papers: PaperVerificationEvidenceService? = null
+    private val papers: PaperVerificationEvidenceService? = null,
+    private val paperReprocess: com.weibo.talentintroduction.discovery.repository.DiscoveryPaperReprocessRepository? = null
 ) : RegistrationRecovery {
     private val mapper = jacksonObjectMapper().findAndRegisterModules()
         .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -113,6 +114,94 @@ class DiscoveryVerificationRegistrationService(
         return DiscoveryVerificationExecution(executionId, repository.createRun(executionId, properties.mode, apollo, settings, clock.instant()))
     }
 
+    internal fun freezePaperSettings(access: FrozenApolloAccess): com.fasterxml.jackson.databind.JsonNode {
+        if (!properties.enabled || !properties.workerEnabled || access.searchEnabled && properties.apolloApiKey.isBlank())
+            throw IllegalStateException("VERIFICATION_UNAVAILABLE")
+        return mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(linkedMapOf(
+            "mode" to VerificationMode.ENFORCE.name, "policyVersion" to VerificationMode.ENFORCE.policyVersion,
+            "apolloMatchingVersion" to 2, "ruleVersion" to 4,
+            "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION, "apolloLimitPolicy" to "PROVIDER",
+            "apolloAccess" to access.toJson(mapper), "maxRequestsPerItem" to properties.maxRequestsPerItem,
+            "maxPagesPerQuery" to properties.maxPagesPerQuery, "maxTransientAttempts" to properties.maxTransientAttempts,
+            "leaseSeconds" to properties.leaseSeconds, "httpConnectTimeout" to properties.httpConnectTimeout.toString(),
+            "httpReadTimeout" to properties.httpReadTimeout.toString()))
+    }
+
+    /** No client settings argument: the immutable parent scope is the only authority. */
+    internal fun beginFromPaperReprocess(parent: ReprocessRun): DiscoveryVerificationExecution =
+        transactions.execute {
+            repository.requirePaperParent(parent)
+            val settings = parent.scope.path("verificationSettings").deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+            require(settings.path("mode").asText() == VerificationMode.ENFORCE.name &&
+                settings.path("policyVersion").asText() == VerificationMode.ENFORCE.policyVersion)
+            val access = FrozenApolloAccess.parse(settings.path("apolloAccess"))
+            if (!properties.enabled || !properties.workerEnabled || access.searchEnabled && properties.apolloApiKey.isBlank())
+                error("VERIFICATION_UNAVAILABLE")
+            settings.put("paperReprocessParentId", parent.executionId)
+            settings.put("evaluationAt", parent.scope.path("evaluationAt").asText())
+            DiscoveryVerificationExecution(parent.executionId, repository.createRun(parent.executionId,
+                VerificationMode.ENFORCE, access.searchEnabled, settings.toString(), clock.instant()))
+        }!!
+
+    internal fun requirePaperPermission(context: DiscoveryVerificationExecution) {
+        context.archivedPaper?.parent?.let { parent ->
+            transactions.executeWithoutResult { repository.requirePaperParent(parent) }
+        }
+    }
+
+    internal fun recordPaperEffect(context: DiscoveryVerificationExecution, registration: DiscoveryRegistration,
+        docId: String, effect: String, personResult: DiscoveryPersonRefreshResult? = null) {
+        val archived = context.archivedPaper ?: return
+        val parent = archived.parent ?: return
+        val target = requireNotNull(archived.target)
+        val receipts = requireNotNull(paperReprocess)
+        requirePaperPermission(context)
+        val item = requireNotNull(registration.item)
+        require(item.ownerExecutionId == parent.executionId && item.expertDocId == docId)
+        val result = requireNotNull(receipts.item(parent.executionId, target.id)?.result)
+            .deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        result.put("docId", docId).put("verificationItemId", item.id).put("verificationRunId", item.ownerExecutionId)
+        val effects = result.with("effects")
+        effects.put(effect, personResult?.retryable != true)
+        if (personResult != null) {
+            result.set<com.fasterxml.jackson.databind.JsonNode>("personRegistration", mapper.valueToTree(
+                linkedMapOf("status" to personResult.status.name, "reason" to personResult.reason,
+                    "retryable" to personResult.retryable)))
+        }
+        if (effect == "RAW") {
+            result.put("actualNew", 1).put("targetOutcome", "NEW")
+            result.set<com.fasterxml.jackson.databind.JsonNode>("after",
+                mapper.valueToTree(requireNotNull(writer.readDiscoveryDocument(ExpertIndexLevel.RAW, docId))))
+        }
+        check(receipts.receipt(parent, target, result)) { "TARGET_LEASE_LOST" }
+    }
+
+    /** Only this parent's exact reserved identity can resume after RAW succeeded without a TARGET receipt. */
+    internal fun ownedPaperRegistration(context: DiscoveryVerificationExecution, docId: String,
+        incoming: AuthorEmail): DiscoveryRegistration? {
+        requirePaperPermission(context)
+        val parent = context.archivedPaper?.parent ?: return null
+        val item = repository.findItemsByDocIds(listOf(docId)).singleOrNull {
+            it.ownerExecutionId == parent.executionId && it.reviewEpoch == 0L &&
+                it.sourceName == context.archivedPaper.source.sourceName &&
+                it.sourceItemKey == context.archivedPaper.source.sourceItemKey
+        } ?: return null
+        val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return null
+        val profile = writer.discoveryProfile(docId, raw.source)
+        val frozen = frozenProfile(item)
+        // RAW adds operational/classification metadata; ownership compares the same canonical facts used by commit.
+        val config = policy.currentConfigSnapshot()
+        val actual = DiscoveryVerificationAdmissionGate.snapshot(docId, profile, config)
+        val expected = DiscoveryVerificationAdmissionGate.snapshot(docId, frozen, config)
+        require(profile.givenNames == incoming.givenNames && profile.familyNames == incoming.familyNames &&
+            DiscoveryIdentity.normalizedEmail(profile.email) == DiscoveryIdentity.normalizedEmail(incoming.email) &&
+            profile.identityVerification == frozen.identityVerification &&
+            actual.identityHash == item.identityHash && actual.factFingerprint == expected.factFingerprint) {
+            "PAPER_REPROCESS_OWNERSHIP_CONFLICT"
+        }
+        return DiscoveryRegistration(item, preparedProfile = frozen)
+    }
+
     fun closeInput(context: DiscoveryVerificationExecution) {
         context.run?.let { repository.closeInput(it.executionId, clock.instant()) }
     }
@@ -120,6 +209,7 @@ class DiscoveryVerificationRegistrationService(
     fun reserve(context: DiscoveryVerificationExecution, docId: String, profile: ExpertProfile,
                 sourceName: String, sourceItemKey: String, paper: PaperMetadata? = null): DiscoveryRegistration {
         try {
+            requirePaperPermission(context)
             val run = context.run ?: run {
                 check(!properties.enabled) { "Verification execution context is missing" }
                 return DiscoveryRegistration()
@@ -144,11 +234,15 @@ class DiscoveryVerificationRegistrationService(
             val existing = repository.findItemsByDocIds(listOf(docId))
                 .filter { it.identityHash == snapshot.identityHash && it.policyVersion == run.policyVersion }
             require(existing.size <= 1) { "Multiple reservations for the same identity and policy" }
-            existing.firstOrNull()?.let { return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config) }
+            existing.firstOrNull()?.let {
+                if (context.archivedPaper?.parent != null) require(it.ownerExecutionId == run.executionId) { "FOREIGN_REGISTRATION" }
+                return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config)
+            }
 
             var finalProfile = rawProfile
             var receipt: CountrySupplementReceipt? = null
             if (properties.countrySupplementEnabled && countrySupplement != null) {
+                requirePaperPermission(context)
                 val supplemented = countrySupplement.supplement(run.executionId, docId, rawProfile, paper)
                 finalProfile = supplemented.profile
                 receipt = supplemented.receipt
@@ -169,8 +263,12 @@ class DiscoveryVerificationRegistrationService(
             savedMap["executionContext"] = VerificationExecutionContext(evaluatedAt, refs)
             receipt?.let { savedMap["countrySupplement"] = it }
             val saved = mapper.writeValueAsString(savedMap)
-            val item = repository.reserveItem(VerificationReservation(run.executionId, docId, finalSnapshot.identityHash,
-                run.policyVersion, sourceName, sourceItemKey, saved, finalSnapshot.factFingerprint), clock.instant())
+            val item = transactions.execute {
+                requirePaperPermission(context)
+                repository.reserveItem(VerificationReservation(run.executionId, docId, finalSnapshot.identityHash,
+                    run.policyVersion, sourceName, sourceItemKey, saved, finalSnapshot.factFingerprint), clock.instant())
+            }!!
+            if (archived?.parent != null) require(item.ownerExecutionId == archived.parent.executionId) { "FOREIGN_REGISTRATION" }
             return freeze(item, rawProfile, sourceName, sourceItemKey, config)
         } catch (e: InterruptedException) {
             // I-5: cancellation must stop discovery, never become a retryable registration failure.
@@ -273,6 +371,8 @@ class DiscoveryVerificationRegistrationService(
         try {
             transactions.executeWithoutResult {
                 // run -> admission -> item. No external reads while holding these locks.
+                if (repository.isPaperReprocessOwned(item.ownerExecutionId))
+                    check(repository.lockPaperRunPermission(item.ownerExecutionId)) { "PAPER_REPROCESS_PERMISSION_LOST" }
                 jdbc.queryForObject("SELECT execution_id FROM discovery_verification_run WHERE execution_id=? FOR UPDATE", Long::class.java, item.ownerExecutionId)
                 if (item.reviewEpoch == 0L && item.policyVersion == VerificationMode.ENFORCE.policyVersion &&
                     item.state == VerificationState.RESERVED) {
@@ -323,5 +423,11 @@ class DiscoveryVerificationRegistrationService(
         return true
     }
 
-    override fun recoverReserved(limit: Int): Int = repository.listReserved(limit).count { recover(it) }
+    override fun recoverReserved(limit: Int): Int = repository.listReserved(limit).count { item ->
+        // Interrupted paper parents park reservations; they must not abort shared recovery.
+        // Activation still rechecks permission under the parent lock before any write.
+        if (repository.isPaperReprocessOwned(item.ownerExecutionId) &&
+            !repository.paperRunPermission(item.ownerExecutionId)) false
+        else recover(item)
+    }
 }
