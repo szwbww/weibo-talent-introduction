@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
@@ -102,9 +103,13 @@ class DiscoveryPaperIdentityReplayToolTest {
 
     // Reconciliation acceptance lives in the existing CLI: identity evidence, not totals, decides.
     private val bodySha = "a".repeat(64)
-    private val emailHash = "b".repeat(24)
+    private val targetEmail = "target.author@example.edu"
+    private val emailHash = emailFingerprint(targetEmail)
     private val nameHash = "c".repeat(24)
     private val expectedDoc = "0000-0002-0178-9985"
+
+    private fun emailFingerprint(value: String) =
+        DiscoveryIdentity.hash(DiscoveryIdentity.normalizedEmail(value)).take(24)
 
     private fun combination(): ObjectNode = mapper.createObjectNode().put("recordId", 1).put("bodySha256", bodySha)
         .put("page", 1).put("emailHash", emailHash).put("nameHash", nameHash)
@@ -135,9 +140,12 @@ class DiscoveryPaperIdentityReplayToolTest {
         return dir
     }
 
-    private fun target(outcome: String?, docId: String?): ObjectNode = mapper.createObjectNode().also { value ->
+    private fun target(outcome: String?, docId: String?,
+        email: JsonNode? = mapper.nodeFactory.textNode(targetEmail)): ObjectNode = mapper.createObjectNode().also { value ->
         outcome?.let { value.put("targetOutcome", it) }
         docId?.let { value.put("docId", it) }
+        // Absence of the key is a real counterexample; a JSON null is expressed with nullNode().
+        email?.let { value.set<JsonNode>("email", it) }
         value.putArray("candidates").add(combination().also { it.remove("page") })
     }
 
@@ -146,7 +154,8 @@ class DiscoveryPaperIdentityReplayToolTest {
         root.putObject("run")
         val array = root.putArray("targets")
         targets.forEach { target ->
-            val entry = array.addObject().put("email", "a@example.invalid")
+            val entry = array.addObject()
+            target["email"]?.let { value -> entry.set<JsonNode>("email", value.deepCopy()) }
             entry.set<JsonNode>("candidates", target["candidates"].deepCopy())
             target["targetOutcome"]?.let { value -> entry.put("targetOutcome", value.asText()) }
             target["docId"]?.let { value -> entry.put("docId", value.asText()) }
@@ -201,6 +210,29 @@ class DiscoveryPaperIdentityReplayToolTest {
         assertEquals("EXPECTED_MATCH", skippedValid["classification"]); assertEquals("SKIPPED", skippedValid["actualTargetOutcome"])
     }
 
+    @Test fun `reconciliation requires the actual target address to reproduce the audited fingerprint`() {
+        fun case(name: String, email: JsonNode?): Map<String, String> {
+            val dir = inputs(Files.createDirectories(root.resolve(name)))
+            return reconcile(dir, listOf("--reprocess-run", runExport(dir, target("REPAIRED", expectedDoc, email)).toString()))
+        }
+        val valid = case("email-valid", mapper.nodeFactory.textNode(targetEmail))
+        assertEquals("EXPECTED_MATCH", valid["classification"]); assertEquals("BOUND", valid["actualEvidence"])
+        // Trim and locale-independent lowercase are the only normalization; the identity still matches.
+        val normalized = case("email-case-space", mapper.nodeFactory.textNode("  " + targetEmail.uppercase() + " "))
+        assertEquals("EXPECTED_MATCH", normalized["classification"]); assertEquals("BOUND", normalized["actualEvidence"])
+        // The candidate self-reports the audited emailHash, so only the actual target address exposes the gap.
+        val wrong = case("email-wrong", mapper.nodeFactory.textNode("different.address@wrong.example"))
+        assertEquals("REGRESSION", wrong["classification"]); assertEquals("INVALID", wrong["actualEvidence"])
+        val absent = case("email-absent", null)
+        assertEquals("REGRESSION", absent["classification"]); assertEquals("INVALID", absent["actualEvidence"])
+        val nullEmail = case("email-null", mapper.nodeFactory.nullNode())
+        assertEquals("REGRESSION", nullEmail["classification"]); assertEquals("INVALID", nullEmail["actualEvidence"])
+        val blank = case("email-blank", mapper.nodeFactory.textNode("   "))
+        assertEquals("REGRESSION", blank["classification"]); assertEquals("INVALID", blank["actualEvidence"])
+        val nonString = case("email-non-string", mapper.nodeFactory.numberNode(42))
+        assertEquals("REGRESSION", nonString["classification"]); assertEquals("INVALID", nonString["actualEvidence"])
+    }
+
     @Test fun `reconciliation rejects a conflicting replay binding and keeps honest absence`() {
         val dir = inputs(Files.createDirectories(root.resolve("replay-conflict")))
         val receipt = mapper.createObjectNode()
@@ -223,5 +255,16 @@ class DiscoveryPaperIdentityReplayToolTest {
         Files.write(absent.resolve("new.json"), mapper.writeValueAsBytes(absentReceipt))
         val honest = reconcile(absent, listOf("--new-replay", absent.resolve("new.json").toString()))
         assertEquals("EXPECTED_MISSING", honest["classification"]); assertEquals("ABSENT", honest["actualEvidence"])
+        // A legitimate flat --new-replay receipt carries no target address and stays valid.
+        val flatDir = inputs(Files.createDirectories(root.resolve("flat-replay-valid")))
+        val validReceipt = mapper.createObjectNode()
+        validReceipt.put("manifestSha256", DiscoveryPaperIdentityReplayTool.sha(Files.readAllBytes(flatDir.resolve("manifest.json"))))
+        validReceipt.put("networkCalls", 0).put("businessWriteServicesConstructed", 0)
+        validReceipt.putArray("rows").addObject().put("recordId", 1).put("bodySha256", bodySha).put("page", 1)
+            .put("emailHash", emailHash).put("nameHash", nameHash).put("status", "ALREADY_RECOVERED")
+            .put("reason", "TEST_ONLY").putArray("newNames")
+        Files.write(flatDir.resolve("new.json"), mapper.writeValueAsBytes(validReceipt))
+        val flat = reconcile(flatDir, listOf("--new-replay", flatDir.resolve("new.json").toString()))
+        assertEquals("EXPECTED_MATCH", flat["classification"]); assertEquals("BOUND", flat["actualEvidence"])
     }
 }

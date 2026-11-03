@@ -365,10 +365,14 @@ class DiscoveryRecheckService(
     }
 
     fun syncRetry(id: Long, request: RecheckSyncRequest): List<RecheckItemView> {
-        // A paper-reprocess parent also owns an ordinary epoch0 run. Only its admitted items may use
-        // the existing projection leaf; generic recheck guards remain unchanged for every other run.
-        val paperOwned = repository.isPaperReprocessOwned(id)
-        if (!paperOwned) queries.requireRecheck(id)
+        // The stored run type decides the guard: a real recheck (including a paper-reprocess child)
+        // keeps its own owner/epoch guard, while an ordinary epoch0 run is exposed only when the
+        // server proves paper-reprocess ownership. Ownership alone must never turn a child into
+        // an epoch0 ordinary run or bypass the generic recheck guards.
+        val recheck = repository.findRun(id)?.recheckJson != null
+        if (recheck) queries.requireRecheck(id)
+        val paperOwned = !recheck && repository.isPaperReprocessOwned(id)
+        if (!recheck && !paperOwned) queries.requireRecheck(id)
         require(request.itemIds.size in 1..100 && request.itemIds.all { it > 0 } && request.itemIds.distinct().size == request.itemIds.size)
         val items = request.itemIds.map { if (paperOwned) queries.requirePaperOwnedItem(id, it) else queries.requireRecheckItem(id, it) }
         if (items.any { it.admissionRevision == null || it.state != VerificationState.COMPLETED ||

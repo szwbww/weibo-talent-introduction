@@ -45,8 +45,17 @@ def expected_doc(old_row):
 # or a rejection. REPRODUCED only proves the audited page fact was re-read, never a binding.
 REPLAY_BOUND_STATUSES = {'ALREADY_RECOVERED'}
 REPLAY_ABSENT_STATUSES = {'REPRODUCED', 'NOT_REPRODUCED'}
-# A run target outcome only binds when the actual target identity (docId) is present and matches.
+# A run target outcome only binds when the actual target identity (docId and target address) is
+# present and matches. SKIPPED proves identity only, never a business or admission success.
 RUN_BOUND_OUTCOMES = {'NEW', 'REPAIRED', 'UNCHANGED', 'SKIPPED'}
+
+
+def normalized_email_hash(email):
+    """Mirror DiscoveryIdentity.normalizedEmail: trim, locale-independent lowercase, UTF-8 SHA-256 prefix 24.
+
+    Never introduce RFC validation, alias/plus-address inference, casefold or NFKC here.
+    """
+    return hashlib.sha256(email.strip().lower().encode('utf-8')).hexdigest()[:24]
 
 
 def evidence(old_row, actual):
@@ -65,6 +74,11 @@ def evidence(old_row, actual):
         return 'BOUND'
     outcome = actual.get('targetOutcome')
     if outcome == 'AMBIGUOUS_TARGETS' or outcome not in RUN_BOUND_OUTCOMES:
+        return 'INVALID'
+    # A real run export must carry the actual target address. A missing, null, blank or non-string
+    # address never becomes a binding, and the candidate's self-reported hash is not its own proof.
+    email = actual.get('targetEmail')
+    if not isinstance(email, str) or not email.strip() or normalized_email_hash(email) != old_row['emailHash']:
         return 'INVALID'
     doc = actual.get('docId')
     if not doc:

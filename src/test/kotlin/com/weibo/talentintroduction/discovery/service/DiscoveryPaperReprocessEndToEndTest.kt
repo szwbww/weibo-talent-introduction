@@ -81,6 +81,8 @@ class DiscoveryPaperReprocessEndToEndTest {
                     `explicit retry resumes cancelled ordinary qualification without duplicating effects`()
                     clean()
                     `explicit retry resumes a cancelled owned child under the same epoch`()
+                    clean()
+                    `sync retry projects admitted ordinary and owned child items without replaying providers`()
                 }
                 println("PAPER06_RUNTIME_OK realMySQL=true loopbackEsCAS=true realServices=true paidCalls=0 productionWrites=0")
             } finally { stop() }
@@ -286,6 +288,84 @@ class DiscoveryPaperReprocessEndToEndTest {
             assertEquals(VerificationState.COMPLETED, h.f.repository.recheckItems(childId, 0, 100).second.single().state)
             assertEquals("SUCCESS", receipt.path("trace")[4].path("state").asText())
             h.reportRun(run.executionId, "CHILD_RETRIED")
+        }
+    }
+
+    @Test fun `sync retry projects admitted ordinary and owned child items without replaying providers`() {
+        Harness().use { h ->
+            h.seedMainSource()
+            // Both the ordinary epoch0 item and the REPAIRED child item fail candidate projection.
+            h.failCandidateDocs += h.n1.doc
+            h.failCandidateDocs += h.e1.doc
+            val run = h.create(Harness.SOURCE)
+            h.pump(run.executionId, ReprocessState.COMPLETED_WITH_ERRORS)
+
+            val ordinary = h.verificationItem(h.n1.doc)!!
+            assertEquals(VerificationState.COMPLETED, ordinary.state)
+            assertNotNull(ordinary.admissionRevision)
+            assertEquals(VerificationProjection.ERROR, ordinary.projectionState)
+            val repaired = h.target(run.executionId, requireNotNull(h.e1.email)).result!!
+            assertEquals("REPAIRED", repaired.path("targetOutcome").asText())
+            val childRunId = repaired.path("verificationRunId").asLong()
+            val childItemId = repaired.path("verificationItemId").asLong()
+            assertNotEquals(run.executionId, childRunId)
+            val child = h.f.repository.findItem(childItemId)!!
+            assertEquals(childRunId, child.ownerExecutionId)
+            assertEquals(childRunId, child.reviewEpoch)
+            assertEquals(VerificationState.COMPLETED, child.state)
+            assertEquals(0L, child.admissionRevision) // revision 0 is a legitimate admission, never "missing"
+            assertEquals(VerificationProjection.ERROR, child.projectionState)
+            assertEquals(1L, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM discovery_verification_run WHERE execution_id=? AND recheck_json IS NOT NULL",
+                Long::class.java, childRunId))
+
+            val admissions = h.admissionRows()
+            val providerCalls = h.providerUris.toList()
+            val rawWrites = h.server.rawWrites
+            h.failCandidateDocs.clear()
+
+            // Ordinary epoch0 run: only its server-proven paper-reprocess ownership opens the guard.
+            val ordinaryRetried = h.rechecks.syncRetry(run.executionId, RecheckSyncRequest(listOf(ordinary.id))).single()
+            assertEquals(ordinary.id, ordinaryRetried.itemId)
+            assertEquals(run.executionId, ordinaryRetried.runId)
+            assertEquals(VerificationProjection.PROJECTED, ordinaryRetried.projection)
+            // The owned child keeps the generic recheck guard and its own owner/epoch identity.
+            val childRetried = h.rechecks.syncRetry(childRunId, RecheckSyncRequest(listOf(childItemId))).single()
+            assertEquals(childItemId, childRetried.itemId)
+            assertEquals(childRunId, childRetried.runId)
+            assertEquals(VerificationProjection.PROJECTED, childRetried.projection)
+
+            val ordinaryAfter = h.f.repository.findItem(ordinary.id)!!
+            val childAfter = h.f.repository.findItem(childItemId)!!
+            assertEquals(VerificationProjection.PROJECTED, ordinaryAfter.projectionState)
+            assertEquals(VerificationProjection.PROJECTED, childAfter.projectionState)
+            assertEquals(ordinary.admissionRevision, ordinaryAfter.admissionRevision)
+            assertEquals(0L, childAfter.admissionRevision)
+            assertEquals(admissions, h.admissionRows())
+            assertEquals(providerCalls, h.providerUris)
+            assertEquals(rawWrites, h.server.rawWrites)
+            // A repeat retry stays idempotent: already-projected items are returned unchanged.
+            assertEquals(VerificationProjection.PROJECTED,
+                h.rechecks.syncRetry(run.executionId, RecheckSyncRequest(listOf(ordinary.id))).single().projection)
+            assertEquals(VerificationProjection.PROJECTED,
+                h.rechecks.syncRetry(childRunId, RecheckSyncRequest(listOf(childItemId))).single().projection)
+
+            // Wrong/foreign/unowned combinations stay rejected and project nothing.
+            assertThrows(ResponseStatusException::class.java) {
+                h.rechecks.syncRetry(run.executionId, RecheckSyncRequest(listOf(childItemId)))
+            }
+            assertThrows(ResponseStatusException::class.java) {
+                h.rechecks.syncRetry(childRunId, RecheckSyncRequest(listOf(ordinary.id)))
+            }
+            h.f.repository.createRun(Harness.UNRELATED_RUN, VerificationMode.AUDIT, false, "{}", Instant.now())
+            assertThrows(ResponseStatusException::class.java) {
+                h.rechecks.syncRetry(Harness.UNRELATED_RUN, RecheckSyncRequest(listOf(ordinary.id)))
+            }
+            assertEquals(VerificationProjection.PROJECTED, h.f.repository.findItem(ordinary.id)!!.projectionState)
+            assertEquals(VerificationProjection.PROJECTED, h.f.repository.findItem(childItemId)!!.projectionState)
+            assertEquals(admissions, h.admissionRows())
+            assertEquals(providerCalls, h.providerUris)
+            h.reportRun(run.executionId, "SYNC_RETRY")
         }
     }
 
