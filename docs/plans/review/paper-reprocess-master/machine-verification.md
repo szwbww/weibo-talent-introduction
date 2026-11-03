@@ -866,3 +866,505 @@ V-1、V-2、V-4已有真实解决证据；V-3的根因有所收窄，但仍违�
 暂停依据：[review-p/SKILL.md](/Users/lukai/.agents/skills/review-p/SKILL.md) 路由要求：`FAIL | STALLED or DIVERGING | Stop and request human adjudication.`
 
 No product code was modified.
+
+
+## Epoch 3 — 2026-11-03T15:30:19+08:00
+
+- Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e)
+- Governing master identity: same sha256; recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4
+- Master identity state: AMENDMENT_RECORDED; A1–A13/master rules/reasons/human approval and per-file matrix carried below
+- Boundary: 3a425461dbe6088e4d4dda1a53141416a392670c..7e131474f403d9b28178148909180ac8f1d7d1bb
+- Evidence HEAD at review: 30b2b46bbf925673a5463990ad1474c16da84c5b
+- Reviewer: /root/paper_reprocess_aggregate_epoch3; fork_turns=none; attempt 3 after capacity/usage-limit interruptions
+- Result: FAIL
+- Convergence: PROGRESSING
+- Repair artifact/result: docs/plans/fix/paper-reprocess-master/repair.md; sha256 50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9; DRAFT_READY
+- Repair evidence mode: DURABLE_HANDOFF for executed ca1e7a97 candidate; new 50cc5a2f draft NOT_APPROVED
+- Manual status: PENDING
+
+### Complete Independent review-p Output
+
+## Verification Result: FAIL
+
+Plan：[paper-reprocess-master.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/2026-11-01/paper-reprocess-master.md)
+Phase：aggregate/master
+Reviewer：/root/paper_reprocess_aggregate_epoch3
+Implementation boundary：3a425461dbe6088e4d4dda1a53141416a392670c..7e131474f403d9b28178148909180ac8f1d7d1bb
+Evidence HEAD：30b2b46bbf925673a5463990ad1474c16da84c5b
+Convergence：**PROGRESSING**
+Manual acceptance：**PENDING**
+
+V-5已解决；V-3仍可通过候选字段混淆证据来源；V-2仍遗漏提交期间自然BODY焦点的Escape。全部必需命令已完成，未重复已通过门禁。
+
+### 身份、权限与边界
+
+- Worktree：/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
+- Branch：fast/paper-reprocess-master
+- Resolution：EXPLICIT；已通过注册worktree、分支、HEAD及祖先关系核对；无需发现脚本。
+- Governing master SHA-256：85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e；当前字节等于记录commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4。
+- Invoked identity：SAME；master identity state：AMENDMENT_RECORDED。已读选定ledger的历史Exact Governing Diff Against Invoked Copy；本次没有新差异或未批准修订。
+- 七份child-plan SHA均匹配输入bundle；28份brief/execution/fix-log/verify-log存在；fast ledger中的36个完整commit身份均存在且为当前证据HEAD祖先。
+- 七个child均为终态LIGHT_PASS或LIGHT_PASS_WITH_NOTES。计划里的“待执行”旧描述未被当作执行状态。
+- 已检查完整累计产品边界与受影响运行路径。57个src/、scripts/变更文件全部落入七份修订后child清单的并集，越界文件0；清单文件数为6/7/11/14/13/19/5。06第五文件由A12/A13明确授权。
+- base→7e131474→30b2b46及291fb34→7e131474祖先关系成立。产品HEAD后只有repair-execution.md证据变化。
+- 累计修复291fb34..7e131474的产品/测试变化严格为下列四文件，无其他产品变化：
+
+| 文件 | 授权核对 |
+|---|---|
+| [reconcile_paper_identity_replay.py](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py) | PASS |
+| [DiscoveryRecheckService.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt) | PASS |
+| [DiscoveryPaperIdentityReplayToolTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperIdentityReplayToolTest.kt) | PASS |
+| [DiscoveryPaperReprocessEndToEndTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessEndToEndTest.kt) | PASS |
+
+Post-repair evidence mode：**DURABLE_HANDOFF**。
+
+- 已执行repair身份：ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa。
+- [repair-execution.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/review/paper-reprocess-master/repair-execution.md) SHA：05f9293af71f5767a8c4e047b2773953deb4171e24fd6c2265254c7d3ec91099；记录针对该稿的人类明确$execute-p调用、Executor PaperRepairExecutor2、提交边界及READY_FOR_VERIFICATION。
+- 旧稿47b6…的批准单独保留，未借用于新稿。
+- 本reviewer在产品提交后独立获得，身份不同于所有记录writer/verifier及两位repair executor；未继承开发或轻量核验对话。
+- 本epoch因容量/usage-limit中断后继续，保留全部已有回执和同一reviewer；未重启已完成门禁。进程结束后旧session已关闭，不视作门禁失败。
+
+### Governing Amendments
+
+以下每行的批准均为 **H**：
+
+> HUMAN：继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00
+
+批准及before/after身份来源：[fast-p ledger](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fast/paper-reprocess-master/ledger.md)，SHA dc2d86b0f225fbcec9f86a2bfa5f089cc3075fe541881dd5a8ceb88689274e09。
+
+| ID | Master rule | 原因及治理内容 | Approval |
+|---|---|---|---|
+| A1 | I-4/I-6/X-4；顺序与门禁 | 02扩至11文件，覆盖既有persisted-admission窄接缝，不减少测试 | H |
+| A2 | I-4/I-6/X-4 | 授权DiscoveryReviewService受控身份变化及原测试回归 | H |
+| A3 | I-2/I-5/X-1/X-5；顺序与门禁 | V172已占用，新增迁移改用V173；保留已应用迁移与验收 | H |
+| A4 | I-4/I-5/X-1/X-5；顺序与门禁 | 03扩至13文件，仅补解析链按页取消/预算checkpoint | H |
+| A5 | I-4/I-5/X-1/X-5 | 三处parser checkpoint接缝；默认行为、规则、版本及验收保留 | H |
+| A6 | I-5/I-7/X-6；顺序与门禁 | 03扩至14文件，覆盖直接受影响的task catalog测试 | H |
+| A7 | I-5/I-7/X-6 | 更新TaskExecutionSummaryExtractorTest；移除过时固定全集/数量，不重钉新数量 | H |
+| A8 | I-4/I-5/I-6/X-3/X-4/X-7/X-8；顺序与门禁 | 04扩至13文件，补持久收据、原consume及ordinary worker父许可接缝 | H |
+| A9 | I-4/I-5/I-6/X-3/X-4/X-7/X-8 | 授权receipt、owned-consume及epoch0围栏；普通默认行为、验收保留 | H |
+| A10 | I-5/I-7/I-9/X-5/X-6/X-8/X-9；顺序与门禁 | 05扩至19文件，覆盖只读opener、权威summary/preview及直接受影响测试 | H |
+| A11 | I-5/I-7/I-9/X-5/X-6/X-8/X-9 | 只读统计、缺源preview、原八步入口；保留精确CSS/DOM及浏览器验收 | H |
+| A12 | I-1/I-3/I-6；顺序与门禁 | 06第五文件例外：WorkerTest Flyway fixture目标V161→V173 | H |
+| A13 | I-1/I-3/I-6 | 仅提升既有migration fixture目标；断言、业务、12目标及迁移/报告验收不减 | H |
+
+### Commands
+
+全部在上述retained worktree执行。所有Maven/Java均使用：
+
+    JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home
+    Maven=/opt/homebrew/bin/mvn
+
+JVM XML确认Java 11.0.32.1。Maven/target操作串行，每条1200秒watchdog，未触发。
+
+完整、不省略的C1–C13实际命令与退出码见[receipts.json](/tmp/paper-aggregate-epoch3-zztjjl1a/receipts.json)；补充命令及展开后的classpath argv见[supplement-receipts.json](/tmp/paper-aggregate-epoch3-zztjjl1a/supplement-receipts.json)。
+
+| ID | 实际命令/入口 | Result | 新鲜证据 |
+|---|---|---|---|
+| C1 | /opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperIdentityReplayToolTest,DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true，上述JAVA_HOME | PASS；exit0，283.29s | 14 tests：Replay9、E2E5；0 failures/errors/skips；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd01.log) |
+| C2 | node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js | PASS；exit0，0.67s | 46 tests/pass，0 fail；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd02.log) |
+| C3 | 下方完整十五类命令 | PASS；exit0，840.33s | 206 tests，0 failures/errors，1明确可选skip；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd03.log)、[逐类XML统计](/tmp/paper-aggregate-epoch3-zztjjl1a/c3-counts.json) |
+| C4 | /opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true，上述JAVA_HOME | PASS；exit0，266.28s | 5/0/0/0；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd04.log) |
+| C5 | /opt/homebrew/bin/mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true，上述JAVA_HOME | PASS；exit0，754.88s | 48/0/0/0；实际MySQL空库→V173、V170→V173；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd05.log) |
+| C6 | /opt/homebrew/bin/mvn package -DskipTests，上述JAVA_HOME | PASS；exit0，178.04s | WAR **53,149,457 bytes**；bound JS2037/2037；仅JS/WAR，不替代Kotlin；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd06.log) |
+| C7 | node --test src/test/js/*.test.js | PASS；exit0，4.10s | 2037 tests/pass；0 fail/skip；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd07.log) |
+| C8 | python3 docs/audits/2026-11-01-discovery-30711-pdf/recount.py | PASS；exit0，0.08s | PERSON333、PAPER244、PAPER_BINDINGS337、prior_known7、other_same_name1；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd08.log) |
+| C9 | Maven exec:exec，JDK11独立JVM，Paper03RuntimeSmoke；完整命令见下方 | PASS；exit0，62.64s | real HTTP/MySQL；121/7页、同run9002、actuals/provider/archive mutations均0；错误状态/中文/持久结果正向断言；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd09.log) |
+| C10 | Maven exec:exec，独立JVM，DiscoveryVerificationIntegrationTest --paper-reprocess-smoke | PASS；exit0，319.49s | PAPER04_RUNTIME_OK；真实SQL/服务/原文、故障恢复/取消/父许可/旧CLI；paidCalls0；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd10.log) |
+| C11 | Maven exec:exec，独立JVM，DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke | PASS；exit0，77.42s | 固定12目标2/2/2；取消/retry及ordinary/child sync；PAPER06_RUNTIME_OK；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd11.log) |
+| C12 | 下方原始字节replay命令 | PASS；exit0，93.82s | 337行、244原文记录、network0；time93.77 real/134.20 user/3.66 sys；RSS1,259,929,600；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd12.log) |
+| C13 | 下方reconcile命令 | PASS，仅正常flat输入路径；exit0，0.14s | 337行、extras0、51 EXPECTED_MATCH/286 EXPECTED_MISSING；不消除V-3反例；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd13.log) |
+| C14 | 新鲜Java/Tomcat/MySQL fixture；node /tmp/paper-aggregate-epoch3-zztjjl1a/browser-audit.js及browser-cross.js | **FAIL：合同结果** | 两browser进程exit0，两个server均exit0；pending Escape的hostCloses=1违反S-6。其余检查通过；[合同结果](/tmp/paper-aggregate-epoch3-zztjjl1a/c14-contract-checks.json) |
+| C15 | /opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperReprocessRuntimeScenarios -DpaperReprocessIt=true -DmysqlIt=true -DtrimStackTrace=false -Dstyle.color=never，上述JAVA_HOME | PASS；exit0，240.88s | 6/0/0/0；补齐child03明确要求；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd15-runtime-scenarios.log) |
+| C16 | JDK11 DiscoveryVerificationIntegrationTest --retained-identity-smoke，fresh test classpath | PASS；exit0，56.19s | 补齐child02独立分支；AUDIT虚拟身份零写、ENFORCE窄补名、旧名单/归档不变；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/cmd16-retained-runtime.log) |
+| C17 | node --check src/main/resources/static/discovery-paper-reprocess.js | PASS；exit0 | 补齐child05语法门禁；[log](/tmp/paper-aggregate-epoch3-zztjjl1a/node-check-reprocess.log) |
+| D1 | 真实固定record31372，七次既有CLI调用 | PASS，逐行判定 | valid/大小写空白→BOUND/MATCH；wrong/missing/null/blank/non-string→INVALID/REGRESSION；[完整argv/结果](/tmp/paper-aggregate-epoch3-zztjjl1a/identity-probe-results.json) |
+| D2 | 同一真实record，candidate添加status=ALREADY_RECOVERED，三次既有CLI调用 | **FAIL**，CLI均exit0 | wrong/missing/null实际邮箱均BOUND/EXPECTED_MATCH；[完整argv/结果](/tmp/paper-aggregate-epoch3-zztjjl1a/identity-status-probe-results.json) |
+| D3 | node /tmp/paper-aggregate-epoch3-zztjjl1a/static-contract.js | PASS；exit0 | CSS5515 bytes逐字一致、旧CSS前缀不变、DOM齐全、版本三件套同步；[JSON](/tmp/paper-aggregate-epoch3-zztjjl1a/static-contract.json) |
+| D4 | 全边界scope/ancestry/hash及git diff --check | PASS | [scope](/tmp/paper-aggregate-epoch3-zztjjl1a/scope.json)、[身份](/tmp/paper-aggregate-epoch3-zztjjl1a/identities.json)；产品/index无修改 |
+
+C3完整命令：
+
+    JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home /opt/homebrew/bin/mvn test -Dtest=DiscoveryPaperIdentityReplayToolTest,SourceAuthorEmailResolverTest,DiscoveryPaperLayoutRegressionTest,DiscoveryPaperAnalysisServiceTest,RetainedPaperIdentityServiceTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationCommitServiceTest,DiscoveryVerificationQueryServiceTest,DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest,TaskExecutionSummaryExtractorTest,DiscoveryPaperReprocessApplyServiceTest,DiscoveryPaperBackfillServiceTest,DiscoveryRecheckServiceTest,DiscoveryVerificationIntegrationTest -DmysqlIt=true -DpaperReprocessIt=true
+
+C9–C11完整命令：
+
+    JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home /opt/homebrew/bin/mvn -q exec:exec -Dexec.executable=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Dexec.classpathScope=test '-Dexec.args=-DpaperReprocessIt=true -DmysqlIt=true -cp %classpath com.weibo.talentintroduction.discovery.service.Paper03RuntimeSmoke'
+    JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home /opt/homebrew/bin/mvn -q exec:exec -Dexec.executable=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Dexec.classpathScope=test '-Dexec.args=-DpaperReprocessIt=true -DmysqlIt=true -cp %classpath com.weibo.talentintroduction.discovery.service.DiscoveryVerificationIntegrationTest --paper-reprocess-smoke'
+    JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home /opt/homebrew/bin/mvn -q exec:exec -Dexec.executable=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Dexec.classpathScope=test '-Dexec.args=-DpaperReprocessIt=true -DmysqlIt=true -cp %classpath com.weibo.talentintroduction.discovery.service.DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke'
+
+C12–C13完整命令：
+
+    /usr/bin/time -l /Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -Xmx1536m -cp 'target/classes:target/weibo-talent-introduction-1.0.0-SNAPSHOT/WEB-INF/lib/*' com.weibo.talentintroduction.discovery.service.DiscoveryPaperIdentityReplayTool /Users/lukai/.local/share/paper-reprocess-30711 docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json "/tmp/paper-aggregate-epoch3-zztjjl1a/replay.json"
+    python3 scripts/discovery_admission_probe/reconcile_paper_identity_replay.py --manifest docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json --old-replay /tmp/paper-reprocess-30711-baseline.json --new-replay "/tmp/paper-aggregate-epoch3-zztjjl1a/replay.json" --audit-directory docs/audits/2026-11-01-discovery-30711-pdf --csv "/tmp/paper-aggregate-epoch3-zztjjl1a/reconciled.csv" --report "/tmp/paper-aggregate-epoch3-zztjjl1a/reconciled.md" --runtime-evidence /tmp/paper-reprocess-30711-runtime.json
+
+C16使用下列fresh dependency命令解析classpath，再由Java直接运行；完整展开argv保存在supplement receipt：
+
+    JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home /opt/homebrew/bin/mvn -q dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=/tmp/paper-aggregate-epoch3-zztjjl1a/classpath.txt
+    /Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java -DmysqlIt=true -cp "target/test-classes:target/classes:$(cat /tmp/paper-aggregate-epoch3-zztjjl1a/classpath.txt)" com.weibo.talentintroduction.discovery.service.DiscoveryVerificationIntegrationTest --retained-identity-smoke
+
+C14临时harness编译exit0；其Java源码、HTML、browser脚本、HTTP/SQL JSON及截图全部保留在同一新目录。没有修改产品来适配fixture。
+
+C3逐类新鲜计数：
+
+| Class | Tests | Failures | Errors | Skipped |
+|---|---:|---:|---:|---:|
+| ReplayTool | 9 | 0 | 0 | 0 |
+| Resolver | 30 | 0 | 0 | 0 |
+| LayoutRegression | 8 | 0 | 0 | 1 |
+| Analysis | 10 | 0 | 0 | 0 |
+| RetainedIdentity | 7 | 0 | 0 | 0 |
+| Worker | 24 | 0 | 0 | 0 |
+| Commit | 7 | 0 | 0 | 0 |
+| Query | 22 | 0 | 0 | 0 |
+| ReprocessService | 6 | 0 | 0 | 0 |
+| ReprocessRepositoryIntegration | 12 | 0 | 0 | 0 |
+| TaskSummary | 19 | 0 | 0 | 0 |
+| ApplyService | 2 | 0 | 0 | 0 |
+| Backfill | 4 | 0 | 0 | 0 |
+| Recheck | 10 | 0 | 0 | 0 |
+| VerificationIntegration | 36 | 0 | 0 | 0 |
+| **Total** | **206** | **0** | **0** | **1** |
+
+唯一skip为private original corpus replay explicitly skips when unavailable，属于可选旧294语料；必需30711原始字节测试已执行。
+
+本epoch没有Maven失败、watchdog超时或Trace lease lost。较长C3间隔已检查真实进程和[线程栈](/tmp/paper-aggregate-epoch3-zztjjl1a/c3-thread-1115.txt)，最终完整通过；未据此猜测或宣称修复历史不稳定性。C14进程exit0与语义FAIL分别记录，未把浏览器退出成功当作合同通过。
+
+### Fresh Replay结果
+
+- 原文记录244；组合337；全部读取并校验。
+- 当前：51 ALREADY_RECOVERED、284 NOT_REPRODUCED、2 REPRODUCED。
+- 相比冻结baseline，新增正确绑定50组合，涉及49邮箱指纹、39记录；不是新增档案或准入人数。
+- 正常flat reconciliation：51 EXPECTED_MATCH、286 EXPECTED_MISSING、extras0。
+- 仍缺绑定原因：NO_PRODUCTION_LAYOUT_CONTACT280、NAME_NOT_LITERAL_IN_PDFBOX_PAGE4、EMAIL_NOT_LITERAL_IN_PDFBOX_PAGE1、AUDITED_PAGE_OUTSIDE_PRODUCTION_SELECTION1。
+- 未发现正常337-row replay中的新错绑或旧正确绑定丢失；V-3证明的是实际run验证器仍有拒绝能力缺口。
+
+前后冻结哈希均保持：
+
+| 输入 | SHA-256 |
+|---|---|
+| Manifest | de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c |
+| Baseline | e0fe5b1e008fda6188315f73972f72af79b3897b6ca59f1a4f04c8d452b3d91c |
+| Runtime inventory | 5d00ffbc736f653fe64b93b5e667c8baf776aa33b1320716d212291b45e037c3 |
+
+### Contract Matrix
+
+以下机器项均mandatory。源码简称链接：
+
+- [ReprocessRepository](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt)
+- [ReprocessService](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt)
+- [ApplyService](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessApplyService.kt)
+- [VerificationRepository](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt)
+- [RetainedIdentity](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/RetainedPaperIdentityService.kt)
+- [Commit](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt)
+- [Recheck](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt)
+- [ReprocessJS](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/static/discovery-paper-reprocess.js)
+- [Reconciler](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py)
+
+| ID / Source | Requirement | Verdict | Required evidence / actual evidence |
+|---|---|---|---|
+| Master I-1 | 原文与生产重放真值决定，325不冒充效果 | **FAIL** | C8/C12/C13固定集合可复算；D2仍接受错误实际目标，V-3 |
+| I-2 | SHA/metadata/first/history不覆盖，新结果可追溯 | PASS | C3/C9/C11/C12/C16；owned result、beforeSnapshot、source refs及版本保留 |
+| I-3 | 身份事实不直接准入，原资格/邮箱/人物门禁 | PASS | C10/C11真实消费、资格、Commit/project；固定12目标2/2/2；C16原文补名仍PENDING |
+| I-4 | AUDIT/保护/确认/取消边界 | PASS | C3/C9/C10/C11；论文AUDIT actual/provider0；保护/迟到响应/取消围栏；原专家模式选项保留 |
+| I-5 | DB固定scope、幂等/lease/generation、恢复 | PASS | ReprocessRepository:37/198/270/291/425；C3/C9/C15；ordinary/child显式retry完成 |
+| I-6 | 单一consume、窄CAS、原Commit/project，旧CLI只prepare | PASS | ApplyService:141；RetainedIdentity:119；Commit:188；C10 legacy AUDIT/REUSE READY |
+| I-7 | 单位分明、六/八步、失败不伪造成功 | **FAIL** | C3/C11计数/trace通过；实际run错误身份仍可标MATCH，V-3 |
+| I-8 | Apollo已保存/冻结配置与免费付费策略保留 | PASS | C10/C11 frozenSearch=true/detail=false，paid0；C14真实SQL设置与冻结值一致 |
+| I-9 | 新CSS/DOM、文字/可访问操作符合完整契约 | **FAIL** | D3精确样式通过；pending BODY焦点Escape违反S-6，V-2 |
+| M-1 | 原重审、单篇解析/下载/删除/保护保持 | PASS | C2/C7/C16；C14现有reader、普通/child八步均实际打开 |
+| M-2 | 人工/联系/资格/Apollo保护保持 | PASS | C3/C10/C11；读异常fail-closed、APPLICATION/人工/联系人/CAS反例 |
+| M-3 | 原文件/first/旧轮次/源采集计数保持 | PASS | C9/C11/C16原快照及roster hash对照；新增独立execution |
+| M-4 | 邮件/收信与采集游标不变 | PASS | 累计diff/写路径无新增相关writer；隔离runtime未装配这些业务写链 |
+| M-5 | 取消不撤销已完成补录/准入 | PASS | C1/C11取消保留NEW=1；C10实际已提交准入保持 |
+| X-0 | 原文→旧新parser→逐标识对照 | **FAIL** | C12/C13正常集合通过；D2实际run证据协议可被candidate.status替换 |
+| X-1 | first→当前解析/差异、版本/缓存一致 | PASS | C3/C12；统一parser；first不覆盖；旧版本及cache失效回归 |
+| X-2 | 新绑定→本轮有效身份→资格 | PASS | VerificationRepository:1138/1170；C3/C16；有效hash与profile同步、旧缓存重绑 |
+| X-3 | ES窄补齐→人物登记→保护/来源 | PASS | RetainedIdentity:119/134；C3/C10/C11；PARTIAL恢复与原人物登记 |
+| X-4 | 身份guard→准入→候选 | PASS | Commit受控authority及原persisted seam；C3/C10/C11；C14两种run同步恢复 |
+| X-5 | 显式lease→删除/保护→原文UI | PASS | C3/C9/C15显式attempt/hash及删除竞争；C14 reader只读 |
+| X-6 | 持久任务→活动/重入恢复 | PASS | C9 activity同execution；C14运行中第二tab恢复9002；C15中断/retry |
+| X-7 | 新作者→原消费→RAW/person/verification | PASS | C10/C11；跨文档唯一邮箱、原消费writer、二次任务新增0 |
+| X-8 | 父任务→ordinary/child→准入汇总/详情 | PASS | C1/C10/C11/C14；自动prepare/start；合法revision0；两个实际8步及同步200 |
+| X-9 | 原挂载/生命周期→新UI→旧详情 | **FAIL** | 原文及八步接缝通过；提交中Escape执行宿主关闭，V-2 |
+| 00-I-1 | 稳定证据组合，不按同名合并邮箱 | **FAIL** | 原337组合正确；实际run候选字段可冒充flat身份验证，D2 |
+| 00-I-2 | 同原bytes/metadata/first/config生产PDFBox重放 | PASS | C12逐文件校验；244/337；固定输入哈希不变 |
+| 00-I-3 | 离线、零业务服务/网络 | PASS | C1 traps；C12 network0/writeServices0；无Spring写服务图 |
+| 01-I-1 | 明确唯一联系证据，歧义/共享/同缩写拒绝 | PASS | C3 resolver30/layout8/analysis10；C12固定真实样本与负例 |
+| 01-I-2 | 同页/栏/联系块边界，未读页单列 | PASS | C3字节级版面正负例；C12未扫描页1条显列；不扩大扫描配置 |
+| 01-I-3 | 独立parser版本、旧身份/抽取兼容、历史事实不直接当前化 | PASS | parser20261101；identityExtraction20261004保持；C3/C12/C16 |
+| 02-I-1 | propose只读，ENFORCE apply，AUDIT虚拟身份 | PASS | RetainedIdentity:40/119；C16 PROPOSED零identity写，ENFORCE APPLIED |
+| 02-I-2 | 唯一邮箱、保护/CAS、PARTIAL不晋升 | PASS | C3单元/SQL及多层恢复、保护异常；C10真实叶子路径 |
+| 02-I-3 | 当前lease/epoch有效身份，原baseline/hash保留 | PASS | VerificationRepository:1138/1170；C3 SQL原子重绑、epoch0/stale token拒绝 |
+| 02-I-4 | receipt受控提交，不泛化放宽guard | PASS | C3 persisted-admission/rollback/manual/history/revision/cancel反例；C16 trace事务回滚 |
+| 02-I-5 | phase/重启/旧缓存及快照不膨胀 | PASS | C3/C16相同proposal恢复、旧缓存hash拒绝、beforeSnapshot不嵌套 |
+| 03-I-1 | 终态source、全量固定、上界/水位不扩 | PASS | ReprocessRepository:37/198；C3/C9跨121/7页，额外q/page不缩scope |
+| 03-I-2 | requestKey/active singleton及生命周期 | PASS | C3真实SQL唯一约束、并发同异key；C9 duplicateRunId9002 |
+| 03-I-3 | PAPER/TARGET分离、不可变输入、schema/trace/大小 | PASS | C3真实MySQL枚举/4MiB/unknown保留拒绝；C9 durable错误及6步 |
+| 03-I-4 | 按record/邮箱计数，AUDIT actuals0 | PASS | C3同hash多记录/重叠分类/未知；C9/C14 actuals0 |
+| 03-I-5 | lease/checkpoint/资源/取消及显式恢复 | PASS | ReprocessService:115/139；C3/C15 page cancellation、budget、executor rejection/shutdown、格式/缺源retry |
+| 04-I-1 | 原consume/受限修复唯一写入口 | PASS | ApplyService:141；C10/C11真实consumer/person/enrichment/Commit/project |
+| 04-I-2 | durable receipts及崩溃/归属/重复计数 | PASS | C10 RAW/prepare/start/admission观察故障、person FAILED/STALE retry；C11成功收据不重放 |
+| 04-I-3 | 父许可、冻结配置、稳定分组、prepare后start | PASS | C10 100/1分组、WAITING槽、迟到派发拒绝、frozen true/false |
+| 04-I-4 | 真终态、只取消owned、projection-only retry | PASS | ApplyService:253/301；C1/C11取消retry已评估；C14 ordinary/child同步不变准入/provider |
+| 04-I-5 | 服务端byte permit、身份/资格分开、旧CLI不变 | PASS | C3/C10伪造author/source/hash拒绝；完整identity+PARTIAL资格不直接准入；legacy仍严格 |
+| 05-I-1 | API唯一状态/计数、scope、requestKey及旧响应 | PASS | C2/C7/C9/C14；服务端summary；V-7保留为非阻断后续入口陈旧 |
+| 05-I-2 | 默认AUDIT、明确ENFORCE、关闭不取消 | **FAIL** | 模式/请求语义及cancelPOST0通过；pending Escape关闭宿主，V-2 |
+| 05-I-3 | first/current、绑定/档案/准入及原因分明 | PASS | C2/C14真实summary与六/八步；targetTotalKnown已修；新旧计数分开 |
+| 05-I-4 | 安全DOM、分页/陈旧响应、权限/错误/焦点 | **FAIL** | textContent、分页/401/500通过；BODY焦点事件越过dialog边界，V-2 |
+| S-1 | 精确整批入口/状态/范围 | PASS | D3 DOM/CSS；C14空态、真实121篇及saved设置 |
+| S-2 | 确认弹窗布局、头脚/按钮可达 | PASS | C14四viewport，按钮均在视口内；保留正常disabled状态 |
+| S-3 | 六列/手机三列、独立分页/容器横滚 | PASS | C2/C3/C14；1440/1152六列、390/312三列 |
+| S-4 | 六步状态真实并链接原八步 | PASS | C1/C11 trace；C14 ordinary与child各8步、GET200 |
+| S-5 | CSS逐字与旧全局样式不变 | PASS | D3：5515 bytes相等，base CSS前缀不变 |
+| S-6 | 精确DOM、安全节点、只读接缝、Escape仅dialog | **FAIL** | D3 DOM通过；C14 pending自然BODY Escape hostCloses1 |
+| 06-I-1 | 固定输入/时间/策略/provider，同身份比较 | **FAIL** | 固定parser/runtime证据通过；实际不同邮箱仍可冒充同一证据，V-3 |
+| 06-I-2 | 逐目标身份/doc核对，真实增量，NOT_RUN诚实 | **FAIL** | C11固定目标正确；D2仍可将错误/缺失实际邮箱标MATCH |
+| 06-I-3 | 真迁移/隔离，发布生产另行批准 | PASS | C5空库/升级；C9–C16隔离；无生产写或发布声明 |
+| BUILD | JDK11、JS、真实MySQL、WAR、独立runtime分开 | PASS | C1–C17全列；无Kotlin被package替代；唯一skip披露 |
+| SCOPE | 修订清单/文件数/顺序/shared schema边界 | PASS | D4及下表；57产品文件均授权；仅新增V173两张owned表、既有mapping未改 |
+| NG | 不加OCR/猜测/资格放宽/下载并发/邮件游标改造/生产补跑 | PASS | 累计diff与实际调用链；生产操作NOT_RUN |
+
+### 扩展及追认文件矩阵
+
+每行按对应amendment的master rule核对；授权不是行为豁免。路径均位于上述retained worktree。
+
+| Amendment | 精确扩展文件 | Verdict / evidence |
+|---|---|---|
+| A1/A2 | [DiscoveryReviewService.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:870) | PASS；11th文件，仅受控persisted-admission接缝；C3 |
+| A3 | [V173 migration](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/db/migration/V173__create_discovery_paper_reprocess.sql:1) | PASS；新增两表，旧迁移不改；C3/C5 |
+| A4/A5 | [PaperBodyAnalyzer.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt:27) | PASS；可选checkpoint透传；默认规则/异常保留；C3/C15 |
+| A4/A5 | [PaperQualificationEvidenceExtractor.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt:25) | PASS；按页checkpoint及取消异常窄传播 |
+| A4/A5 | [PdfEmailExtractor.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:327) | PASS；beforePage透传，不借此扩大规则/读取范围 |
+| A6/A7 | [TaskExecutionSummaryExtractorTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:210) | PASS；去旧固定全集/数量，保留真实摘要/进度断言；C3 |
+| A8/A9 | [DiscoveryPaperReprocessRepository.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt:146) | PASS；receipt/REVIEW/父许可、取消retry收据；C3/C10/C11 |
+| A8/A9 | [ExpertDiscoveryService.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1869) | PASS；原consume逐副作用父许可及确证归属恢复；无第二writer |
+| A8/A9 | [DiscoveryVerificationWorker.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:137) | PASS；paper-owned epoch0 dispatch/late-response围栏；C3/C10 |
+| A10/A11 | [discovery-recheck.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/static/discovery-recheck.js) | PASS；原8步只读opener/lifecycle；C2/C14 |
+| A10/A11 | [discoveryRecheck.test.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/discoveryRecheck.test.js) | PASS；公开入口/上下文回归；C2/C7 |
+| A10/A11 | [DiscoveryPaperReprocess.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPaperReprocess.kt:52) | PASS；只读单位/summary/未知语义 |
+| A10/A11 | [DiscoveryPaperReprocessRepository.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt:516) | PASS；权威SQL汇总/缺源查询；C3 |
+| A10/A11 | [DiscoveryPaperReprocessService.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt:42) | PASS；只读preview/detail映射 |
+| A10/A11 | [RepositoryIntegrationTest](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepositoryIntegrationTest.kt:243) | PASS；121目标、分类重叠、未知、缺源真实SQL |
+| A10/A11 | [ServiceTest](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessServiceTest.kt:28) | PASS；preview/summary只读契约 |
+| A10/A11 | [discoveryReview.test.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/discoveryReview.test.js) | PASS；移除incidental资源总数，保留相关行为 |
+| A10/A11 | [mailboxChatBehavior.test.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/mailboxChatBehavior.test.js) | PASS；保留组件唯一性/顺序及版本三件套 |
+| A10/A11 | [mailboxGroupPush.test.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/mailboxGroupPush.test.js) | PASS；同上，未改业务断言 |
+| A10/A11 | [meetingConfirmationAssets.test.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/meetingConfirmationAssets.test.js) | PASS；保留实际资源注册/位置/顺序 |
+| A10/A11 | [trustReplyWorkbenchSharedMount.test.js](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/trustReplyWorkbenchSharedMount.test.js) | PASS；保留真实mount/unmount及顺序 |
+| A12/A13 | [DiscoveryVerificationWorkerTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:43) | PASS；06仅七处fixture V161→V173；断言未减；C3 Worker24通过 |
+
+### Finding Lineage
+
+Epoch1/2报告不改写，稳定ID保留。
+
+| Finding | Epoch3 state | Evidence |
+|---|---|---|
+| V-1 | **RESOLVED** | C1/C4/C11 ordinary与owned child取消后显式retry；同item/epoch、历史及成功副作用保持 |
+| V-2 | **PERSISTENT，重新打开** | 正常焦点已修；pending自然BODY焦点仍调用host handler。相关JS/app在291→7e13完全未变，属于历史修复不完整，非最新提交引入的回归 |
+| V-3 | **PERSISTENT，根因收窄** | 普通错误/缺失邮箱已拒绝；candidate.status仍可切换flat分支 |
+| V-4 | **RESOLVED** | 真实DTO的summary.targetTotalKnown；C14完成121/121并显示“目标总量已固定” |
+| V-5 | **RESOLVED** | C14 ordinary和child均8步200、原同步动作/公开HTTP ERROR→PROJECTED，revision1/0、providers/准入不变 |
+| V-6 | **PERSISTENT，非阻断P2** | 5xx继续保留pending key/模式；未新推导任意失败必须允许换模式的要求 |
+| V-7 | **PERSISTENT，非阻断P2** | 结束后preview.activeRun未即时刷新；原任务重入/完成正常，reload可重开 |
+
+### Findings
+
+#### P1
+
+**V-3 — 实际run可被候选status伪装成flat replay，绕过目标身份校验。**
+
+[Reconciler:132](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py:132)展开candidate全部字段。[evidence:65](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py:65)只要发现status便走flat分支，在实际邮箱与docId检查前返回BOUND。
+
+真实固定record31372、合法稳定candidate键、预期docId 0000-0002-0178-9985：
+
+| 实际target.email | 无candidate.status | 添加status=ALREADY_RECOVERED |
+|---|---|---|
+| 错误邮箱 | INVALID / REGRESSION | **BOUND / EXPECTED_MATCH** |
+| 缺失 | INVALID / REGRESSION | **BOUND / EXPECTED_MATCH** |
+| null | INVALID / REGRESSION | **BOUND / EXPECTED_MATCH** |
+
+CLI输入已经明确选用--reprocess-run，候选字段不能改变其协议。该反例违反实际目标必须与不可变身份交叉核对的既定要求；不是要求新增格式或猜测规则。
+
+影响：错误实际target仍可能被报告为正确绑定，损坏06逐目标验收依据。未据此宣称正常337-row replay已经造假。
+
+最小范围：既有reconciler和ReplayToolTest。证据：[实际argv/结果](/tmp/paper-aggregate-epoch3-zztjjl1a/identity-status-probe-results.json)、[wrong输入](/tmp/paper-aggregate-epoch3-zztjjl1a/identity-status-wrong.json)、[wrong输出](/tmp/paper-aggregate-epoch3-zztjjl1a/identity-status-wrong.csv)。
+
+**V-2 — 提交禁用按钮后，BODY来源Escape仍关闭任务宿主。**
+
+[ReprocessJS:188](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/static/discovery-paper-reprocess.js:188)禁用当前提交按钮；Chrome焦点自然变为BODY。[dialog listener:312](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/static/discovery-paper-reprocess.js:312)仅拦截经过dialog的冒泡事件，因此BODY事件到达[真实app host handler:20352](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/static/app.js:20352)。
+
+新鲜实际浏览器/API/MySQL场景：隔离服务端仅延迟一次真实create请求3秒，未伪造设置或业务响应。点击确认后：
+
+    before Escape:
+    activeTag=BODY
+    confirmOpen=true
+    startDisabled=true
+    hostCloses=0
+
+    after native Escape:
+    confirmOpen=false
+    hostCloses=1
+    cancelPosts=0
+
+随后实际后台同run9002完成121篇，说明问题是宿主/上下文关闭，不是任务取消。正常启用状态的confirm Escape通过；这个控制不能覆盖提交中状态。
+
+违反S-6及05事件/焦点边界。相关JS/app在最近产品修复delta中未变；本轮证明旧修复尚未完整覆盖原要求，不把它归因于7e13新引入的代码。
+
+最小范围：新组件JS及其现有测试文件；无需改app全局guard或CSS/DOM。
+
+证据：[完整JSON](/tmp/paper-aggregate-epoch3-zztjjl1a/audit-evidence.json)、[浏览器log](/tmp/paper-aggregate-epoch3-zztjjl1a/c14-audit-browser.log)、[pending Escape截图](/tmp/paper-aggregate-epoch3-zztjjl1a/audit-pending-escape.png)、[合同检查](/tmp/paper-aggregate-epoch3-zztjjl1a/c14-contract-checks.json)。
+
+#### P2
+
+- **V-6**：确定性503后ENFORCE pending key/模式保留；继续非阻断，未纳入修复。
+- **V-7**：完成后preview.activeRun陈旧，需reload才能再次开启；继续非阻断，未纳入修复。
+
+#### Observations
+
+- **O-E2-01**：历史C10取消时序Trace lease lost根因仍未证明。本轮C3/C10完整通过、未出现该错误；不能据此宣称通用并发问题已解决。
+- 历史rapid-tick projection trace重复、编号References、旧294可选语料及文档措辞限制，按下表逐项保留，不混入新修复。
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Epoch3判断 | Evidence |
+|---|---|---|---|
+| 00无新增RECORD_ONLY | I-1/I-2/X-0 | 固定输入重新验证；无永久豁免 | C8/C12/C13及冻结hash |
+| 01 O-01旧294 corpus | I-1/X-0 | 非阻断可选证据缺口 | C3唯一明确skip；必需30711的244/337已运行 |
+| 01 O-02编号References | 01-I-2/I-1 | 行为未变的既存观察 | 基线/当前路径对照；本次规则的明确reference负例C3通过，不扩大编号heading硬化 |
+| 02跨SQL/ES边界 | I-4/I-6/X-3/X-4 | 证据边界保留 | 窄CAS、PARTIAL与持久收据通过；未声称SQL+ES原子事务 |
+| 03 O-01 summaryRule=null | I-7/X-6 | 非阻断既有通用fallback限制 | catalog原声明、C3摘要19项、C9活动及owned summary权威统计 |
+| 04 O-01 loopback ES/provider/protection fixture | I-3/I-4/X-3/X-4 | 证据边界保留 | 真MySQL/事务/服务；ES为严格loopback CAS，provider固定；非线上准确性验收 |
+| 04 O-02 generic summary | I-7/X-6 | 同03 O-01 | 无新增通用summary shape要求 |
+| 04 O-03 rapid-tick trace重复 | I-5/I-7/X-4 | 既存/未归因观察保留 | 本轮有限tick及projection通过不证明一般并发已修 |
+| 05 F-05 | 05-I-1/I-2 | V-6持续、非阻断 | 现有5xx pending语义；未推导新强制换模式要求 |
+| 05 O-07旧重复缩放截图 | I-9/S-1..S-6 | 新证据补齐 | 本轮四个不同CSS viewport独立截图/指标，未复用旧图片 |
+| 05 O-08旧run/config标签 | I-8/I-9 | 历史说明保留，新设置证据补齐 | C14真实SQL-backed设置revision1/SAVED/search=true/detail=false与run冻结一致；AUDIT fixture effective=false如实披露 |
+| 05 O-09 proposal正数 | I-7/05-I-3 | 机测证据补齐 | 实际API summary与完成主截图；AUDIT actuals0、候选proposal分列 |
+| 05 O-10 summary-null措辞 | I-7 | 非阻断文档观察 | 未证明业务计数错误，未扩清理 |
+| 05 O-11 401/JDK/八步限制 | I-7/I-9/X-9 | 强制证据补齐，局限保留 | C3/C9认证401、Java11.0.32.1；C14 NEW/REPAIRED八步均200；未声称全app登录重定向完整验收 |
+| 06 O-01 gain标签 | I-1/I-7 | 历史措辞观察 | 本轮独立区分50组合/49邮箱/39记录，不称新建或准入 |
+| 06 O-02 V171升级措辞 | I-2/06-I-3 | PASS，保留历史说明 | C5真实更早V170→V173及空库，48 tests |
+| 06 O-03生产/live服务 | I-3/I-4/06-I-3 | 明确NOT_RUN、范围外 | 无生产30711 ENFORCE、live ES/ORCID/Apollo或付费详情 |
+| 06 O-04 package口径 | BUILD | PASS，分开计证 | C6只JS/WAR；Kotlin/MySQL另有C1/C3/C4/C5/C15 |
+| 06 O-05报告历史行数 | I-1 | 非阻断文档观察 | 当前独立CSV逐条337，不依赖历史行数 |
+| 06 F-01报告身份/gate修正 | I-1/06-I-3 | RESOLVED，历史保持 | 当前ac6a计划/报告身份一致；未将旧NOT_RUN改成PASS |
+
+### 浏览器证据与限制
+
+C14使用真实组件、真实API/controller及隔离MySQL。AUDIT设置接口为真实DiscoveryApolloSettingsController及SQL repository，不再用旧设置响应替身；保存revision1、search=true、detail=false，run.scope冻结一致。AUDIT fixture服务/key/worker关闭，故effectiveSearch=false，这不冒充启用provider的生产设置；实际启用冻结业务由C10/C11覆盖。
+
+运行中第二tab恢复同run9002；完成121/121。实际服务端500后保留最后面板并显示“更新失败，显示上次结果”，随后恢复完成。
+
+| CSS viewport | 对应尺度 | Dialog宽 | 按钮bottom | 布局 |
+|---|---|---:|---:|---|
+| 1440×900 | 1440/100% | 700 | 747.109 | 六列，可达 |
+| 1152×720 | 1440/125%等效 | 700 | 657.109 | 六列，可达 |
+| 390×900 | 390/100% | 358 | 826.828 | 三列，可达 |
+| 312×720 | 390/125%等效 | 280 | 671 | 三列，可达 |
+
+这些是不同CSS viewport的缩放等效检查，未声称操作原生browser zoom，未使用固定100vw加CSS zoom替代。
+
+跨路径实际结果：
+
+- ordinary：run30716/item1/epoch0/revision1，8步GET200，原同步按钮使ERROR→PROJECTED。
+- owned child：run30717/item4/epoch30717/revision0，8步GET200，原按钮及公开HTTP同步均成功。
+- provider请求19→19；RAW写3→3；准入SQL行及revision不变。
+- ordinary-run+child-item、child-run+ordinary-item、无归属ordinary均404，之后provider/准入不变。
+- source reader实际打开，analysis POST0。
+- browser cross fixture没有固定12目标用例的RAW写故障，因此其新增/准入为3；**不冒充固定2/2/2**。固定真值由C1/C4/C11独立验证。
+
+主要证据：
+
+- [AUDIT完成实际数字截图](/tmp/paper-aggregate-epoch3-zztjjl1a/audit-complete-1440-1.png)
+- [390/125%等效确认截图](/tmp/paper-aggregate-epoch3-zztjjl1a/audit-confirm-390-125.png)
+- [500恢复截图](/tmp/paper-aggregate-epoch3-zztjjl1a/audit-500-long-reason.png)
+- [运行中重入](/tmp/paper-aggregate-epoch3-zztjjl1a/audit-reentry.png)
+- [child八步/revision0](/tmp/paper-aggregate-epoch3-zztjjl1a/cross-eightstep-REPAIRED.png)
+- [跨路径HTTP/SQL状态](/tmp/paper-aggregate-epoch3-zztjjl1a/cross-evidence.json)
+
+补充audit-complete-*-100/125.png部分捕获了selectRun初始summary尚未取得的“—”过渡帧；未用它们证明最终数字。最终数字由主完成截图、真实API JSON及明确121/121断言证明。确认布局截图则等真实scope/settings加载后取得。
+
+宿主Escape handler与真实app源码白空归一后完全一致。fixture只提供局部宿主，不声称完整部署app；认证拦截器另由C3/C9实际验证。全部截图/机测不构成人工验收。
+
+### Evidence Boundaries
+
+- 必需机器证据无缺失项；当前是两个已确认mandatory violation，故FAIL而非BLOCKED。
+- 真实MySQL和生产服务链已测；ES是严格loopback CAS fixture，provider/email-validation等受控替身，未证明live服务准确性或部署环境兼容性。
+- 旧294私有语料可选skip保留；30711必需原文完整运行。
+- 生产30711 ENFORCE、发布、push/merge、线上业务写及live付费请求均NOT_RUN。
+- 所有人类验收仍PENDING；没有制造reporter、时间戳、ACCEPT或签字。
+- 历史首次失败及未知根因保持；本epoch通过不改写其历史。
+
+### Manual Acceptance
+
+| Source | Pending items |
+|---|---|
+| Master | A-1、A-2、A-3、A-4、A-5、A-6 |
+| Child00 | A-1、A-2 |
+| Child01 | A-1、A-2、A-3 |
+| Child02 | A-1、A-2、A-3、A-4 |
+| Child03 | A-1、A-2、A-3 |
+| Child04 | A-1、A-2、A-3 |
+| Child05 | A-1、A-2、A-3、A-4 |
+| Child06 | A-1、A-2、A-3 |
+| Human sign-off | 当前code boundary及governing master identity：PENDING |
+
+### Convergence
+
+**PROGRESSING**。
+
+V-5的真实child同步404已经解决，合法revision0及ordinary例外都通过实际HTTP/按钮验证。V-3普通错/缺邮箱已被拒绝，剩余原因明确收窄为candidate字段选择错误证据协议。V-2的BODY路径证明历史修复不完整；相关JS/app在本次修复delta完全未变，不是最新7e13引入的同级代码回归。
+
+因此存在实质行为修复及根因收窄；不是同一修复/证据重复，也没有证明最新修复引入新的同级回归。本判断不按发现数量或绿测次数计算。Epoch2的FAIL/DIVERGING保持不变。
+
+## Repair Planning Result: DRAFT_READY
+
+Baseline：[master](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/2026-11-01/paper-reprocess-master.md)
+Verification：Epoch3 **FAIL / PROGRESSING**
+Artifact：[repair.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md)
+Status：**DRAFT — HUMAN APPROVAL REQUIRED**
+
+新稿SHA-256：
+
+    50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9
+
+### Included Findings
+
+- **V-3**：由真实CLI处理来源决定run/flat协议，candidate.status不能绕过实际邮箱/doc/outcome/duplicate门禁。
+- **V-2**：本组件Escape边界覆盖pending提交时的BODY事件；保留native关闭、可用焦点、宿主和唯一请求。
+
+四个既有Authorized Files：
+
+1. [reconciler](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/scripts/discovery_admission_probe/reconcile_paper_identity_replay.py)
+2. [ReplayToolTest](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperIdentityReplayToolTest.kt)
+3. [reprocess JS](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/main/resources/static/discovery-paper-reprocess.js)
+4. [reprocess JS test](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/src/test/js/discoveryPaperReprocess.test.js)
+
+两个根因、两个子系统；没有PLAN_AMENDMENT_REQUIRED或NEW_SCOPE_REQUIRED项。
+
+### Excluded Findings
+
+V-1/V-4/V-5维持RESOLVED，仅保留回归；V-6/V-7及全部观察不纳入修复。禁止顺带修改app全局guard、共享测试库、Recheck/Query/Repository、Worker/Trace、迁移、CSS/DOM、报告或基线。
+
+### Planning Self-Review
+
+- 旧47b6…及已执行ca1e…精确身份/Git位置、批准和产品提交lineage保留。
+- 新产品基线明确为7e131474…，不撤销已有修复。
+- 原Commands1–13逐条字符串完全保留；14保留并补强pending真实焦点；15–17补齐原child明确门禁。
+- 每个任务包含来源要求、已证实根因、最小区分性测试、已有回归、禁止变化及机器完成标准。
+- one-approval handoff使用真实绝对路径和具体产品/证据commit subjects。
+- git diff --check通过；index空、HEAD仍30b2b46…。
+- 本reviewer唯一tracked write是上述repair.md；另一个dirty文件是controller-owned review ledger。机器报告、产品、测试、fast证据及批准计划未改；未stage/commit。
+
+No implementation was performed.
+
+### Required Human Decision / Next Action
+
+依据[repair-p](/Users/lukai/.agents/skills/repair-p/SKILL.md)：“Execution is prohibited until the human explicitly approves this plan.” 旧稿批准不适用于新SHA。
+
+To approve and execute this repair, send:
+
+    $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md
+
+No product code was modified.

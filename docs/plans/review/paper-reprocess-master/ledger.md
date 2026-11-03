@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
 - Status: REPAIR_PLAN_READY
-- Review epoch: 2
+- Review epoch: 3
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e)
 - Governing master identity: sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e; recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4
 - Invoked master identity: SAME as governing master (explicit retained-worktree handoff invocation); prior invoked-copy diff retained below
@@ -11,26 +11,26 @@
 - Fast-p ledger: docs/plans/fast/paper-reprocess-master/ledger.md (sha256 dc2d86b0f225fbcec9f86a2bfa5f089cc3075fe541881dd5a8ceb88689274e09)
 - Fast-p handoff: docs/plans/fast/paper-reprocess-master/human-review-handoff.md (sha256 ee33dc68d01e4682dfec0fc0edd3607b42587832811c08d453414371cc2ab155)
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
-- Final code head: 291fb34b35be496673e28f124d443b9c46ba66f4
-- Evidence parent before next commit: 3ab2e86c80993929350d1dc40c859fed1a24adbc
-- Previous evidence commit: 3ab2e86c80993929350d1dc40c859fed1a24adbc
+- Final code head: 7e131474f403d9b28178148909180ac8f1d7d1bb
+- Evidence parent before next commit: 30b2b46bbf925673a5463990ad1474c16da84c5b
+- Previous evidence commit: 30b2b46bbf925673a5463990ad1474c16da84c5b
 - Branch: fast/paper-reprocess-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Worktree resolution: EXPLICIT
-- Discovery evidence: N/A for epoch 2; explicit registered worktree/handoff validated; historical discovery retained below
+- Discovery evidence: N/A for epoch 3; explicit registered worktree/handoff validated; historical discovery retained below
 - Misdirected review evidence: N/A (no same-slug ledger in invocation worktree)
-- Reviewer: /root/paper_reprocess_aggregate_epoch2; fork_turns=none; created after repair code commit
-- Reviewer attempt: 2
+- Reviewer: /root/paper_reprocess_aggregate_epoch3; fork_turns=none; fresh after repair commit; distinct from writers/verifiers/PaperRepairExecutor2
+- Reviewer attempt: 3
 - Machine result: FAIL
-- Machine report epoch: machine-verification.md — Epoch 2 (Epoch 1 retained unchanged)
-- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa; replacement draft after human adjudication)
-- Repair evidence mode: N/A (new draft not executed; prior DURABLE_HANDOFF preserved in repair-execution.md)
-- Repair approval source: NOT_APPROVED for current draft; human “确认 继续” authorized different-method planning only. Prior $execute-p approval applies exclusively to old sha256 47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110.
-- Repair executor: N/A for current draft; prior PaperRepairExecutor recorded in preserved execution handoff
-- Repair code head: N/A for current draft; retained product head 291fb34b35be496673e28f124d443b9c46ba66f4
+- Machine report epoch: machine-verification.md — Epoch 3; Epochs 1 and 2 retained unchanged
+- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9; new DRAFT_READY for V-3/V-2)
+- Repair evidence mode: DURABLE_HANDOFF for reviewed ca1e7a97 candidate; new draft unexecuted
+- Repair approval source: NOT_APPROVED for new 50cc5a2f draft. Durable human $execute-p approval applies exclusively to ca1e7a97 candidate already reviewed.
+- Repair executor: N/A for new draft; PaperRepairExecutor2 executed reviewed candidate (preserved handoff)
+- Repair code head: N/A for new draft; reviewed candidate 7e131474f403d9b28178148909180ac8f1d7d1bb
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Approve the current ca1e7a97 repair via explicit human $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md. Only its four files/two tasks, required checks, one local product commit and durable handoff evidence commit are covered; resume aggregate review in the same chat when requested.
+- Blocker/next action: Approve current 50cc5a2f repair via explicit human $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md; execute only its four files/two tasks, required gates, one local product commit and durable handoff evidence commit; then resume aggregate review in this chat when requested.
 
 ## Preflight Evidence
 
@@ -226,3 +226,38 @@ $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reproc
 依据[repair-p](/Users/lukai/.agents/skills/repair-p/SKILL.md)：“Execution is prohibited until the human explicitly approves this plan.”
 
 No implementation was performed.
+
+
+## Epoch 3 Preflight — 2026-11-03T10:57:57+08:00
+
+- User explicitly invoked review-fast-p with the retained handoff. Resolution EXPLICIT; branch fast/paper-reprocess-master; worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master.
+- Base 3a425461dbe6088e4d4dda1a53141416a392670c; prior code 291fb34b35be496673e28f124d443b9c46ba66f4; candidate code 7e131474f403d9b28178148909180ac8f1d7d1bb; evidence HEAD 30b2b46bbf925673a5463990ad1474c16da84c5b. All required ancestry checks exit 0.
+- Worktree/index clean before this evidence update. Cumulative prior-code..candidate product/test delta is exactly the four repair Authorized Files; intervening changes are docs-only. Candidate..HEAD changes only repair-execution.md.
+- Repair ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa and committed execution handoff sha256 05f9293af71f5767a8c4e047b2773953deb4171e24fd6c2265254c7d3ec91099 agree. Approval and executor are recorded durably; mode DURABLE_HANDOFF. Prior FAIL/DIVERGING and planning adjudication preserved.
+- Governing master sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e equals recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4. A1–A13 remain governing; no new master amendment.
+- Seven ordered child identities match, all LIGHT_PASS/LIGHT_PASS_WITH_NOTES; all brief/execution/fix-log/verify-log files exist and evidence commits are on retained lineage. Fast-p ledger/handoff hashes unchanged.
+- Docker 29.8.2 reachable; JDK11 11.0.32.1, Maven and Node25.7.0 available. Retained original source exists. Baseline/runtime hashes match frozen values. Fresh aggregate reviewer must collect all command/browser evidence independently; executor counts are not reused.
+- Controller writes only allowed review evidence. No product/test/configuration, approved plan, fast-p artifact, index, branch or HEAD mutation in preflight.
+
+- Reviewer dispatch 2026-11-03T10:59:02+08:00: /root/paper_reprocess_aggregate_epoch3; fork_turns=none; attempt 1; created after candidate commit; exact independent aggregate input bundle supplied.
+
+- 2026-11-03T11:28:42+08:00; epoch 3; attempt 1 reviewer /root/paper_reprocess_aggregate_epoch3 turn errored: Selected model is at capacity. Please try a different model. Product head unchanged 7e131474f403d9b28178148909180ac8f1d7d1bb. Action RETRY same isolated reviewer, attempt 2; keep completed command receipts and active sequential runner, no repair round or product mutation.
+
+- 2026-11-03T15:05:48+08:00; epoch 3; attempt 2 reviewer /root/paper_reprocess_aggregate_epoch3 turn errored: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 2:14 PM. User-originated continuation: 继续. Product head unchanged 7e131474f403d9b28178148909180ac8f1d7d1bb. Action RETRY same isolated reviewer, attempt 3; retain completed sequential/supplement receipts and browser diagnostics. No repair round or product mutation.
+
+
+## Epoch 3 Machine Conclusion — 2026-11-03T15:30:19+08:00
+
+- Independent review-p aggregate/master: FAIL / PROGRESSING; repair-p: DRAFT_READY.
+- V-1/V-4 remain RESOLVED; V-5 RESOLVED by fresh ordinary/owned-child HTTP+button projection retries, legal revisions 1/0, unchanged admission/provider/RAW counters and wrong-owner rejection.
+- V-3 PERSISTENT, root narrowed: ordinary wrong/missing emails rejected, but candidate.status=ALREADY_RECOVERED still selects flat-replay handling for real --reprocess-run evidence and accepts wrong/missing/null actual target.email.
+- V-2 PERSISTENT, reopened: real pending-submit disabled button naturally leaves BODY focus; native Escape reaches exact host handler, hostCloses=1/cancelPOST0. Relevant JS/app bytes unchanged across latest repair; historical incomplete fix, no invented latest-code regression.
+- No new finding IDs. V-6/V-7 remain non-blocking P2 and excluded. Historical O-E2-01/unknown concurrency/first failures retained; no claim of repair from fresh passing runs.
+- Complete report includes every required command, matrix, A1–A13 approval/rules/reasons, per-retroactively-authorized-file rows, RECORD_ONLY reassessment, source lines, semantic failures and evidence limits. Machine report is append-only; original report SHA 570fd89fa1e2e3bd05ee25c561531c45cb29c1b0539c9adc64c966bc47b26442 is preserved as an unchanged prefix.
+- Fresh gates C1–C13 exit 0; Kotlin fifteen-class 206/0/0/1 optional corpus skip, independent E2E 5/0/0/0, Flyway 48/0/0/0, JS 2037/2037, WAR 53,149,457 bytes; C15 RuntimeScenarios 6/0/0/0, C16 retained-identity JVM and C17 syntax also pass. Three standalone runtimes pass. No mandatory command omitted, duplicate completed gate, watchdog timeout, or Maven failure.
+- C14 browser processes exit 0 but contract FAIL (pending Escape); D2 identity CLIs exit 0 but contract FAIL (invalid target accepted). Neither failure is hidden by process exits. Normal 337-row replay/reconcile remains 51 EXPECTED_MATCH/286 EXPECTED_MISSING/extras0; 50 gained bindings/49 emails/39 records are not new-profile or admission counts.
+- Exact new repair identity 50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9, only four existing files/two roots: reconciler+ReplayToolTest, reprocess JS+existing JS test. Original ca1e7a97 artifact and approval remain available at 30b2b46bbf925673a5463990ad1474c16da84c5b and in repair-execution.md; that approval does not authorize this new draft.
+- Controller checked four paths, task count, exact preservation of commands 1–13, retained browser gate plus child-derived 15–17, resolved one-approval execution/handoff paths and concrete commit subjects. No plan/product amendment or repair execution.
+- manual-acceptance.md adds only this reviewed boundary's PENDING master A-1–A-6 and required sign-off epoch. No human result, reporter, timestamp or acceptance invented.
+- Evidence parent before this phase commit: 30b2b46bbf925673a5463990ad1474c16da84c5b. Previous evidence commit: 30b2b46bbf925673a5463990ad1474c16da84c5b. Final code head remains 7e131474f403d9b28178148909180ac8f1d7d1bb.
+- Commit only review ledger, appended machine-verification.md, pending manual-acceptance.md and exact repair.md; no product/test/fast-plan/configuration/index scope expansion. Report actual resulting evidence SHA after commit without self-referential follow-up.
