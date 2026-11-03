@@ -142,3 +142,81 @@ Diagnostics directory: `/tmp/paper-reprocess-master-identity-sync.po_d25vi` (onl
 - Post-execution product diff: `git diff --name-only 291fb34..7e131474 -- src scripts` lists only the four Authorized Files.
 - After this file is appended, only `docs/plans/review/paper-reprocess-master/repair-execution.md` remains for the docs-only commit.
 - No applied migration, audit manifest, baseline receipt, ledger, baseline plan or review report was modified.
+
+---
+
+# Epoch 3 execution — bind evidence source and isolate pending dialog Escape
+
+## Identity and approval
+
+- Approval source: explicit human invocation `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md`.
+- Repair plan SHA-256 (start and end): `50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9` (the prior drafts `47b6bccd…` at `3ab2e86` and `ca1e7a97…` at `30b2b46` are lineage, not this execution).
+- Required product baseline: `7e131474f403d9b28178148909180ac8f1d7d1bb`; HEAD at dispatch `a5f209ccb777f2762f517e0449f260ddb891b6f0` (docs-only).
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master`; branch `fast/paper-reprocess-master`; git-dir `…/.git/worktrees/weibo-talent-introduction-fast-paper-reprocess-master`.
+- Pre-execution code SHA: `7e131474f403d9b28178148909180ac8f1d7d1bb`.
+- Post-execution code SHA (product commit): `0b3c707147e8afa8ce4fe4002cb83752f28da0c8`.
+- Evidence HEAD: the docs-only commit recorded below.
+- Executor: `PaperRepairExecutor3` (execute-p worker); no review/repair skill was run.
+
+## Findings resolved
+
+- **V-3** — the reconciler now chooses the evidence protocol from the CLI input origin (`--reprocess-run` vs `--new-replay`), never from a flattened candidate's self-reported `status`/fields. A run row that also carries `status=ALREADY_RECOVERED` still enforces run outcome, actual `targetEmail` normalization fingerprint, docId, and duplicate/conflict checks; wrong/missing/null emails stay `INVALID`/`REGRESSION` (never `ABSENT`/`EXPECTED_MISSING`, never flat success).
+- **V-2** — the component now owns Escape at the document capture phase, before the host's document handler, but only while a confirm/detail dialog is open. When a disabled start button leaves real focus on `BODY`, the native Escape still closes only the component dialog (`hostCloses=0`, `cancelPOST=0`), the native close/focus restore is untouched, the pending request key/UUID/run resume after the deferred create, and unrelated Escape still reaches the host after both dialogs close/dispose. No `preventDefault`, no app.js/CSS/DOM change.
+
+## Changed files (exactly the four Authorized Files)
+
+- `scripts/discovery_admission_probe/reconcile_paper_identity_replay.py` — `evidence`/`classify` split into `flat_evidence` (flat `--new-replay`) and `run_evidence` (real run); `is_run` derived from `new is None` and threaded through `evidence`/`classify`.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperIdentityReplayToolTest.kt` — `target(...)` gains an optional `candidateStatus`; new test `run evidence origin is decided by CLI input, never candidate self-reported status` (wrong/missing/null email with `status=ALREADY_RECOVERED` → `REGRESSION`/`INVALID`; correct email → `EXPECTED_MATCH`/`BOUND`).
+- `src/main/resources/static/discovery-paper-reprocess.js` — `listen` accepts an optional `capture`; a document-capture `keydown` listener stops propagation for Escape while either dialog is open and is removed on dispose.
+- `src/test/js/discoveryPaperReprocess.test.js` — minimal document-level capture/bubble event model inside this test file only; new test `pending create BODY focus still owns Escape and resumes the same run` extending the real-app-handler assembly.
+
+No other tracked file was modified. `git diff --check` reported no whitespace errors.
+
+## Commands (all seventeen run freshly in this invocation, exact plan commands)
+
+JAVA_HOME for every Maven/child Java command: `/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home` (Zulu 11.0.32.1). Maven: `/opt/homebrew/bin/mvn`. Fresh `REPAIR_TMP=/tmp/paper-reprocess-master-source-escape.OkcWrq`.
+
+| # | Command | Exit | Evidence |
+|---|---|---|---|
+| 1 | `mvn test -Dtest=DiscoveryPaperIdentityReplayToolTest,DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | 0 | ReplayTool 10/0/0/0, EndToEnd 5/0/0/0; Maven-bound JS 2038/2038; `cmd01.log` |
+| 2 | `node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js` | 0 | 47 pass / 0 fail; `cmd02.log` |
+| 3 | 15-class gate with `-DmysqlIt=true -DpaperReprocessIt=true` | 0 | Kotlin 207/0/0/1 (known optional layout-corpus skip); JS 2038/2038; `cmd03.log` |
+| 4 | `mvn test -Dtest=DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | 0 | 5/0/0/0; `cmd04.log` |
+| 5 | `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | 0 | 48/0/0/0; real MySQL empty schema + upgrade; `cmd05.log` |
+| 6 | `mvn package -DskipTests` | 0 | BUILD SUCCESS; WAR 53,149,648 bytes; Maven-bound JS 2038/2038; `cmd06.log` |
+| 7 | `node --test src/test/js/*.test.js` | 0 | 2038 tests / 354 suites, 0 fail; `cmd07.log` |
+| 8 | `python3 docs/audits/2026-11-01-discovery-30711-pdf/recount.py` | 0 | `PERSON 333 PAPER 244 PAPER_BINDINGS 337 prior_known 7 other_same_name 1`; `cmd08.log` |
+| 9 | `Paper03RuntimeSmoke` (exec:exec, JDK11) | 0 | `PAPER03_RUNTIME_HTTP_OK records=121 pages=7 sourceFrozen=true duplicateRunId=9002 conflicts=true actualNew=0 actualUpdated=0 actualAdmitted=0 providerCalls=0 archiveMutations=0`; `cmd09.log` |
+| 10 | `DiscoveryVerificationIntegrationTest --paper-reprocess-smoke` | 0 | `PAPER04_RUNTIME_OK realSQL=true loopbackEsFixture=true originalRetainedPDF=true consumer=true recheck=true worker=true commit=true projection=true legacyCLI=true paidCalls=0`; `cmd10.log` |
+| 11 | `DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke` | 0 | `PAPER06_RUNTIME_OK realMySQL=true loopbackEsCAS=true realServices=true paidCalls=0 productionWrites=0`; `cmd11.log` |
+| 12 | replay tool with `/usr/bin/time -l` (exact plan command) | 0 | 337 rows, `networkCalls=0`, `businessWriteServicesConstructed=0`; max RSS 1,020,362,752; `$REPAIR_TMP/replay.json`; `cmd12.log` |
+| 13 | reconcile (exact plan command) | 0 | 337 rows, extras 0, 51 EXPECTED_MATCH / 286 EXPECTED_MISSING; `$REPAIR_TMP/reconciled.csv` (338 lines), `reconciled.md`; `cmd13.log` |
+| 14 | Fresh isolated browser/API acceptance (real API + real MySQL; below) | 0 | `audit-evidence.json`, `cross-evidence.json`, `cross-targets.json`, 21 screenshots; `cmd14-audit-browser.log`, `cmd14-cross-browser.log` |
+| 15 | `mvn test -Dtest=DiscoveryPaperReprocessRuntimeScenarios -DpaperReprocessIt=true -DmysqlIt=true -DtrimStackTrace=false -Dstyle.color=never` | 0 | 6/0/0/0; `cmd15.log` |
+| 16 | `DiscoveryVerificationIntegrationTest --retained-identity-smoke` (exec:exec, JDK11) | 0 | `RETAINED_IDENTITY_RUNTIME` AUDIT+ENFORCE, `isolatedMySQL=true loopbackEsCAS=true providers=0 rosterHashUnchanged=true archiveUnchanged=true`; `cmd16.log` |
+| 17 | `node --check src/main/resources/static/discovery-paper-reprocess.js` | 0 | no output; `cmd17.log` |
+
+Frozen input hashes re-verified before/after: manifest `de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c`, baseline `e0fe5b1e008fda6188315f73972f72af79b3897b6ca59f1a4f04c8d452b3d91c`, runtime `5d00ffbc736f653fe64b93b5e667c8baf776aa33b1320716d212291b45e037c3`.
+
+## Command 14 browser evidence
+
+Diagnostics directory: `/tmp/paper-reprocess-master-source-escape.OkcWrq`. Harnesses rebuilt fresh (`RepairAuditServer` / `RepairCrossPathServer` recompiled against `target/classes`+`target/test-classes`+dependency classpath, DIAG repointed to the fresh dir); AUDIT is the real `DiscoveryPaperReprocessController` over real MySQL (121 papers), cross is the real reprocess/query/recheck controllers plus the real 12-target fixture with loopback ES.
+
+- **AUDIT (run 9002, 121/121)**: empty state disabled entry “请选择一个执行任务”; running `处理中`; injected real-HTTP 500 rendered “更新失败，显示上次结果” with the durable panel kept; completion rendered `targetTotalKnown` (“目标总量已固定”, no “形成中”). **Pending BODY Escape**: `pendingBefore {activeTag:"BODY", activeId:"", confirmOpen:true, startDisabled:true}` after a real 3 s deferred create, then native Escape → `pendingAfter {hostCloses:0, confirmOpen:false, taskHostMounted:true}`. Confirm and detail Escape each `hostCloses:0` with focus returned to the trigger/row; `cancelPosts:0`; the fixture keydown handler matched the real `app.js` handler byte-for-byte. Layouts captured at physical 1440/390 × 100%/125% (CSS viewports 1440/1152/390/312); dialog and start button reachable and inside the viewport in all four.
+- **Cross path (parent 30716)**: admitted ordinary epoch0 item 1 (admission revision 1, projection `ERROR`) and owned REPAIRED child run 30717/item 4 (epoch 30717, admission revision 0, projection `ERROR`). Both opened the real eight-step view (8 steps each) with the source reader open and `analysis POST = 0`; ordinary reprojected via “仅重试候选同步”, child via public `POST /api/discovery/rechecks/30717/sync-retry` (200); both reached `PROJECTED`, revisions stayed 1 and 0, run/item/epoch stayed 30716/1/0 and 30717/4/30717, provider calls 19 → 19 → 19, raw writes 3 → 3. Rejections: ordinary-run+child-item, child-run+ordinary-item, unowned-ordinary each 404, with item state unchanged afterwards. `stepsStatus` [200 ×6].
+
+## Deviations
+
+- None to the authorized file scope or behavior; only the four Authorized Files changed. No app.js, shared test library, CSS/DOM, Recheck/Query/Repository, migration, plan, ledger, or report was modified.
+- `execute-p` helper `scripts/worktree_identity.py` fails at line 30 on a stale unrelated Codex publish registration; worktree identity recorded manually from `git rev-parse` and every git op run with `-C`/cwd on this worktree (same deviation as the prior epoch).
+- Command 3 retains the pre-existing optional layout-corpus skip (1); disclosed, not converted to PASS.
+- Command 14 server classpath reused the deterministic dependency classpath from the unchanged `pom.xml` (124 jars, all present); it is a build input, not fix evidence. Screenshots/HTTP/DOM evidence is fresh in `REPAIR_TMP`.
+- Production #30711 ENFORCE, live ES/ORCID/Apollo and human acceptance remain outside this execution; no push/merge/release/deploy/production write.
+
+## Clean-state evidence
+
+- Plan SHA-256 recomputed unchanged after all edits and commits: `50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9`.
+- Frozen input hashes unchanged (see above); original bytes directory `/Users/lukai/.local/share/paper-reprocess-30711` read-only (493 files, not modified).
+- `git diff --name-only 7e131474..HEAD -- src scripts src/test/js` was empty before editing (no product drift).
+- Product commit `0b3c707147e8afa8ce4fe4002cb83752f28da0c8` contains exactly the four Authorized Files (subject `fix(discovery): bind evidence source and isolate pending dialog Escape`).
+- After this file is appended, only `docs/plans/review/paper-reprocess-master/repair-execution.md` remains for the docs-only evidence commit.
