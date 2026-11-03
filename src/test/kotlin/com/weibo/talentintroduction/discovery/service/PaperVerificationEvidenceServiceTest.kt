@@ -164,12 +164,15 @@ class PaperVerificationEvidenceServiceTest {
     @Test fun `fixed missing changed mismatched refs never select replacement and preserve reliable identity`() {
         ArchiveFixture().use { f ->
             f.enable(); val b = PaperBridgeFixture(f); val ref = b.paper(); b.paper(execution=2)
-            for (bad in listOf(ref.copy(attemptId=999999),ref.copy(bodySha256="b".repeat(64)),ref.copy(sourceExecutionId=99))) {
+            for ((bad, expectedStage) in listOf(
+                ref.copy(attemptId = 999999) to "OPEN_ARCHIVE",
+                ref.copy(bodySha256 = "b".repeat(64)) to "OPEN_ARCHIVE",
+                ref.copy(sourceExecutionId = 99) to "VALIDATE_REFERENCE")) {
                 val failed = b.collect(evidenceSnapshot(),listOf(bad),RecheckEvidenceMode.REFRESH)
                 assertEquals(listOf("SOURCE_UNAVAILABLE"),failed.reasonCodes)
                 assertNotNull(failed.sources.single().failure)
                 assertFalse(failed.sources.single().failure!!.retryable)
-                assertEquals("VALIDATE_REFERENCE", failed.sources.single().failure!!.stage)
+                assertEquals(expectedStage, failed.sources.single().failure!!.stage)
             }
             val path = f.root.resolve("blobs").resolve(ref.bodySha256.take(2)).resolve("${ref.bodySha256}.bin")
             assertNull(b.collect(evidenceSnapshot(),listOf(ref)).sources.single().failure)

@@ -1566,7 +1566,8 @@ class ExpertDiscoveryServiceTest {
                 "marwa.hassan@student.unsw.edu.au" to "Marwa Keshk"),
             "nguyen" to mapOf("nguyensmai@gmail.com" to "Sao Mai Nguyen",
                 "christophe.lohr@imt-atlantique.fr" to "Christophe Lohr",
-                "ioannis.kanellos@imt-atlantique.fr" to "Ioannis Kanellos"))
+                "ioannis.kanellos@imt-atlantique.fr" to "Ioannis Kanellos",
+                "damien.bouchabou@imt-atlantique.fr" to "Damien Bouchabou"))
         val relations = mutableListOf<Map<String, Any?>>()
         val unattributed = linkedSetOf<String>()
         var firstPaper: PaperMetadata? = null

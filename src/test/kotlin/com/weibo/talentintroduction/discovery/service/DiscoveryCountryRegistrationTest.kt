@@ -89,8 +89,13 @@ class DiscoveryCountryRegistrationTest {
 
     private fun service(props: DiscoveryVerificationProperties = properties(), supplement: Boolean = true): DiscoveryVerificationRegistrationService {
         val supplementService = if (supplement) DiscoveryCountrySupplementService(props, clock, http) else null
+        val transactions = Mockito.mock(TransactionTemplate::class.java)
+        Mockito.doAnswer { invocation ->
+            (invocation.getArgument<Any?>(0) as org.springframework.transaction.support.TransactionCallback<Any?>)
+                .doInTransaction(Mockito.mock(org.springframework.transaction.TransactionStatus::class.java))
+        }.`when`(transactions).execute<Any?>(Mockito.any())
         return DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions, jdbc,
-            Mockito.mock(TransactionTemplate::class.java), apolloSettings, clock, supplementService)
+            transactions, apolloSettings, clock, supplementService)
     }
 
     @Test fun `new run reads settings once at freeze and preserves null options until begin`() {
