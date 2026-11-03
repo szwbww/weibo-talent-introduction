@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 3
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 4
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e)
 - Governing master identity: sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e; recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4
 - Invoked master identity: SAME as governing master (explicit retained-worktree handoff invocation); prior invoked-copy diff retained below
@@ -11,26 +11,26 @@
 - Fast-p ledger: docs/plans/fast/paper-reprocess-master/ledger.md (sha256 dc2d86b0f225fbcec9f86a2bfa5f089cc3075fe541881dd5a8ceb88689274e09)
 - Fast-p handoff: docs/plans/fast/paper-reprocess-master/human-review-handoff.md (sha256 ee33dc68d01e4682dfec0fc0edd3607b42587832811c08d453414371cc2ab155)
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
-- Final code head: 7e131474f403d9b28178148909180ac8f1d7d1bb
-- Evidence parent before next commit: 30b2b46bbf925673a5463990ad1474c16da84c5b
-- Previous evidence commit: 30b2b46bbf925673a5463990ad1474c16da84c5b
+- Final code head: 0b3c707147e8afa8ce4fe4002cb83752f28da0c8
+- Evidence parent before next commit: f76a623d5e36185faab86db4e55f42d57d37666a
+- Previous evidence commit: f76a623d5e36185faab86db4e55f42d57d37666a
 - Branch: fast/paper-reprocess-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Worktree resolution: EXPLICIT
-- Discovery evidence: N/A for epoch 3; explicit registered worktree/handoff validated; historical discovery retained below
+- Discovery evidence: N/A for epoch 4; explicit registered worktree/handoff validated; historical discovery retained below
 - Misdirected review evidence: N/A (no same-slug ledger in invocation worktree)
-- Reviewer: /root/paper_reprocess_aggregate_epoch3; fork_turns=none; fresh after repair commit; distinct from writers/verifiers/PaperRepairExecutor2
-- Reviewer attempt: 3
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md — Epoch 3; Epochs 1 and 2 retained unchanged
-- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9; new DRAFT_READY for V-3/V-2)
-- Repair evidence mode: DURABLE_HANDOFF for reviewed ca1e7a97 candidate; new draft unexecuted
-- Repair approval source: NOT_APPROVED for new 50cc5a2f draft. Durable human $execute-p approval applies exclusively to ca1e7a97 candidate already reviewed.
-- Repair executor: N/A for new draft; PaperRepairExecutor2 executed reviewed candidate (preserved handoff)
-- Repair code head: N/A for new draft; reviewed candidate 7e131474f403d9b28178148909180ac8f1d7d1bb
+- Reviewer: /root/paper_reprocess_aggregate_epoch4; fork_turns=none; created after candidate commit; distinct from recorded writers/verifiers and PaperRepairExecutor3
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md — Epoch 4; Epochs 1–3 retained unchanged
+- Repair artifact: docs/plans/fix/paper-reprocess-master/repair.md (sha256 50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9; executed candidate reviewed; new repair planning N/A)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: Explicit human $execute-p invocation of exact repair path, recorded in repair-execution.md Epoch 3 execution
+- Repair executor: PaperRepairExecutor3
+- Repair code head: 0b3c707147e8afa8ce4fe4002cb83752f28da0c8
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Approve current 50cc5a2f repair via explicit human $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md; execute only its four files/two tasks, required gates, one local product commit and durable handoff evidence commit; then resume aggregate review in this chat when requested.
+- Blocker/next action: Human completes master A-1–A-6 in docs/plans/review/paper-reprocess-master/manual-acceptance.md with item verdict/evidence, then explicitly accepts code 0b3c707147e8afa8ce4fe4002cb83752f28da0c8 and governing master sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e. No product action authorized.
 
 ## Preflight Evidence
 
@@ -261,3 +261,32 @@ No implementation was performed.
 - manual-acceptance.md adds only this reviewed boundary's PENDING master A-1–A-6 and required sign-off epoch. No human result, reporter, timestamp or acceptance invented.
 - Evidence parent before this phase commit: 30b2b46bbf925673a5463990ad1474c16da84c5b. Previous evidence commit: 30b2b46bbf925673a5463990ad1474c16da84c5b. Final code head remains 7e131474f403d9b28178148909180ac8f1d7d1bb.
 - Commit only review ledger, appended machine-verification.md, pending manual-acceptance.md and exact repair.md; no product/test/fast-plan/configuration/index scope expansion. Report actual resulting evidence SHA after commit without self-referential follow-up.
+
+
+## Epoch 4 Preflight — 2026-11-03T20:18:37+08:00
+
+- Resolution EXPLICIT: invoked retained handoff; registered worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master, branch fast/paper-reprocess-master.
+- Master base 3a425461dbe6088e4d4dda1a53141416a392670c; prior code 7e131474f403d9b28178148909180ac8f1d7d1bb; candidate code 0b3c707147e8afa8ce4fe4002cb83752f28da0c8; evidence HEAD f76a623d5e36185faab86db4e55f42d57d37666a. Base/prior/code/HEAD and recorded-master ancestry checks all exit 0.
+- Worktree and index were clean. Product/test delta is exactly the four Authorized Files in repair.md; intervening review documents are evidence only. Candidate..HEAD changes only repair-execution.md.
+- Durable repair handoff sha256 cec0e01cdb3c0ef0160a0e6f702eaa46216c4a4ba0ba01998000e1e1fc1862ec records exact repair sha256 50cc5a2fceedd09541a1efb080894347e7714262285fcea77f0acf52d7bfbfc9, explicit human invocation, PaperRepairExecutor3 and exact committed boundary. Mode DURABLE_HANDOFF.
+- Governing master sha256 85232e2db6f01c6c3411daae13fb8739e2f3cc47e1010bb6fd049aef0e197e2e equals recorded commit 53c2b0018e239e3c30db25942e99c2cddc69e9d4; AMENDMENT_RECORDED A1–A13 unchanged. Invoked identity SAME. Fast-p ledger/handoff hashes unchanged.
+- Seven ordered children all terminal LIGHT_PASS/LIGHT_PASS_WITH_NOTES; every exact plan identity, four evidence artifacts per child and evidence-commit ancestry validated freshly.
+- Docker29.8.2 reachable with escalation; JDK11.0.32.1, Maven /opt/homebrew/bin/mvn and Node25.7.0 available. Source directory exists; frozen manifest/baseline/runtime hashes match recorded identities. Default sandbox Docker access denied; escalated read-only docker version succeeds. Reviewer must run required Docker/local verification with appropriate escalation.
+- Controller performs orchestration/evidence only. Prior reports/findings/human state preserved; fresh reviewer must rerun all mandatory commands and browser contracts independently.
+
+- Reviewer dispatch 2026-11-03T20:19:39+08:00: /root/paper_reprocess_aggregate_epoch4; fork_turns=none; attempt 1; complete exact aggregate input bundle only; product HEAD unchanged.
+
+
+## Epoch 4 Machine Conclusion — 2026-11-03T21:33:31+08:00
+
+- Independent review-p aggregate/master: PASS / PROGRESSING, reviewer /root/paper_reprocess_aggregate_epoch4 (fresh, fork_turns=none, attempt1). Repair planning N/A; no new repair artifact or product modification.
+- V-1–V-5 RESOLVED; V-2 true pending BODY Escape keeps host/cancel0 and native dialog behavior; V-3 real CLI origin controls run/flat validation and rejects candidate.status bypass. V-6/V-7 remain non-blocking P2. Historical unknown concurrency, first failures and prior verdicts preserved.
+- Every mandatory machine command rerun freshly: fifteen-class JVM207/0/0/1 (only optional old294 corpus skip), independent E2E5/0/0/0, real Flyway48/0/0/0, full JS2038/2038, WAR53,149,648bytes, RuntimeScenarios6/0/0/0, C9/C10/C11/C16 runtime entrypoints, C17 syntax, and original child01 PAPER/RECORD consumer D5. No mandatory NOT_RUN/BLOCKED. All exit0, no failure rerun or watchdog timeout.
+- 337 original-byte rows /244 records; reconciliation51 EXPECTED_MATCH,286 EXPECTED_MISSING,extras/regression/unexpected/sourceMissing0; gained50 combinations/49 email fingerprints/39 records, not new profiles or admissions. Inputs hashes unchanged.
+- Fresh Chrome/API/MySQL121/121, four viewport equivalences,500 recovery/reentry, default/pending/dialog/dispose Escape, readonly source, ordinary/child8-step and projection paths checked. Provider19→19→19, RAW3→3, admission SQL/identity_hash/revisions1/0 stable; wrong-owner404. Fixtures/live-provider/deployment limits disclosed in complete report.
+- D6 initially measured BODY after pending close; supplemental actual host keyboard diagnostic proves next Tab reaches available host close, source/sameUUID/run retained,create1/cancel0. Raw contractFocus=false kept with its narrower measurement definition; no invented mandatory instantaneous focus rule.
+- Controller checked complete report boundary, required commands, full master/child/downstream matrix, A1–A13 and per-expanded-file rows, all RECORD_ONLY mappings, finding lineage and evidence limitations. Appended full reviewer output to machine-verification.md; prior857bd0f7 report bytes remain unchanged prefix.
+- manual-acceptance.md appended immutable pending Epoch4 generated exclusively from master A-1–A-6 and required sign-off. Prior Epoch3 preserved; no human verdict/reporter/evidence/time/signature manufactured.
+- Precommit final inspection: code/test/index clean,HEADf76a623d5e36185faab86db4e55f42d57d37666a; approved master/repair/fast artifacts/frozen inputs unchanged. Only three allowed review evidence files will be committed.
+- Evidence parent before this phase commit: f76a623d5e36185faab86db4e55f42d57d37666a. Previous evidence commit: f76a623d5e36185faab86db4e55f42d57d37666a. Final code head remains0b3c707147e8afa8ce4fe4002cb83752f28da0c8. Report actual new evidence SHA from Git; do not create a self-referential update.
+- Terminal gate: AWAITING_HUMAN_ACCEPTANCE; mandatory human A-1–A-6 and explicit reviewed code/master acceptance remain PENDING. No integration/release/production operation.
