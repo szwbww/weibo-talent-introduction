@@ -70,3 +70,75 @@ Diagnostics directory: `/tmp/paper-repair-diag-20261102T2142/` (only place scree
 - Product commit `291fb34` contains exactly the ten Authorized Files and is `HEAD` of `fast/paper-reprocess-master` before this evidence file.
 - Working tree contained only the ten authorized modifications before the product commit; after it, only this evidence file remains for the docs-only commit.
 - No applied migration, audit manifest, baseline receipt, ledger or baseline plan was modified.
+
+# Repair Execution Epoch 3 (revised repair: identity validation and child sync retry)
+
+## Identity and approval
+
+- Approval source: explicit human invocation `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md` in the executing chat. It satisfies the plan's Human Approval gate for this exact artifact.
+- Repair plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master/docs/plans/fix/paper-reprocess-master/repair.md`
+- Plan SHA-256 (start and end, recomputed): `ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa`
+- Superseded lineage: same path at commit `3ab2e86c80993929350d1dc40c859fed1a24adbc`, SHA-256 `47b6bccdb128dd02177fe0d629e251afe781064d75dcbc5f18c07ab24a829110`; the epoch-1/2 receipts above are preserved unchanged and were not reused as proof for this artifact.
+- Execution epoch: NEW for this plan identity. Prior FAIL / DIVERGING receipts in `machine-verification.md` remain as-is.
+- Required pre-repair product baseline: `291fb34b35be496673e28f124d443b9c46ba66f4`; `git diff --name-only 291fb34..HEAD -- src scripts` was empty before edits.
+- Pre-execution docs HEAD: `07dcbd00b4bcd6b05b8e2ad1bee2736fd476cfb7` (docs-only; `git diff --name-only 291fb34..07dcbd0` contains only `docs/`).
+- Post-execution product SHA: `7e131474f403d9b28178148909180ac8f1d7d1bb`.
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master`; branch `fast/paper-reprocess-master`; worktree git dir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-paper-reprocess-master`; common git dir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+- Executor: `PaperRepairExecutor2` (execute-p worker). `review-fast-p` was not run.
+
+## Changed files (exactly the four Authorized Files)
+
+- `scripts/discovery_admission_probe/reconcile_paper_identity_replay.py` — run-target evidence now requires the actual `target.email` to be a non-empty string whose trim + locale-independent lowercase UTF-8 SHA-256 prefix-24 equals the immutable manifest combination's `emailHash`; missing/null/blank/non-string/wrong address is `INVALID`/`REGRESSION` and stays in the per-row output. Flat `--new-replay` semantics, SOURCE_MISSING, honest absence, EXTERNAL_DATA_CHANGED, extras and duplicate/conflict/outcome/docId behaviour are unchanged.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperIdentityReplayToolTest.kt` — the accepted emailHash is now derived from a real address via `DiscoveryIdentity.normalizedEmail`/`hash`; the run export carries a per-target `email`; new discriminating cases: valid, case/whitespace control, wrong address, absent key, JSON null, blank, non-string. A valid flat `--new-replay` receipt without `targetEmail` still reconciles as `BOUND`/`EXPECTED_MATCH`.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt` — `syncRetry` dispatches on the stored run type (`findRun(id)?.recheckJson != null`). A real recheck (including a paper-reprocess child) keeps `requireRecheck`/`requireRecheckItem` (owner + `reviewEpoch == runId`); only an ordinary run with server-proven paper-reprocess ownership uses `requirePaperOwnedItem`. Guards, `COMPLETED`/non-null `admissionRevision` (0 valid)/projection checks, idempotence and the projection-only leaf are unchanged.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessEndToEndTest.kt` — new real-MySQL + strict-loopback-ES test: admitted ordinary epoch0 item (revision 1) and same-parent REPAIRED child (run 30717/item 4, epoch 30717, legitimate admission revision 0) both start with candidate projection `ERROR`; the ordinary item is reprojected through `syncRetry`, the child through the same seam, both reach `PROJECTED`, ids/epochs/revisions and admissions are unchanged, providers and raw writes do not increase, and wrong/foreign/unowned combinations stay `RECHECK_ITEM_NOT_FOUND`/`RECHECK_NOT_FOUND`. Registered in the standalone runtime `main`; the fixed 12-target test and its counts were not changed.
+
+## Commands (all run freshly in this invocation, final code state)
+
+JAVA_HOME for every Maven/child Java command: `/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home` (Zulu 11.0.32.1). Maven: `/opt/homebrew/bin/mvn`. Fresh diagnostics directory: `/tmp/paper-reprocess-master-identity-sync.po_d25vi` (`REPAIR_TMP`, created by `mktemp`).
+
+| # | Command | Exit | Evidence |
+|---|---|---|---|
+| 1 | `mvn test -Dtest=DiscoveryPaperIdentityReplayToolTest,DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | 0 | Tests 14, failures 0, errors 0, skipped 0 (ReplayTool 9, EndToEnd 5); `cmd01.log` |
+| 2 | `node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js` | 0 | 46 tests / 46 pass / 0 fail; `cmd02.log` |
+| 3 | 15-class gate with `-DmysqlIt=true -DpaperReprocessIt=true` | 0 | Tests 206, failures 0, errors 0, skipped 1 (known optional `DISCOVERY_LAYOUT_FROZEN_SAMPLES` corpus skip); `cmd03.log` |
+| 4 | `mvn test -Dtest=DiscoveryPaperReprocessEndToEndTest -DpaperReprocessIt=true` | 0 | Tests 5, failures 0, errors 0, skipped 0; `cmd04.log` |
+| 5 | `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | 0 | Tests 48, failures 0, errors 0, skipped 0 (real MySQL empty schema + upgrade); `cmd05.log` |
+| 6 | `mvn package -DskipTests` | 0 | BUILD SUCCESS; war `target/weibo-talent-introduction-1.0.0-SNAPSHOT.war` 53,149,457 bytes; Maven-bound JS test task ran; `cmd06.log` |
+| 7 | `node --test src/test/js/*.test.js` | 0 | 2037 tests / 354 suites, 2037 pass, 0 fail, 0 skip; `cmd07.log` |
+| 8 | `python3 docs/audits/2026-11-01-discovery-30711-pdf/recount.py` | 0 | `PERSON 333 PAPER 244 PAPER_BINDINGS 337 prior_known 7 other_same_name 1`; no writes; `cmd08.log` |
+| 9 | `Paper03RuntimeSmoke` (exec:exec, JDK11) | 0 | `PAPER03_RUNTIME_HTTP_OK records=121 pages=7 sourceFrozen=true duplicateRunId=9002 conflicts=true actualNew=0 actualUpdated=0 actualAdmitted=0 providerCalls=0 archiveMutations=0`; `cmd09.log` |
+| 10 | `DiscoveryVerificationIntegrationTest --paper-reprocess-smoke` | 0 | `PAPER04_RUNTIME_OK realSQL=true loopbackEsFixture=true originalRetainedPDF=true consumer=true recheck=true worker=true commit=true projection=true legacyCLI=true paidCalls=0`; `cmd10.log` |
+| 11 | `DiscoveryPaperReprocessEndToEndTest --paper-reprocess-e2e-smoke` | 0 | `PAPER06_RUNTIME_OK realMySQL=true loopbackEsCAS=true realServices=true paidCalls=0 productionWrites=0` (5 fixture tests incl. the new sync-retry case); `cmd11.log` |
+| 12 | replay tool with `/usr/bin/time -l` (exact plan command) | 0 | `replayed=337 networkCalls=0`; 98.37 s real; max RSS 1,156,612,096; `$REPAIR_TMP/replay.json`; `cmd12.log` |
+| 13 | reconcile (exact plan command; CSV/report paths absent first) | 0 | 337 rows, extras 0, 51 EXPECTED_MATCH / 286 EXPECTED_MISSING; `$REPAIR_TMP/reconciled.csv` (338 lines), `reconciled.md`; `cmd13.log` |
+| 14 | Fresh isolated browser/API acceptance (real API + real MySQL; see below) | 0 | `audit-evidence.json`, `cross-evidence.json`, `static-contract.json`, screenshots; `c14-audit-browser.log`, `c14-cross-browser.log`, `c14-static-contract.log` |
+
+Frozen input hashes re-verified before/after: manifest `de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c`, baseline `/tmp/paper-reprocess-30711-baseline.json` `e0fe5b1e008fda6188315f73972f72af79b3897b6ca59f1a4f04c8d452b3d91c`, runtime `/tmp/paper-reprocess-30711-runtime.json` `5d00ffbc736f653fe64b93b5e667c8baf776aa33b1320716d212291b45e037c3`.
+
+## Command 14 browser evidence
+
+Diagnostics directory: `/tmp/paper-reprocess-master-identity-sync.po_d25vi` (only place screenshots/JSON were written). Harnesses were rebuilt from the prior isolated patterns into this fresh directory; the AUDIT runtime is the real `DiscoveryPaperReprocessController` over real MySQL with 121 papers, the cross runtime is the real reprocess/query/recheck controllers plus the real 12-target fixture and strict loopback ES.
+
+- AUDIT (run 9002, 121/121 papers): empty state disabled entry with “请选择一个执行任务”; running state `处理中` (progress 25); an injected real-HTTP 500 on the run-detail GET rendered “更新失败，显示上次结果” while keeping the durable panel; recovered completion rendered `summary.targetTotalKnown` (“目标总量已固定”, no “形成中”). Confirm and detail Escape closed only their dialog (`hostCloses=0`, focus returned to the trigger/row, host mounted, `cancelPosts=0`); the fixture keydown handler matched the real `app.js` handler byte-for-byte after whitespace normalization. Layouts captured with physical 1440/390 and 100%/125% viewport equivalents as separate contexts (CSS viewports 1440/1152/390/312 at deviceScaleFactor 1/1.25); dialog and start button stayed reachable and inside the viewport in all four.
+- Cross path: parent run 30716; admitted ordinary epoch0 item 1 (admission revision 1, projection `ERROR`/`CANDIDATE_SYNC_FAILED`) and owned REPAIRED child run 30717/item 4 (epoch 30717, admission revision 0, projection `ERROR`). Both opened the real eight-step view through the public HTTP routes (`GET .../items/{id}/steps` 200 ×5) with the source reader open and `analysis POST = 0`. The ordinary item was reprojected via the original “仅重试候选同步” button and the child via the public `POST /api/discovery/rechecks/30717/sync-retry` (200); both reached `PROJECTED`, admission revisions stayed 1 and 0, run/item/epoch values stayed 30716/1/0 and 30717/4/30717, admission rows were identical, provider calls stayed 19 → 19 → 19 and raw writes 3 → 3. Rejections: ordinary-run + child-item 404 `RECHECK_ITEM_NOT_FOUND`, child-run + ordinary-item 404 `RECHECK_ITEM_NOT_FOUND`, non-paper-owned ordinary run 99001 + ordinary item 404 `RECHECK_NOT_FOUND`, with item projections/admissions/providers unchanged afterwards.
+- S-1..S-6 static contract (`static-contract.json`): contract CSS block equals the plan block byte-for-byte (5,515 bytes), preceding committed CSS prefix unchanged, all four S-6 HTML blocks and five S-6 DOM ids present, no inline style/`innerHTML`/`localStorage` in the new module, the three cache keys equal (`20261102-paper-reprocess`), the reprocess script precedes `discovery-papers.js`, and no client-side global aggregation (`size=100`).
+- Screenshots: `audit-empty-1440.png`, `audit-running-1440.png`, `audit-500-long-reason.png`, `audit-complete-1440-1.png`, `audit-escape-confirm.png`, `audit-escape-detail.png`, `audit-confirm-{1440,390}-{100,125}.png`, `cross-eightstep-NEW.png`, `cross-ordinary-projected.png`, `cross-eightstep-REPAIRED.png`, `cross-child-projected.png`, `cross-reader.png`.
+
+## Deviations
+
+- None to the authorized file scope or behavior. Only the four Authorized Files changed; no QueryService/Repository/Worker/frontend/plan/ledger/report/migration was modified.
+- `execute-p` helper `scripts/worktree_identity.py` fails at line 30 on a stale unrelated Codex publish registration (`/private/var/folders/.../multi-ai-kit-publish-...` no longer exists). Worktree identity was therefore recorded manually from `git rev-parse --show-toplevel/--git-dir/--git-common-dir`, the branch and HEAD, and every git operation was run with `-C`/cwd on this worktree.
+- Command 3 retains the pre-existing optional layout-corpus skip (1); it is disclosed, not converted to PASS.
+- Command 13 uses the legitimate flat `--new-replay` receipt (no target address); the new actual-email requirement is proven by the CLI regressions in commands 1/3 and by the real run export (`reportRun`) which carries real target emails.
+- The epoch-2 C10 trace-lease observation was not re-run in this epoch; its receipts above are preserved untouched and no claim is made about it.
+- Production #30711 ENFORCE, live ES/ORCID/Apollo and human acceptance remain outside this execution; no push/merge/release/deploy/production write was performed.
+
+## Clean-state evidence
+
+- Plan SHA-256 recomputed unchanged after all edits and commits: `ca1e7a97965282cd3bd91354d5cbf7cd3e1e3aa8a39ef2bd77a4dbed8681a3aa`.
+- Frozen input hashes unchanged (see above).
+- Product commit `7e131474f403d9b28178148909180ac8f1d7d1bb` contains exactly the four Authorized Files and is `HEAD` of `fast/paper-reprocess-master` before this evidence file; `git status --porcelain` was empty.
+- Post-execution product diff: `git diff --name-only 291fb34..7e131474 -- src scripts` lists only the four Authorized Files.
+- After this file is appended, only `docs/plans/review/paper-reprocess-master/repair-execution.md` remains for the docs-only commit.
+- No applied migration, audit manifest, baseline receipt, ledger, baseline plan or review report was modified.
