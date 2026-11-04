@@ -79,7 +79,7 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
         val summary = repository.summary(id)
         val frozen = summary.totalKnown
         return ReprocessDetail(run, summary, if (!frozen) "已固定${run.scope.path("frozenCount").asLong()}篇，统计中"
-            else "已处理${summary.paperComplete + summary.paperErrors + summary.paperCancelled}/${summary.papers}篇，失败${summary.paperErrors}篇", frozen)
+            else "已处理${summary.paperComplete + summary.paperErrors + summary.paperCancelled + summary.paperSkipped}/${summary.papers}篇，失败${summary.paperErrors}篇", frozen)
     }
     fun runs(sourceId: Long?, active: Boolean?, requestKey: String?, page: Int, size: Int): ReprocessPage<ReprocessRun> {
         paging(page, size); sourceId?.let(::positive)
@@ -178,7 +178,14 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                     val input = item.input
                     val recordId = input.path("recordId").asLong()
                     val refs = input.path("bodies").map { it.path("attemptId").asLong() to it.path("hash").asText() }
-                    if (refs.isEmpty()) throw ReprocessException("SOURCE_MISSING", 410)
+                    if (refs.isEmpty()) {
+                        persist(item, ReprocessItemState.SKIPPED, resultNode("SOURCE_MISSING",
+                            listOf(ReprocessTraceState.SKIPPED, ReprocessTraceState.SKIPPED,
+                                ReprocessTraceState.NOT_STARTED, ReprocessTraceState.SKIPPED,
+                                ReprocessTraceState.SKIPPED, ReprocessTraceState.SUCCESS)))
+                        publish(id)
+                        continue
+                    }
                     beforeParse(item)
                     val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(parseBudgetMillis)
                     val metadata = input.path("metadata")
@@ -258,21 +265,13 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                 publish(id)
             }
             checkpoint()
-            if (repository.summary(id).paperErrors > 0) {
-                // Do not freeze an incomplete candidate union: successful target inputs are immutable
-                // and a later retry may recover identities from the failed papers.
-                phase(PaperReprocessPhase.SAVE)
-                repository.finish(id, token, run.generation, ReprocessState.COMPLETED_WITH_ERRORS)
-                publish(id)
-                return
-            }
             phase(PaperReprocessPhase.BIND)
-            // No target is made until every paper has successfully finished its parse attempt.
+            // Merge only complete papers after every parse attempt has reached a terminal state.
             val candidates = linkedMapOf<String, MutableList<JsonNode>>()
             var page = 0
             do {
                 val papers = repository.items(id, ReprocessKind.PAPER, page++, 100)
-                for (paper in papers.items) for (candidate in paper.result?.path("candidates") ?: mapper.createArrayNode()) {
+                for (paper in papers.items.filter { it.state == ReprocessItemState.COMPLETE }) for (candidate in paper.result?.path("candidates") ?: mapper.createArrayNode()) {
                     val email = candidate.path("email").asText().trim().lowercase()
                     if (email.isNotEmpty()) candidates.getOrPut(email) { mutableListOf() }.add(candidate)
                 }
@@ -296,7 +295,7 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                 }
                 checkpoint(); phase(PaperReprocessPhase.SAVE)
                 val summary = repository.summary(id)
-                repository.finish(id, token, run.generation, if (summary.targetErrors > 0)
+                repository.finish(id, token, run.generation, if (summary.paperErrors + summary.targetErrors > 0)
                     ReprocessState.COMPLETED_WITH_ERRORS else ReprocessState.COMPLETED)
                 publish(id)
                 return
@@ -366,7 +365,7 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
             else -> detail.run.state.name
         }
         progress.update(TASK_TYPE, TaskProgress(taskType = TASK_TYPE, status = status, batchNumber = 0,
-            processedCount = summary.paperComplete + summary.paperErrors + summary.paperCancelled,
+            processedCount = summary.paperComplete + summary.paperErrors + summary.paperCancelled + summary.paperSkipped,
             totalCount = if (detail.totalKnown) summary.papers else 0, message = detail.progressText, executionId = id), id)
     }
     @PreDestroy fun shutdown() { stopping.set(true); pool.shutdownNow() }

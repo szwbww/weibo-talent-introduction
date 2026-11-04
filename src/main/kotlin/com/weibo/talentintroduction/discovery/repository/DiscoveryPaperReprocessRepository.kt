@@ -396,7 +396,7 @@ class DiscoveryPaperReprocessRepository(
         // An expired worker still has its old task owner; run lock prevents it from racing recovery.
         val owner = run.leaseToken ?: jdbc.queryForObject("SELECT owner_token FROM task_execution WHERE id=?", String::class.java, run.executionId)
         if (owner == null) throw ReprocessException("TASK_OWNERSHIP_LOST", 409)
-        val processed = (summary.paperComplete + summary.paperErrors).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val processed = (summary.paperComplete + summary.paperErrors + summary.paperSkipped).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val errors = summary.paperErrors.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val summaryJson = mapper.writeValueAsString(result)
         if (tasks.finishOwned(run.executionId, owner, taskState, summaryJson, processed, errors, reason, taskTime(time)) != 1) {
@@ -426,6 +426,9 @@ class DiscoveryPaperReprocessRepository(
         try {
             return transaction {
                 val run = locked(runId) ?: throw ReprocessException("RUN_NOT_FOUND", 404)
+                run.scope.path("retryExecutionId").takeIf { it.isIntegralNumber }?.let {
+                    return@transaction find(it.asLong()) ?: throw ReprocessException("RUN_NOT_FOUND", 404)
+                }
                 if (run.revision != revision) throw ReprocessException("REVISION_CONFLICT", 409)
                 if (run.state !in setOf(ReprocessState.COMPLETED_WITH_ERRORS, ReprocessState.FAILED, ReprocessState.INTERRUPTED, ReprocessState.CANCELLED))
                     throw ReprocessException("RETRY_NOT_ALLOWED", 409)
@@ -435,6 +438,9 @@ class DiscoveryPaperReprocessRepository(
                     throw ReprocessException("SCOPE_CHANGED", 409)
                 if (active() != null) throw ReprocessException("ACTIVE_RUN_EXISTS", 409)
                 validateItems(runId)
+                val counts = summary(runId)
+                if (counts.targets > 0 && counts.paperErrors > 0)
+                    return@transaction retryWithNewEvidence(run)
                 val time = now()
                 // Targets are derived only after every paper has parsed. Unfinished candidates must
                 // be regenerated, never overwritten in place with new refs after an error retry.
@@ -506,6 +512,38 @@ class DiscoveryPaperReprocessRepository(
         } catch (_: DuplicateKeyException) { throw ReprocessException("ACTIVE_RUN_EXISTS", 409) }
     }
 
+    /** A new evidence union gets its own receipts and review groups. Old applied targets stay immutable. */
+    private fun retryWithNewEvidence(previous: ReprocessRun): ReprocessRun {
+        val time = now()
+        val key = GeneratedKeyHolder()
+        val owner = UUID.randomUUID().toString()
+        jdbc.update({ connection -> connection.prepareStatement("""INSERT INTO task_execution
+            (task_type,trigger_type,status,request_payload,started_at,created_at,updated_at,owner_token,heartbeat_at)
+            VALUES ('DISCOVERY_PAPER_REPROCESS','MANUAL','RUNNING',?,?,?,?,?,?)""", Statement.RETURN_GENERATED_KEYS).also {
+            it.setString(1, mapper.writeValueAsString(mapOf("retryOf" to previous.executionId)))
+            it.setObject(2, taskTime(time)); it.setObject(3, taskTime(time)); it.setObject(4, taskTime(time))
+            it.setString(5, owner); it.setObject(6, taskTime(time))
+        } }, key)
+        val id = key.key!!.toLong()
+        val scope = previous.scope.deepCopy<ObjectNode>().put("retryOf", previous.executionId)
+        jdbc.update("""INSERT INTO discovery_paper_reprocess_run
+            (execution_id,source_execution_id,request_key,request_hash,active_key,mode,state,phase,scope_json,created_at,updated_at)
+            VALUES (?,?,?,?,'PAPER_REPROCESS',?,'PREPARING','READ',?,?,?)""",
+            id, previous.sourceExecutionId, UUID.randomUUID().toString(), previous.requestHash,
+            previous.mode.name, json(scope, "INPUT_TOO_LARGE"), db(time), db(time))
+        jdbc.update("""INSERT INTO discovery_paper_reprocess_item
+            (execution_id,kind,item_key,state,input_json,result_json,created_at,updated_at,completed_at)
+            SELECT ?,kind,item_key,IF(state IN ('COMPLETE','SKIPPED'),state,'PENDING'),input_json,
+                IF(state IN ('COMPLETE','SKIPPED'),result_json,NULL),?,?,
+                IF(state IN ('COMPLETE','SKIPPED'),completed_at,NULL)
+            FROM discovery_paper_reprocess_item WHERE execution_id=? AND kind='PAPER'""",
+            id, db(time), db(time), previous.executionId)
+        val linked = previous.scope.deepCopy<ObjectNode>().put("retryExecutionId", id)
+        jdbc.update("UPDATE discovery_paper_reprocess_run SET scope_json=?,revision=revision+1 WHERE execution_id=?",
+            json(linked, "INPUT_TOO_LARGE"), previous.executionId)
+        return find(id)!!
+    }
+
     fun releaseRejected(runId: Long, token: String, generation: Long): Boolean = transaction {
         if (owned(runId, token, generation) == null) return@transaction false
         jdbc.update("""UPDATE discovery_paper_reprocess_run SET lease_token=NULL,lease_until=NULL,
@@ -522,6 +560,7 @@ class DiscoveryPaperReprocessRepository(
             COALESCE(SUM(kind='PAPER' AND state='COMPLETE'),0) paper_complete,
             COALESCE(SUM(kind='PAPER' AND state='ERROR'),0) paper_errors,
             COALESCE(SUM(kind='PAPER' AND state='CANCELLED'),0) paper_cancelled,
+            COALESCE(SUM(kind='PAPER' AND state='SKIPPED'),0) paper_skipped,
             COALESCE(SUM(kind='TARGET'),0) targets, COALESCE(SUM(kind='TARGET' AND state='COMPLETE'),0) target_complete,
             COALESCE(SUM(kind='TARGET' AND state='ERROR'),0) target_errors,
             COALESCE(SUM(CASE WHEN kind='TARGET' THEN COALESCE(JSON_EXTRACT(result_json,'$.actualNew'),0) ELSE 0 END),0) actual_new,
@@ -595,7 +634,7 @@ class DiscoveryPaperReprocessRepository(
         fun c(key: String) = (classified.getValue(key) as Number).toLong()
         val enforce = run?.mode == ReprocessMode.ENFORCE
         val totalKnown = run?.scope?.path("frozen")?.asBoolean() == true
-        val targetTotalKnown = totalKnown && n("paper_complete") == n("papers") &&
+        val targetTotalKnown = totalKnown && n("paper_complete") + n("paper_errors") + n("paper_skipped") == n("papers") &&
             run?.phase in setOf(PaperReprocessPhase.APPLY, PaperReprocessPhase.REVIEW, PaperReprocessPhase.SAVE)
         fun proposal(known: String, count: String): Long? =
             if (c(known) == n("targets") && (n("targets") > 0 || targetTotalKnown)) c(count) else null
@@ -607,7 +646,7 @@ class DiscoveryPaperReprocessRepository(
             wouldCreate = proposal("create_known", "would_create"), wouldRepair = proposal("repair_known", "would_repair"),
             unchanged = proposal("outcome_known", "unchanged"), conflict = c("conflict"),
             protected = proposal("outcome_known", "protected"), syncFailure = c("sync_failure"),
-            missingSourcePapers = c("missing"),
+            paperSkipped = n("paper_skipped"), missingSourcePapers = c("missing"),
             qualification = ReprocessQualificationSummary(c("qualification_met"), c("qualification_unknown"),
                 c("qualification_not_met"), c("qualification_conflict"), c("qualification_not_evaluated"), c("qualification_unavailable")),
             totalKnown = totalKnown, targetTotalKnown = targetTotalKnown)
@@ -615,7 +654,7 @@ class DiscoveryPaperReprocessRepository(
 
     private fun progress(runId: Long, time: Instant) {
         val counts = summary(runId)
-        tasks.updateProgressCounts(runId, (counts.paperComplete + counts.paperErrors).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        tasks.updateProgressCounts(runId, (counts.paperComplete + counts.paperErrors + counts.paperSkipped).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             counts.paperErrors.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), taskTime(time))
     }
 

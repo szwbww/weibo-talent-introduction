@@ -102,6 +102,28 @@ class DiscoveryPaperReprocessEndToEndTest {
             "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
     }
 
+    @Test fun `partial paper failure admits successful peers and followup adds recovered expert without duplicate RAW`() {
+        Harness().use { h ->
+            h.seedMainSource()
+            h.service.beforeParse = { item ->
+                if (item.input.path("paperKey").asText() == h.w.key) error("fixture parse failure")
+            }
+            val first = h.create(Harness.SOURCE)
+            h.pump(first.executionId, ReprocessState.COMPLETED_WITH_ERRORS)
+            val before = h.terminalReceipts(first.executionId)
+            assertEquals(1L, h.repository.summary(first.executionId).paperErrors)
+            assertTrue(h.repository.summary(first.executionId).actualNew > 0)
+            assertTrue(h.repository.summary(first.executionId).actualAdmitted > 0)
+            h.service.beforeParse = {}
+            val retried = h.service.retry(first.executionId, h.repository.find(first.executionId)!!.revision)
+            assertNotEquals(first.executionId, retried.executionId)
+            h.pump(retried.executionId, ReprocessState.COMPLETED)
+            assertEquals(1, h.repository.summary(retried.executionId).actualNew)
+            assertEquals(h.w.doc, h.target(retried.executionId, h.w.email!!).result!!.path("docId").asText())
+            assertEquals(before, h.terminalReceipts(first.executionId))
+        }
+    }
+
     @Test fun `fixed twelve targets separate new repair conflict protection missing and write failure`() {
         Harness().use { h ->
             h.seedMainSource()

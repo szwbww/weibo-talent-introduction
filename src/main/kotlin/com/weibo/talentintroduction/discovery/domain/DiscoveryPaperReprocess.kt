@@ -62,7 +62,7 @@ data class ReprocessSummary(val papers: Long, val paperComplete: Long, val paper
     val actualNew: Int = 0, val actualUpdated: Int = 0, val actualAdmitted: Int = 0,
     val pendingVerification: Long = 0, val wouldCreate: Long? = null, val wouldRepair: Long? = null,
     val unchanged: Long? = null, val conflict: Long = 0, val protected: Long? = null, val syncFailure: Long = 0,
-    val missingSourcePapers: Long = 0, val qualification: ReprocessQualificationSummary = ReprocessQualificationSummary(),
+    val paperSkipped: Long = 0, val missingSourcePapers: Long = 0, val qualification: ReprocessQualificationSummary = ReprocessQualificationSummary(),
     val totalKnown: Boolean = false, val targetTotalKnown: Boolean = false,
     val paperUnit: String = "PAPER", val targetUnit: String = "TARGET", val categoriesOverlap: Boolean = true)
 data class ReprocessPreview(val sourceExecutionId: Long, val recordCount: Long, val expectedScopeHash: String,

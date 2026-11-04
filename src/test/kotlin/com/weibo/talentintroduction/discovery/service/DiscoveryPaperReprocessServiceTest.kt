@@ -390,7 +390,26 @@ class DiscoveryPaperReprocessRuntimeScenarios {
             assertNull(f.repository.active())
         }
     }
-    @Test fun `failed body retains successful attempt evidence and retry builds targets only from complete paper set`() {
+    @Test fun `papers frozen without bodies are skipped and do not block candidate processing`() {
+        Paper03RuntimeFixture().use { f ->
+            f.seed(3)
+            val run = f.create(); val claim = f.claim()
+            while (!f.repository.freezePage(run.executionId, claim.leaseToken!!, claim.generation)) { }
+            val paper = f.repository.items(run.executionId, ReprocessKind.PAPER, 0, 20).items.first()
+            f.db.jdbc.update("UPDATE discovery_paper_reprocess_item SET input_json=JSON_SET(input_json,'$.bodies',JSON_ARRAY()) WHERE id=?", paper.id)
+            f.service.execute(claim)
+            val result = f.service.detail(run.executionId)
+            assertEquals(ReprocessState.COMPLETED, result.run.state)
+            assertEquals(1L, result.summary.paperSkipped)
+            assertEquals(0L, result.summary.paperErrors)
+            assertEquals(2L, result.summary.paperComplete)
+            assertTrue(result.summary.targets > 0)
+            assertTrue(result.summary.targetTotalKnown)
+            assertEquals(ReprocessItemState.SKIPPED, f.repository.item(run.executionId, paper.id)!!.state)
+        }
+    }
+
+    @Test fun `successful papers proceed while failed papers retry with a new evidence union`() {
         Paper03RuntimeFixture().use { f ->
             f.seed(3)
             val missing = f.refs.first()[1]
@@ -404,7 +423,8 @@ class DiscoveryPaperReprocessRuntimeScenarios {
             val failed = f.service.detail(run.executionId)
             assertEquals(ReprocessState.COMPLETED_WITH_ERRORS, failed.run.state)
             assertEquals(2L, failed.summary.paperComplete); assertEquals(1L, failed.summary.paperErrors)
-            assertEquals(0L, failed.summary.targets)
+            assertTrue(failed.summary.targets > 0)
+            assertTrue(failed.summary.targetTotalKnown)
             val papers = f.repository.items(run.executionId, ReprocessKind.PAPER, 0, 20).items
             val error = papers.single { it.state == ReprocessItemState.ERROR }
             assertTrue(error.result!!.path("attempts").any { it.has("parsed") })
@@ -412,8 +432,12 @@ class DiscoveryPaperReprocessRuntimeScenarios {
             assertTrue(error.result!!.path("analysis").path("delta").isNull)
             val completeBefore = papers.filter { it.state == ReprocessItemState.COMPLETE }.associate { it.id to it.result }
             java.nio.file.Files.write(path, bytes)
-            f.service.retry(run.executionId, failed.run.revision); f.execute()
-            val complete = f.service.detail(run.executionId)
+            val retried = f.service.retry(run.executionId, failed.run.revision)
+            assertNotEquals(run.executionId, retried.executionId)
+            assertEquals(run.executionId, retried.scope.path("retryOf").asLong())
+            assertEquals(retried.executionId, f.service.retry(run.executionId, failed.run.revision).executionId)
+            f.execute()
+            val complete = f.service.detail(retried.executionId)
             assertEquals(ReprocessState.COMPLETED, complete.run.state)
             assertEquals(3L, complete.summary.paperComplete)
             assertTrue(complete.summary.targets > 0)

@@ -61,17 +61,17 @@
             if (!snapshot) return;
             const r = snapshot.run, s = snapshot.summary;
             text('runTitle', '重新处理 #' + r.executionId + ' · ' + (r.mode === 'AUDIT' ? '仅解析对照' : '补录 / 补齐并自动重审'));
-            text('runScope', '源执行 #' + r.sourceExecutionId + ' · 创建 ' + r.createdAt + ' · 更新 ' + r.updatedAt);
+            text('runScope', '源执行 #' + r.sourceExecutionId + (r.scope?.retryOf ? ' · 接续任务 #' + r.scope.retryOf : '') + ' · 创建 ' + r.createdAt + ' · 更新 ' + r.updatedAt);
             text('runState', states[r.state] || r.state);
             text('papersTotal', snapshot.totalKnown ? s.papers : null);
-            text('papersProcessed', s.paperComplete == null ? null : s.paperComplete + s.paperErrors + s.paperCancelled);
+            text('papersProcessed', s.paperComplete == null ? null : s.paperComplete + s.paperErrors + s.paperCancelled + (s.paperSkipped || 0));
             text('newRecords', s.actualNew); text('repairedRecords', s.actualUpdated); text('admitted', s.actualAdmitted); text('pendingVerification', s.pendingVerification);
             const proposal = r.mode === 'AUDIT'
                 ? '拟补录 ' + value(s.wouldCreate) + ' / 拟补齐 ' + value(s.wouldRepair) + '（目标；— 表示未核查档案存在性，候选不等于拟新增）'
                 : '正式补录按实际结果统计；拟变化仅对照模式提供';
-            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (s.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
+            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 跳过 ' + value(s.paperSkipped) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (s.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
             const progress = find('progress'); progress.max = snapshot.totalKnown && s.papers > 0 ? s.papers : 1;
-            if (snapshot.totalKnown) progress.value = s.paperComplete + s.paperErrors + s.paperCancelled; else progress.removeAttribute('value');
+            if (snapshot.totalKnown) progress.value = s.paperComplete + s.paperErrors + s.paperCancelled + (s.paperSkipped || 0); else progress.removeAttribute('value');
             text('phase', snapshot.progressText + ' · 阶段 ' + (reasons[r.scope?.reasonCode] || r.phase));
             action('cancel').hidden = !activeStates.has(r.state) || r.cancelRequested;
             action('cancel').disabled = mutating || authFailed;
@@ -223,7 +223,7 @@
         async function mutate(operation) {
             if (mutating || !snapshot || authFailed) return;
             const owner = epoch, current = snapshot.run; mutating = true; render();
-            try { const run = await post('/runs/' + current.executionId + '/' + operation, { revision: current.revision }); if (!stale(owner)) { snapshot.run = run; render(); await refreshRun(); } }
+            try { const run = await post('/runs/' + current.executionId + '/' + operation, { revision: current.revision }); if (!stale(owner)) { await selectRun(run); } }
             catch (e) { if (!stale(owner)) failure(e); }
             finally { if (!stale(owner)) { mutating = false; render(); } }
         }
