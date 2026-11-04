@@ -1,0 +1,163 @@
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt:8: * mail_attachment_transfer：一行 = 一个远端 part（唯一源身份）与其有界下载状态。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt:18:@Table("mail_attachment_transfer")
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachment.kt:19:@Table("mail_attachment")
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ExpertDocument.kt:7:@Table("expert_document")
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:12: *   `expert_document.expert_contact_id` 同时等于请求的 contactId；
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:14: * - 文件本身（文件名/大小/磁盘路径）只存 `mail_attachment`，材料类型/审核状态只存
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:15: *   `expert_document`，本表不重复。
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:18: * 与 `inbound_processing_id` 恒为 null），也不创建 `mail_attachment_transfer` 行。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt:3:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt:19:    private val attachmentRepository: MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt:32:                        val name = attachmentRepository.findById(id).orElse(null)?.fileName?.take(256)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:6:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:11:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:12:import com.weibo.talentintroduction.mail.repository.MailAttachmentTransferRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:31: * expert_document 归属展示材料；附件状态只来自 transfer 行 + 已验证的本地文件；
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:52:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:53:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:56:    private val mailAttachmentTransferRepository: MailAttachmentTransferRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:108:        val attachment = mailAttachmentRepository.findById(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:110:        val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:128:        val attachment = mailAttachmentRepository.findById(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:135:        val transfer = mailAttachmentTransferRepository.findByAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:590:     * 已确认材料（expert_document 归属）；任一外来/未知 ID 整批拒绝（400，
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:606:            val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:612:        if (mailAttachmentTransferRepository.countQueued() >= AttachmentTransferService.MAX_QUEUED_ROWS) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:660:            if (expertDocumentRepository.findFirstByMailAttachmentId(candidate.attachmentId) != null) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:663:            expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:717:                mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:720:                val byDirect = mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:725:                    mailAttachmentRepository.findById(attachmentId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:746:                mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(legacy.single())
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:756:            SELECT attachment_id FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:852:              FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:853:              JOIN mail_attachment a ON a.id = d.mail_attachment_id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:854:              LEFT JOIN mail_attachment_transfer t ON t.attachment_id = a.id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:863:              FROM mail_attachment a
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:868:                     SELECT 1 FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:875:              FROM mail_attachment a
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:880:                     SELECT 1 FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt:10:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt:35:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt:195:            mailAttachmentRepository.findById(attachmentId).orElse(null)?.fileName
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:24: * 只有归属有效（expert_document → attachment → 唯一 owner → 该 contact）的
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:8:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:12:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:52: *    `mail_attachment`（三选一 owner 中的 manual、真实大小、final 路径）→
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:53: *    `expert_document`（PENDING_REVIEW、沿用推断类型）。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:59: * 不建 `mail_attachment_transfer` 行，不推进 `MATERIALS_RECEIVED`，不触网。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:66:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:67:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:112:                val attachment = mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:126:                val document = expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:3:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:5:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:41:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:42:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:47:        val documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:50:            val attachment = mailAttachmentRepository.findById(doc.mailAttachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:54:            // processing owner（04 已绑定专家附件）以 expert_document 为准。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:13:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:26:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:203:     * LEFT JOIN expert_contact / EXISTS(mail_attachment)）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:209:            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId).isNotEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt:197:            "SELECT mail_record_id, inbound_processing_id, manual_upload_id FROM mail_attachment WHERE id = :id", mapOf("id" to id)
+src/main/kotlin/com/weibo/talentintroduction/document/repository/ManualExpertMaterialUploadRepository.kt:9: * 只服务两处只读需求：owner 解析（`mail_attachment.manual_upload_id` → 上传行 →
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:5:import com.weibo.talentintroduction.mail.repository.MailAttachmentTransferRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:38: * 领取/恢复/提交的 SQL 语义见 [MailAttachmentTransferRepository]；网络下载期间
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:44: * MATERIAL 是内建终局（落盘 + 回写 mail_attachment + STORED），不经过消费者。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:48:    private val transferRepository: MailAttachmentTransferRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:166:            transferRepository.recoverExpiredLeases(now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:176:            transferRepository.findQueuedPurposes()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:202:            val acquired = transferRepository.acquireNamedLock(CLAIM_LOCK_NAME, 5)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:211:                for (candidate in transferRepository.findQueuedCandidates(QUEUE_SCAN_LIMIT)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:213:                    val updated = transferRepository.tryClaim(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:232:                transferRepository.releaseNamedLock(CLAIM_LOCK_NAME)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:247:                val updated = transferRepository.renewLease(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:294:    // MATERIAL：下载 -> .part -> 原子转正 -> 事务提交（回写 mail_attachment）
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:488:                val u = transferRepository.commitStored(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:495:                    // mail_attachment 无 updated_at 列（V7 只有 created_at）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:498:                        UPDATE mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:530:                transferRepository.commitStored(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:578:                transferRepository.failAttempt(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:6:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:32: * 本服务不写 `mail_attachment` / `expert_document`，不调用 SMTP、不建排期、不变更
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:38:    private val repository: OutboundMailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:7:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:45:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:56:        val attachmentIntentIgnored = mailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:12:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:29: * 从事件（mail_record / bounce_record / mail_attachment）反推每位联系人的**期望** operator_status
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:45:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:57:        val attachments = mailAttachmentRepository.findAll()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:178:     *   附件经 MailAttachmentService.saveInboundAttachments 以 mailRecordId 落 mail_attachment）
+src/main/kotlin/com/weibo/talentintroduction/document/repository/ExpertDocumentRepository.kt:6:interface ExpertDocumentRepository : CrudRepository<ExpertDocument, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:3:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:5:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:6:import com.weibo.talentintroduction.mail.repository.MailAttachmentTransferRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:34:    private val transferRepository: MailAttachmentTransferRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:35:    private val attachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:36:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:123:            RegistrationResult(transferRepository.save(transfer), created = true)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:160:            transferRepository.findByAccountCodeAndFolderAndUidValidityAndImapUidAndPartPath(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:218:        require(attachmentRepository.findById(attachmentId).isPresent) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:268:        var queuedCount = transferRepository.countQueued()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:273:            val attachment = attachmentRepository.findById(attachmentId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:286:                val row = transferRepository.findByAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:294:            val row = transferRepository.findByAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:322:            val updated = transferRepository.markRequested(row.id ?: -1, requestedBy, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:329:                val current = transferRepository.findById(row.id ?: -1).orElse(row)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:353:        var queuedCount = transferRepository.countQueued()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:357:            val row = transferRepository.findById(transferId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:376:            val updated = transferRepository.markRequested(row.id ?: -1, requestedBy, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:383:                val current = transferRepository.findById(row.id ?: -1).orElse(row)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:391:        val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:6:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:9:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:10:import com.weibo.talentintroduction.mail.repository.MailAttachmentTransferRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:25: *   uk_mail_attachment_transfer_source）约束内创建 mail_attachment（已匹配时
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:38:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:39:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:40:    private val attachmentTransferRepository: MailAttachmentTransferRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:129:        mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:132:                if (expertDocumentRepository.findFirstByMailAttachmentId(attachmentId) == null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:133:                    expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:184:                attachmentTransferRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:196:     * metadata 附件登记：在 transfer 源唯一身份内幂等创建 mail_attachment +
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:232:            return mailAttachmentRepository.findById(existingAttachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:236:        val attachment = mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:248:        attachmentTransferRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:279:        val existing = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:283:        return expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:311:        val mailAttachment = mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:322:        return expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:345:        return mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:14:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:20:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:32:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:33:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:74:            .flatMap(mailAttachmentRepository::findAllByMailRecordIdOrderByCreatedAtAsc)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:81:            documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentRepository.kt:6:interface MailAttachmentRepository : CrudRepository<MailAttachment, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:21:class OutboundMailAttachmentRepository(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:514:    /** 每位专家全体资料数（expert_document；不随账号范围/筛选变化）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:519:              FROM expert_document
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:514:                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:545:                   SELECT 1 FROM mail_attachment ma
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:782:                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:821:                   SELECT 1 FROM mail_attachment ma
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:10: * mail_attachment_transfer 的全部状态写路径：
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:28:interface MailAttachmentTransferRepository : CrudRepository<MailAttachmentTransfer, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:42:        SELECT * FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:50:    @Query("SELECT COUNT(*) FROM mail_attachment_transfer WHERE state = 'QUEUED'")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:55:        SELECT COUNT(*) FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:63:        SELECT COUNT(*) FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:72:        SELECT DISTINCT purpose FROM mail_attachment_transfer WHERE state = 'QUEUED'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:81:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:102:        UPDATE mail_attachment_transfer t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:115:                    SELECT 1 FROM mail_attachment_transfer a
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:119:                    SELECT 1 FROM mail_attachment_transfer a
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:140:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:162:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:187:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:215:        UPDATE mail_attachment_transfer

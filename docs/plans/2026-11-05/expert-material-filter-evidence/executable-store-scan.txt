@@ -1,0 +1,32 @@
+./tmp/lucio-dorneles/register_materials.sh:34:duplicate_count="$(${mysql_cmd[@]} -e "SELECT COUNT(*) FROM expert_document d JOIN mail_attachment a ON a.id=d.mail_attachment_id WHERE d.expert_contact_id=6211 AND a.file_name IN ('${names[0]}','${names[1]}','${names[2]}')")"
+./tmp/lucio-dorneles/register_materials.sh:71:INSERT INTO mail_attachment(mail_record_id,inbound_processing_id,file_name,content_type,file_size,storage_path,created_at,manual_upload_id) VALUES (NULL,NULL,'${names[0]}','application/pdf',${sizes[0]},'${finals[0]}',NOW(6),@u1);
+./tmp/lucio-dorneles/register_materials.sh:73:INSERT INTO expert_document(expert_contact_id,mail_attachment_id,document_type,document_status,review_note,created_at,updated_at) VALUES (6211,@a1,'${types[0]}','PENDING_REVIEW',NULL,NOW(6),NOW(6));
+./tmp/lucio-dorneles/register_materials.sh:78:INSERT INTO mail_attachment(mail_record_id,inbound_processing_id,file_name,content_type,file_size,storage_path,created_at,manual_upload_id) VALUES (NULL,NULL,'${names[1]}','application/pdf',${sizes[1]},'${finals[1]}',NOW(6),@u2);
+./tmp/lucio-dorneles/register_materials.sh:80:INSERT INTO expert_document(expert_contact_id,mail_attachment_id,document_type,document_status,review_note,created_at,updated_at) VALUES (6211,@a2,'${types[1]}','PENDING_REVIEW',NULL,NOW(6),NOW(6));
+./tmp/lucio-dorneles/register_materials.sh:85:INSERT INTO mail_attachment(mail_record_id,inbound_processing_id,file_name,content_type,file_size,storage_path,created_at,manual_upload_id) VALUES (NULL,NULL,'${names[2]}','application/pdf',${sizes[2]},'${finals[2]}',NOW(6),@u3);
+./tmp/lucio-dorneles/register_materials.sh:87:INSERT INTO expert_document(expert_contact_id,mail_attachment_id,document_type,document_status,review_note,created_at,updated_at) VALUES (6211,@a3,'${types[2]}','PENDING_REVIEW',NULL,NOW(6),NOW(6));
+./src/main/resources/db/migration/V154__create_expert_meeting_video.sql:2:-- 只由 ExpertMeetingVideoService 读写：不写 manual_expert_material_upload / mail_attachment /
+./src/main/resources/db/migration/V154__create_expert_meeting_video.sql:3:-- expert_document / expert_material_status，也不加 contact 外键（未联系专家同样可上传）。
+./src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql:6:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql:9:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql:12:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:2:-- V119 mail_attachment_transfer（fast-p 02：有界、持久化附件传输服务）
+./src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:25:CREATE TABLE mail_attachment_transfer (
+./src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:60:        FOREIGN KEY (attachment_id) REFERENCES mail_attachment(id),
+./src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:1:CREATE TABLE mail_attachment (
+./src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:14:CREATE TABLE expert_document (
+./src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:27:        FOREIGN KEY (mail_attachment_id) REFERENCES mail_attachment(id)
+./src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:10:--   I-1 上传只写本表与 outbound/ 目录：不写 mail_attachment/expert_document，
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:8:--      mail_attachment，材料类型/审核状态仍是 expert_document。
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:9:--   2. mail_attachment 新增唯一可空 manual_upload_id，成为第三个附件所有者
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:34:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:37:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:40:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:48:      AND TABLE_NAME = 'mail_attachment'
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:55:    'ALTER TABLE mail_attachment DROP CHECK chk_mail_attachment_owner',
+./src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:63:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:1:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:4:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:7:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:10:ALTER TABLE mail_attachment
+./src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:14:ALTER TABLE mail_attachment

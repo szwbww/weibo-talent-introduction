@@ -1,0 +1,57 @@
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt:30:                        materialService.resolveReadyFile(contactId, id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:41: * 就绪判定（I-3）：[resolveReadyFile] / [resolveReadyFileUnscoped] 集中两种
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:107:    fun resolveReadyFile(contactId: Long, attachmentId: Long): ReadyFile {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:125:     * resolveMessageAttachments 调用链内完成，本方法不读 doc。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:127:    fun resolveReadyFileUnscoped(attachmentId: Long): ReadyFile {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:257:    /** 全部 processing 候选（材料旧关系唯一匹配 + 07 resolveMessageAttachments 共用语义）。 */
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:617:        val enqueued = attachmentTransferService.enqueueMaterial(contactId, distinct, requestedBy)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:695:    // resolveMessageAttachments：按消息（source/id）取附件（07 MailboxService
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:707:    fun resolveMessageAttachments(source: String, id: Long): List<MailAttachment> {
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:21: * [ExpertMaterialService.resolveReadyFile]（I-3）：任何所选文件未就绪即抛
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:34:        // 阶段 1：全部所选先解析并核验就绪（resolveReadyFile 内含归属/路径校验），
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:37:            materialService.resolveReadyFile(contactId, attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:48:        materialService.resolveReadyFile(contactId, attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:36: * [ExpertMaterialService.resolveReadyFile]（I-1：双 owner、realpath、409
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:97:        val ready = materialService.resolveReadyFile(contactId, attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:69:        // 材料附件挂在 INBOUND mail_record 上（MailAttachmentService.saveInboundAttachments 以 mailRecordId 关联）
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:178:     *   附件经 MailAttachmentService.saveInboundAttachments 以 mailRecordId 落 mail_attachment）
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:39: * （[ExpertMaterialService.resolveMessageAttachments]，与详情附件列表同一口径）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:200:        val materialCounts = repository.materialCountByContacts(contactIds)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:350:                expertMaterialService.resolveMessageAttachments(row.source, row.id)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxController.kt:25:    val hasAttachment: Boolean,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxController.kt:74:    val hasAttachment: Boolean,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:208:        val hasAttachment = recordId != null &&
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:228:            hasAttachment = if (hasAttachment) 1L else 0L,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:251:            hasAttachment = row.hasAttachment != 0L,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:280:     * [com.weibo.talentintroduction.document.service.ExpertMaterialService.resolveMessageAttachments]
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:290:        return resolver.resolveMessageAttachments(source, id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:313:            hasAttachment = resolveAttachments("MAIL_RECORD", recordId).isNotEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:331:        val hasAttachment = resolveAttachments("INBOUND_PROCESSING", recordId).isNotEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:346:            hasAttachment = hasAttachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:69:    /** 附件传输登记服务（04：最终 bridge 完整性由 [MailAttachmentService.bridgeInboundProcessing]
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:108:    fun processSingle(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:371:            mailAttachmentService.saveInboundAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:429:            mailAttachmentService.saveInboundAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:497:            mailAttachmentService.saveInboundAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:541:        val savedDocuments = mailAttachmentService.saveInboundAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1061:                val r = processSingle(account, mail, skipImapAck = false, notifyGroups = true)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1142:            processSingle(account, mail, skipImapAck = false, notifyGroups = false)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1374:        val attachmentIntent = mailAttachmentService.inferPrimaryIntentFromAttachments(attachments)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1444:     * 由 MailAttachmentService.bridgeInboundProcessing 跳过，不要求 transfer 行）；
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1495:            mailAttachmentService.bridgeInboundProcessing(savedId, received.attachments)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1552:            mailAttachmentService.bridgeInboundProcessing(savedId, received.attachments)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1679:        mailAttachmentService.saveUnmatchedAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt:25: * 统一委托 [ExpertMaterialService.resolveReadyFileUnscoped]（I-3）：未就绪抛
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt:28: * （MailboxService.resolveAttachments → 07 委托 resolveMessageAttachments）保证。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt:39:        val ready = materialService.resolveReadyFileUnscoped(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:926:    val hasAttachment: Long,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:210:        mailAttachmentService.ensureDocumentsForProcessingAttachments(recordId, contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:30: * processing 后由 [bridgeInboundProcessing] 补齐 inbound_processing_id；任何
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:46:    fun saveInboundAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:84:     * 绑定时再由 [ensureDocumentsForProcessingAttachments] 补齐。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:86:    fun saveUnmatchedAttachments(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:124:    fun ensureDocumentsForProcessingAttachments(inboundProcessingId: Long, expertContactId: Long) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:157:    fun bridgeInboundProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:358:    fun inferPrimaryIntentFromAttachments(attachments: List<ReceivedMailAttachment>): InboundIntentCode? {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:515:    fun materialCountByContacts(contactIds: List<Long>): Map<Long, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:257:    fun enqueueMaterial(

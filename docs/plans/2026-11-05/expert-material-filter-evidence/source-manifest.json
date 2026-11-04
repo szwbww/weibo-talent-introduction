@@ -1,0 +1,488 @@
+{
+  "date": "2026-11-05",
+  "git_head": "71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b",
+  "commands": [
+    {
+      "name": "store-access",
+      "argv": [
+        "rg",
+        "-n",
+        "--no-ignore",
+        "--hidden",
+        "(?i)\\b(mail_attachment|expert_document|mail_attachment_transfer)\\b|MailAttachmentRepository|ExpertDocumentRepository|MailAttachmentTransferRepository|(?:mailAttachmentRepository|attachmentRepository|expertDocumentRepository|attachmentTransferRepository|transferRepository)\\.",
+        "src/main/kotlin",
+        "scripts",
+        "-g",
+        "*.kt",
+        "-g",
+        "*.java",
+        "-g",
+        "*.sql",
+        "-g",
+        "*.py",
+        "-g",
+        "*.sh",
+        "-g",
+        "*.xml",
+        "-g",
+        "!**/__pycache__/**"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "matches": 163
+    },
+    {
+      "name": "material-consumers",
+      "argv": [
+        "rg",
+        "-n",
+        "--no-ignore",
+        "--hidden",
+        "hasAttachment|materialCountByContacts|resolveMessageAttachments|resolveReadyFile|inferPrimaryIntentFromAttachments|saveInboundAttachments|saveUnmatchedAttachments|bridgeInboundProcessing|ensureDocumentsForProcessingAttachments|enqueueMaterial\\(|processSingle\\(",
+        "src/main/kotlin",
+        "-g",
+        "*.kt",
+        "-g",
+        "*.java",
+        "-g",
+        "*.sql",
+        "-g",
+        "*.py",
+        "-g",
+        "*.sh",
+        "-g",
+        "*.xml",
+        "-g",
+        "!**/__pycache__/**"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "matches": 57
+    },
+    {
+      "name": "schema",
+      "argv": [
+        "rg",
+        "-n",
+        "--no-ignore",
+        "--hidden",
+        "(?i)\\b(mail_attachment|expert_document|mail_attachment_transfer)\\b",
+        "src/main/resources/db/migration",
+        "-g",
+        "*.kt",
+        "-g",
+        "*.java",
+        "-g",
+        "*.sql",
+        "-g",
+        "*.py",
+        "-g",
+        "*.sh",
+        "-g",
+        "*.xml",
+        "-g",
+        "!**/__pycache__/**"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "matches": 25
+    },
+    {
+      "name": "test-gates",
+      "argv": [
+        "rg",
+        "-n",
+        "--no-ignore",
+        "--hidden",
+        "mysqlIt|mysql-it|surefire|skipNodeTests|NoiseSite\\(.*(MailRecordRepository|MailboxService)",
+        "pom.xml",
+        "src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt",
+        "-g",
+        "*.kt",
+        "-g",
+        "*.java",
+        "-g",
+        "*.sql",
+        "-g",
+        "*.py",
+        "-g",
+        "*.sh",
+        "-g",
+        "*.xml",
+        "-g",
+        "!**/__pycache__/**"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "matches": 19
+    },
+    {
+      "name": "executable-store-scan",
+      "argv": [
+        "rg",
+        "-n",
+        "--no-ignore",
+        "--hidden",
+        "(?i)\\b(mail_attachment|expert_document|mail_attachment_transfer)\\b",
+        ".",
+        "-g",
+        "*.py",
+        "-g",
+        "*.sh",
+        "-g",
+        "*.java",
+        "-g",
+        "*.sql",
+        "-g",
+        "!**/target/**",
+        "-g",
+        "!.git/**",
+        "-g",
+        "!.worktrees/**",
+        "-g",
+        "!**/node_modules/**",
+        "-g",
+        "!**/.venv/**",
+        "-g",
+        "!docs/plans/_pre-merge-backup-2026-09-08/**"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "matches": 32
+    }
+  ],
+  "files": [
+    {
+      "path": "docs/design.md",
+      "sha256": "a3b11febac9f720b691205ec1f4234aeec3b9c3671e72ac3d42ade0857a28104",
+      "lines": 180
+    },
+    {
+      "path": "pom.xml",
+      "sha256": "27cbd651af794720d7c7b484944fcf1adff8c959278858362ca846dc22e3375a",
+      "lines": 261
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt",
+      "sha256": "46fe19e9565d5cc907ea4ea8f44dba50ec93fd39bfe48fbf27fa56ab48f02dc8",
+      "lines": 523
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt",
+      "sha256": "6a6f2fba0a0bd52f2e8ea06edcc7ae017585dc8b4ff8f295e534c7f7ae883bb6",
+      "lines": 97
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt",
+      "sha256": "2548e825d7b4bba33ebfe9f67cfbea135e70b48ef1ad7de71ce998746ec85f99",
+      "lines": 329
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/common/controller/GlobalExceptionHandler.kt",
+      "sha256": "8702a8096941661335cfe896bbc5f2338873f4360f389cf379d365f758517010",
+      "lines": 134
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertDocumentAnalysisController.kt",
+      "sha256": "7ea5bc127233b55b30af145432e3d92e2ab0a1584473afb80e8bd3f5320515fd",
+      "lines": 66
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt",
+      "sha256": "914387aeafc9a4133a62bb66babd66b97f8ef44ded18c3144c565585d6d7516f",
+      "lines": 209
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/domain/ExpertDocument.kt",
+      "sha256": "bb94c7ed569e3ea0c28ae11c8c8cd8deb287f5d576c0759d967d5426f527b79a",
+      "lines": 40
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt",
+      "sha256": "f8a4550926c2daa39c1332059f6154317e4d5d02f2f4fb885f4f101934bb919d",
+      "lines": 27
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/repository/ExpertDocumentRepository.kt",
+      "sha256": "8ca35d32bfc5755af1a03b5e401c0c11f674c2e3e4b452f383e3a0b3a3f90004",
+      "lines": 10
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/repository/ManualExpertMaterialUploadRepository.kt",
+      "sha256": "f355846e375bcd44ca1c8bad5d9631a60bacd9dac2a13a0efe9f6d66e18348bf",
+      "lines": 14
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt",
+      "sha256": "d0cb171d0e4cbcbc0e2d892019550f21f919d751de761174f5330973d656bbc8",
+      "lines": 89
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt",
+      "sha256": "6e56ff4c9db02972d7a03deb2b7e1204efa9bc612cca00a4e546c75d21fdce10",
+      "lines": 334
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt",
+      "sha256": "4286e9b3842870b01d370a3b105f39edf0e256227b0054f1a724b31145482d3e",
+      "lines": 133
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt",
+      "sha256": "569b70da4706062db0c8e7494e43d75bd89db89cdc78ee3a625423ae132d29a1",
+      "lines": 136
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt",
+      "sha256": "2a06253715e9bc34957c81452066ab4ea0dddef138af34544fe92e78ec8f3ebd",
+      "lines": 1045
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt",
+      "sha256": "e16ebbd83f01cf3dca8faf720adfa170ea02a449c0d768118bd4fb52817b0539",
+      "lines": 231
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt",
+      "sha256": "76df786ea48d797d6f65a0238eee5a9b23660948658aaef0200cbed5fdac2dac",
+      "lines": 525
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxController.kt",
+      "sha256": "e0d278f15aa2afb07432bd80a0d0575bb074933ea6d378dd2d6d2ed51e76d83b",
+      "lines": 153
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachment.kt",
+      "sha256": "b04e92aa55d701fae3c05d76869999f3d2e65b8a88d5799818ab80d81e235e6e",
+      "lines": 31
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt",
+      "sha256": "5defc50c5bc944ba5e797cc6f6dc46e822df44e2e87389bd5d370fd18fb0334a",
+      "lines": 76
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentRepository.kt",
+      "sha256": "ff6c56c80c81f0ad6fdbc9dd844d3628603e9864b77ecf68e5d474d74be4f8d4",
+      "lines": 9
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt",
+      "sha256": "d678d2801bdd067b5e9d8008e6c0d9b877b4632069e14c8477a5b8202fa17a5e",
+      "lines": 241
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt",
+      "sha256": "a8876fe58f09e528012a41e25677e093c579512d754f6c0f1b954ddb4ad4fd91",
+      "lines": 928
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt",
+      "sha256": "243bff56bdcd2df69eac967121d58d4b0de4bdd5e77aaafc868a170bb3af2f67",
+      "lines": 1070
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt",
+      "sha256": "9c8610d9ad5b1b4c947edf0c051c259eda856dbc6ac21bbc7295949056561bc2",
+      "lines": 89
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt",
+      "sha256": "3e75ee774fdc7f953205662b842e8b55952915c0aaafb8850d70ddcfe11e3fa9",
+      "lines": 415
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt",
+      "sha256": "81586f4cea08ee171c78ee8451b6a691d55c250d1c6a4f8d70842a12f7859ec1",
+      "lines": 736
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt",
+      "sha256": "a06d90289417ecfeb76de215d714065ab9b6b779c3e9d930108a6a6cb3a0b500",
+      "lines": 1797
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt",
+      "sha256": "7de53b70d36c14aba8bb3dc01b6285851e01f3de1a1d2da2ea9da1a95e834fdb",
+      "lines": 219
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt",
+      "sha256": "49b43e2d4e100b613286d32d1e7a8b09047b881fbd8a01e9d6bd0b490b17ee5f",
+      "lines": 100
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/DmarcReportDetector.kt",
+      "sha256": "61718c707409f401eccf07d46ec54e87d8e48984871a7a2c5864f4e846dad4a1",
+      "lines": 47
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt",
+      "sha256": "d99e8a524c34bbd81c8f214eb7b034e7085d75dc8af2f4c3df70db44dba1602a",
+      "lines": 209
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt",
+      "sha256": "6d7c40a39b4199628667afdfa6eda3df2e7094d6676453044a7402b2f97c09fa",
+      "lines": 733
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt",
+      "sha256": "07dfedbf67de3b6aa38e27560a61a05449d717bbcac1c81d93c1a98fe5dca553",
+      "lines": 394
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReceiveService.kt",
+      "sha256": "8e26e1ffbc78ef464f3b8d9134f464457019b84e1faf2691636f69b20bcb02f7",
+      "lines": 112
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt",
+      "sha256": "77e507fb84871c4cd48e9cd0d2b6a57cd59a4864bdc5c91076bf40b65ec17eff",
+      "lines": 72
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt",
+      "sha256": "0947aafc38fb96aac1160b8ef46966429af87ae1ec2160657bde94704987166d",
+      "lines": 628
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt",
+      "sha256": "85a68528556475b8b4b46f04be2269487ecc885f51243fc99d752660aa88e084",
+      "lines": 394
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt",
+      "sha256": "9bbfb013e9a38fb47a91264809ea914187ab38212262a561d74f357ba92143be",
+      "lines": 282
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt",
+      "sha256": "4567d1ab6a0aeea7ed1f3ac40c23367be76b636af117b96966420c10b2be2d7a",
+      "lines": 289
+    },
+    {
+      "path": "src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql",
+      "sha256": "f46e3fa7fb45adf33f208f8f6f9c24c2f66465da973916c3ea9fb66faa586aab",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql",
+      "sha256": "c73b270c0ed12b60d86528d2504d1da989604359634e1a72df37121603415eb7",
+      "lines": 71
+    },
+    {
+      "path": "src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql",
+      "sha256": "6d98c6d9a4c456081020148a6986749694c3d5df2afbca030ec300cbcecd1a29",
+      "lines": 35
+    },
+    {
+      "path": "src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql",
+      "sha256": "392cf32955da708eb35f124ad82095ad8d69c906d7693c987e186e21b9ecc5d9",
+      "lines": 67
+    },
+    {
+      "path": "src/main/resources/db/migration/V154__create_expert_meeting_video.sql",
+      "sha256": "010fe861175e050fdd38bbff7e2a831fc0e2575a2cf08d10711b63c9e3ee5ec1",
+      "lines": 23
+    },
+    {
+      "path": "src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql",
+      "sha256": "0824e5fe13f6357004b3b98dc5887dc391d58ddb57821a267b142bc4d86222e9",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql",
+      "sha256": "c6a025dbefd7ede3fc321757a0387d36334658490818a8a8f8b56a02d3ba1957",
+      "lines": 28
+    },
+    {
+      "path": "src/main/resources/static/app.js",
+      "sha256": "59ec81deef85c32988a1952d20350d8a426b0d0755ea7796b5621f12632b7d50",
+      "lines": 28294
+    },
+    {
+      "path": "src/main/resources/static/expert-materials.js",
+      "sha256": "29f5f70c46bfede0e71dfb232c7eab4121a0cb00f050468f8070c820e0f7bb75",
+      "lines": 1753
+    },
+    {
+      "path": "src/main/resources/static/mailbox-chat.js",
+      "sha256": "1af5f138c56ff26067a3e29967148d306dd75f274a51828c53a332fa7f2edd25",
+      "lines": 10685
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt",
+      "sha256": "16bde2c6fbd6b64750dfb0de98be3e874307fc3b8e20f88b50082b515abab98b",
+      "lines": 203
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileServiceTest.kt",
+      "sha256": "fc70463e35a25cdbc8bc6c634a8c93c5ce8fde197b9c1f5c20481e8a6b9408fd",
+      "lines": 581
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/document/controller/ManualExpertMaterialUploadFlowTest.kt",
+      "sha256": "772b2a14b7b25d389f1892250ada52db8b097ff0205135f3b415bcc0f4727bad",
+      "lines": 956
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveServiceTest.kt",
+      "sha256": "54edda27026377b77368955961704d669d4a863887172a255e5bd7431e6a491a",
+      "lines": 241
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt",
+      "sha256": "0d26aa9e3b7f092a983f527545198a1828ece73dd6c51a2e1758012620111101",
+      "lines": 1184
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt",
+      "sha256": "b5c6b2adfa29e132bb531aa0446498013677a77eeef81ed82bd3c6daaaaac695",
+      "lines": 1650
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt",
+      "sha256": "8cc7f51d490a25b2017821d504b0dd32f6ae4e9a7393ac2763852763566e82c4",
+      "lines": 3486
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewServiceTest.kt",
+      "sha256": "c5c5b1a2fd2cf7d720cd80b1b6577057ab294a22890aa44b246d347de9db47af",
+      "lines": 591
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt",
+      "sha256": "6e0daabf97c9f45e8a014740b0780c96059c70bf3d2dc4ca5421bd77e37bb3f6",
+      "lines": 922
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt",
+      "sha256": "103debf806099dee9ab3a319f7889b9b337ca4f2cd868f133036c2f17ada549a",
+      "lines": 1112
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentServiceTest.kt",
+      "sha256": "3ca2f47c35bd71a7a199c1c35755587d51a1c7b5162e4bf52c94f2a926cb1b09",
+      "lines": 532
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt",
+      "sha256": "ad840ba984c055ca455f334605fcde1235e829a57b273d0f6138af27e3f691ba",
+      "lines": 886
+    },
+    {
+      "path": "tmp/lucio-dorneles/register_materials.sh",
+      "sha256": "450ba2fd6c6d55e72172f81c12f67e7120c9d1043d2ce9c18ca9e9e4f7493102",
+      "lines": 101
+    }
+  ],
+  "limits": [
+    "Source audit only; no production DB/IMAP accessed.",
+    "No implementation or tests executed in this planning task.",
+    "User screenshot does not expose attachment IDs or MIME headers."
+  ]
+}

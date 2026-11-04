@@ -1,0 +1,19 @@
+pom.xml:24:        <mysqlIt>false</mysqlIt>
+pom.xml:181:                <artifactId>maven-surefire-plugin</artifactId>
+pom.xml:185:                        <mysqlIt>${mysqlIt}</mysqlIt>
+pom.xml:209:                            <skip>${skipNodeTests}</skip>
+pom.xml:224:                            <skip>${skipNodeTests}</skip>
+pom.xml:239:                            <skip>${skipNodeTests}</skip>
+pom.xml:255:            <id>mysql-it</id>
+pom.xml:257:                <mysqlIt>true</mysqlIt>
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:71:        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:118:        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 628, "ec.operator_status AS operator_status"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:122:        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 685, "ec.operator_status, ec.current_index_level")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:41: * 03 元数据读取集成测试（mysqlIt 门禁；本地 JDK socket 脚本式 IMAP，无新中间件）。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:49:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:37: * 专家会话查询真实 MySQL 集成测试（fast-p 07；G-1 门禁，mysqlIt）。
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:39: * 走 mysqlIt 门禁显式启用（-Pmysql-it）连接 127.0.0.1:3306/talent_introduction
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:51: *   `mvn test` 全量执行，不依赖 mysqlIt 门禁）。
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:53:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1588: * 源码级兼容回归（无 DB、不依赖 mysqlIt 门禁）：两条 latest 查询不得再生成
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1593: * [MailboxConversationRepositoryIT] 在真实 MySQL（mysqlIt）上证明。

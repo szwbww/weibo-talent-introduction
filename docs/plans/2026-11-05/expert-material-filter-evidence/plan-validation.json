@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-05",
+  "checks": [
+    {
+      "plan": "docs/plans/2026-11-05/expert-material-filter-01-read.md",
+      "required_sections_ordered": true,
+      "file_count": 9,
+      "manifest_matches": true,
+      "manual_cases": 5
+    },
+    {
+      "plan": "docs/plans/2026-11-05/expert-material-filter-02-ingress.md",
+      "required_sections_ordered": true,
+      "file_count": 9,
+      "manifest_matches": true,
+      "manual_cases": 7
+    },
+    {
+      "plan": "docs/plans/2026-11-05/expert-material-filter-03-projections.md",
+      "required_sections_ordered": true,
+      "file_count": 9,
+      "manifest_matches": true,
+      "manual_cases": 4
+    },
+    {
+      "plan": "docs/plans/2026-11-05/expert-material-filter-master.md",
+      "required_sections_ordered": true,
+      "manual_cases": 3
+    }
+  ],
+  "source_files_unchanged": 65,
+  "implementation_files": 27,
+  "production_files": 13,
+  "test_files": 14,
+  "product_tests_run": false,
+  "knowledge_selected": 9,
+  "knowledge_new": "docs/knowledge/mail/K-material-filter-raw-owner-and-status-boundaries.md",
+  "cascade_targets": [],
+  "limits": [
+    "Structural verification only; code was not implemented or tested.",
+    "No production database or IMAP inspected.",
+    "Named image classification and historical operator-status downgrade are excluded."
+  ],
+  "local_plan_links_resolve": true,
+  "document_only": true
+}

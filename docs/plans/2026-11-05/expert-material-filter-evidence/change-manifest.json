@@ -1,0 +1,155 @@
+{
+  "date": "2026-11-05",
+  "plans": {
+    "01": [
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialEligibility.kt",
+        "operation": "新增",
+        "purpose": "纯分类规则与固定 SQL 谓词"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt",
+        "operation": "修改",
+        "purpose": "列表/统计/操作校验/补建/消息附件"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt",
+        "operation": "修改",
+        "purpose": "会话材料数量"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt",
+        "operation": "修改",
+        "purpose": "旧文档列表过滤"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt",
+        "operation": "修改",
+        "purpose": "专家详情两类数组过滤"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialEligibilityTest.kt",
+        "operation": "新增",
+        "purpose": "分类边界测试"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt",
+        "operation": "修改",
+        "purpose": "历史读取、操作及补建回归"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveServiceTest.kt",
+        "operation": "修改",
+        "purpose": "历史签名 ID 混选拒绝"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialEligibilityReadIT.kt",
+        "operation": "新增",
+        "purpose": "真实 MySQL SQL/服务读取与旧读者集成"
+      }
+    ],
+    "02": [
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt",
+        "operation": "修改",
+        "purpose": "MIME 叶节点提前排除"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt",
+        "operation": "修改",
+        "purpose": "公共业务入口过滤附件集合"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt",
+        "operation": "修改",
+        "purpose": "两类登记/绑定补建/桥接/意图防漏"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt",
+        "operation": "修改",
+        "purpose": "手动上传提前拒绝签名"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt",
+        "operation": "修改",
+        "purpose": "两模式 MIME 回归"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt",
+        "operation": "修改",
+        "purpose": "真实 JavaMail 协议零附件字节读取"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt",
+        "operation": "修改",
+        "purpose": "多业务分支不误推进"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentServiceTest.kt",
+        "operation": "修改",
+        "purpose": "登记、桥接及补建幂等"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/document/controller/ManualExpertMaterialUploadFlowTest.kt",
+        "operation": "修改",
+        "purpose": "上传拒绝及正常图片回归"
+      }
+    ],
+    "03": [
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt",
+        "operation": "修改",
+        "purpose": "四处 has_attachment SQL 投影"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt",
+        "operation": "修改",
+        "purpose": "任务列表实体投影"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt",
+        "operation": "修改",
+        "purpose": "附件忽略提示的判断"
+      },
+      {
+        "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt",
+        "operation": "修改",
+        "purpose": "只读材料事件筛选"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt",
+        "operation": "修改",
+        "purpose": "任务列表与消息详情口径"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewServiceTest.kt",
+        "operation": "修改",
+        "purpose": "预览提示回归"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileServiceTest.kt",
+        "operation": "修改",
+        "purpose": "只读期望状态及人工覆盖"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxSignatureProjectionIT.kt",
+        "operation": "新增",
+        "purpose": "两条真实仓储查询的四处分支"
+      },
+      {
+        "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt",
+        "operation": "机械同步",
+        "purpose": "仅既有噪声点行号"
+      }
+    ]
+  },
+  "counts": {
+    "01": 9,
+    "02": 9,
+    "03": 9
+  },
+  "unique_files": 27,
+  "production_files": 13,
+  "test_files": 14,
+  "excludes": "Planning documents, evidence receipts and knowledge maintenance are not implementation files."
+}
