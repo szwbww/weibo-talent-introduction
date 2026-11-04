@@ -38,6 +38,9 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
+import com.weibo.talentintroduction.rag.domain.RagFact
+import com.weibo.talentintroduction.rag.service.RagCorpusSnapshot
+import com.weibo.talentintroduction.rag.service.RagKnowledgeBase
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
@@ -103,6 +106,9 @@ class PendingMailOperationServiceTest {
     // 06 (T1/I-1/I-2): 通用附件协作件 —— 本文件断言两条入口的 id/身份透传与文件集合流动，
     // 真实原件读取/归属/容量边界由 OutboundAttachmentFlowTest 用真实 04 服务覆盖。
     private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
+    // fast-p 02 (T3/I-5): RAG 证据只在 payload 上传递（finalizeSuccess 同事务落库），
+    // Pending 不再持有 rag 写入协作件；此处只提供发送门禁需要的语料快照。
+    private val ragKnowledgeBase = Mockito.mock(RagKnowledgeBase::class.java)
     private val draftRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class.java)
     private val draftService = MailReplyDraftService(draftRepository,expertContactRepository,inboundMailProcessingRepository,
         Mockito.mock(com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java),outboundAttachmentService,
@@ -144,6 +150,7 @@ class PendingMailOperationServiceTest {
         meetingConfirmationService,
         org.mockito.Mockito.mock(ReplyIdentityService::class.java),
         Mockito.mock(ExpertMailPermissionGuard::class.java),
+        ragKnowledgeBase = ragKnowledgeBase,
         outboundAttachmentService = outboundAttachmentService,
         mailReplyDraftService = draftService
     )
@@ -1424,6 +1431,70 @@ class PendingMailOperationServiceTest {
     }
 
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+
+    // fast-p 02 (T3/I-5): RAG 存证随 payload.ragEvidence 进入成功事务；Pending 不再在
+    // finalize 之外直接写 mail_record_rag_fact（本类未注入该 repository，若回退会 NPE）。
+    @Test
+    fun `sendManualRichReply carries ordered rag evidence on the payload`() {
+        Mockito.`when`(ragKnowledgeBase.fingerprint()).thenReturn("fp-1")
+        Mockito.`when`(ragKnowledgeBase.snapshot()).thenReturn(
+            RagCorpusSnapshot(
+                facts = listOf(ragFact("KB-FUND-033"), ragFact("KB-COMP-007")),
+                phraseGroups = emptyList(),
+                intentCoverage = emptyList(),
+                mandatoryRules = emptyList(),
+                exclusions = emptyList(),
+                fingerprint = "fp-1"
+            )
+        )
+        val captured = mutableListOf<ManualReplySendAttemptService.SendPayload>()
+        Mockito.doAnswer { invocation ->
+            captured.add(invocation.getArgument<ManualReplySendAttemptService.SendPayload>(0))
+            ManualReplySendAttemptService.ClaimedAttempt(
+                attemptId = 1L,
+                messageId = "<manual-rich-abc@weibo.com>",
+                result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+            )
+        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = "sender-1",
+            subject = "Re: Test",
+            htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.",
+            operatorName = "op",
+            ragFactCodes = listOf("KB-FUND-033", "KB-COMP-007", "KB-FUND-033"),
+            ragCorpusFingerprint = "fp-1"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val payload = captured.single()
+        val evidence = requireNotNull(payload.ragEvidence)
+        assertEquals(listOf("KB-FUND-033", "KB-COMP-007", "KB-FUND-033"), evidence.factCodes)
+        assertEquals("fp-1", evidence.corpusFingerprint)
+        assertEquals(emptyList<Long>(), payload.canonicalQaRuleIds)
+        assertNull(payload.primaryRuleId)
+    }
+
+    private fun ragFact(code: String) = RagFact(
+        factCode = code,
+        area = code.substringAfter("-").substringBefore("-"),
+        seq = code.takeLast(3).toInt(),
+        title = "Title $code",
+        category = "C",
+        questionVariants = "",
+        keywords = "",
+        answer = "Answer body for $code.",
+        coverageKeys = "",
+        replyPolicy = "AUTO",
+        status = "APPROVED",
+        riskLevel = "LOW",
+        renderMode = "COMPOSE",
+        sourceRefs = "",
+        enabled = true,
+        sortOrder = 1
+    )
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
 

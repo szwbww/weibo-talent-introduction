@@ -8,6 +8,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
 import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
 import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
@@ -576,4 +577,192 @@ object DelayedManualReplySnapshotCodec {
     }
 
     private fun fail(message: String): Nothing = throw DelayedManualReplySnapshotException(message)
+}
+
+/**
+ * fast-p 02（T1/I-4）：运行时冻结准备结果 → 持久快照的显式白名单工厂。
+ *
+ * 只读取下列明确字段；`MailSenderAccount`/`InboundMailProcessing`/`PreparedManualReply.source`
+ * 的联系人实体、SMTP 凭据、附件原件字节与绝对路径**都不进入快照**。worker 按账号码/联系
+ * 人 id 重新读取实体，信封内容只来自冻结正文与 ICS。
+ *
+ * 该工厂不做时钟、数据库或网络访问；输出仍需经 [DelayedManualReplySnapshotCodec.encode]
+ * 的严格校验。LEGACY 恢复仅适用于来信路径（01 的 `DelayedLegacyRestore` 以真实来信 id 为
+ * 键）；无草稿引用的会话回信无法在不丢失原请求上下文的前提下被恢复，直接 fail closed。
+ */
+internal object DelayedManualReplySnapshotFactory {
+
+    fun fromPrepared(prepared: PreparedManualReply): DelayedManualReplySnapshot {
+        val payload = prepared.payload
+        val evidence = prepared.evidence
+        val assembly = evidence.verifiedAssembly?.let { verified ->
+            val response = verified.response
+            DelayedReplyAssemblySnapshot(
+                source = response.source,
+                itemVersions = response.itemVersions,
+                finalParagraphByRequestKey = response.finalParagraphByRequestKey,
+                diagnostics = response.diagnostics
+            )
+        }
+        val payloadSnapshot = DelayedSendPayloadSnapshot(
+            orcidId = payload.orcidId,
+            contactId = payload.contactId,
+            inboundProcessingId = payload.inboundProcessingId,
+            accountCode = payload.accountCode,
+            normalizedRecipient = payload.normalizedRecipient,
+            subject = payload.subject,
+            finalText = payload.finalText,
+            finalHtml = payload.finalHtml,
+            inReplyTo = payload.inReplyTo,
+            canonicalQaRuleIds = payload.canonicalQaRuleIds,
+            primaryRuleId = payload.primaryRuleId,
+            sourceAnchor = payload.sourceAnchor,
+            idempotencyRequestId = payload.idempotencyRequestId,
+            calendarAttachment = payload.calendarAttachment,
+            meetingEvent = meetingEventOf(payload.meetingEvent),
+            outboundAttachments = payload.outboundAttachments
+        )
+        return DelayedManualReplySnapshot(
+            schemaVersion = DELAYED_MANUAL_REPLY_SCHEMA_VERSION,
+            payload = payloadSnapshot,
+            source = DelayedReplySourceSnapshot(
+                smtpInReplyTo = prepared.source.smtpInReplyTo,
+                smtpReferences = prepared.source.smtpReferences,
+                anchorMailRecordId = prepared.source.anchorMailRecordId,
+                // 真实来源 Message-ID：来信路径 = processing.messageId；会话路径 = 锚点记录。
+                sourceMessageId = prepared.source.inboundRecord?.messageId?.takeIf { it.isNotBlank() }
+                    ?: prepared.source.identityAnchor?.messageId?.takeIf { it.isNotBlank() },
+                inboundProcessingId = payload.inboundProcessingId,
+                accountCode = payload.accountCode,
+                recipient = payload.normalizedRecipient
+            ),
+            restore = restoreOf(prepared, assembly),
+            evidence = DelayedReplyEvidenceSnapshot(
+                carriesQa = evidence.carriesQa,
+                canonicalFactIds = evidence.canonicalFactIds,
+                serverSuggestedFactIds = evidence.serverSuggestedFactIds,
+                edited = evidence.edited ?: false,
+                ragFactCodes = evidence.ragFactCodes.orEmpty(),
+                ragCorpusFingerprint = evidence.ragFingerprintAtSend.orEmpty(),
+                assembly = assembly,
+                templateTextBody = evidence.templateTextBody,
+                auditNote = prepared.auditNote.take(MAX_AUDIT_TEXT_LENGTH),
+                bodyPreviewText = prepared.bodyPreviewText.take(MAX_AUDIT_TEXT_LENGTH),
+                operator = (prepared.operatorName ?: prepared.authenticatedUsername ?: "UNKNOWN")
+                    .trim()
+                    .ifEmpty { "UNKNOWN" }
+                    .take(MAX_OPERATOR_LENGTH)
+            ),
+            confirmation = DelayedReplyConfirmationSnapshot(
+                safetyWarningConfirmed = prepared.safetyWarningConfirmed,
+                strongConfirmationRequired = prepared.requiresStrong,
+                strongConfirmationText = prepared.strongConfirmationText?.takeIf { it.isNotBlank() },
+                verifiedContentSha256 = verifiedContentSha256(payloadSnapshot)
+            )
+        )
+    }
+
+    private fun restoreOf(
+        prepared: PreparedManualReply,
+        assembly: DelayedReplyAssemblySnapshot?
+    ): DelayedReplyRestore {
+        prepared.reviewSendRef?.let { ref ->
+            val draft = ref.draft
+            return DelayedReviewRestore(
+                reviewId = draft.id,
+                version = draft.version,
+                actor = ref.actor,
+                confirmationEventId = ref.confirmationEventId,
+                subject = draft.subject,
+                html = draft.html,
+                text = draft.text,
+                accountCode = draft.accountCode,
+                contactId = draft.contactId,
+                targetKind = draft.targetKind,
+                targetId = draft.targetId,
+                sendRequestId = requireNotNull(draft.sendRequestId) {
+                    "Approved review draft has no sendRequestId"
+                },
+                approvedContextToken = requireNotNull(draft.approvedContextToken) {
+                    "Approved review draft has no approvedContextToken"
+                }
+            )
+        }
+        prepared.draftSendRef?.let { ref ->
+            return DelayedDraftRestore(
+                owner = ref.owner,
+                draftId = ref.id,
+                draftVersion = ref.version,
+                contactId = ref.target.contactId,
+                targetKind = ref.target.kind.name,
+                processingId = ref.target.processingId,
+                accountScope = ref.target.accountScope,
+                subject = ref.content.subject,
+                html = ref.content.html,
+                text = ref.content.text,
+                contextJson = MailReplyDraftContextCodec.serialize(ref.content.context),
+                sendAttemptId = ref.sendAttemptId,
+                sendVersion = ref.sendVersion
+            )
+        }
+        val inboundId = prepared.payload.inboundProcessingId
+            ?: throw DelayedManualReplySnapshotException(
+                "Legacy conversation replies require a saved draft before delayed delivery"
+            )
+        return DelayedLegacyRestore(
+            inboundProcessingId = inboundId,
+            subject = prepared.rawSubject,
+            html = prepared.rawHtmlBody,
+            text = prepared.rawTextBody.orEmpty(),
+            qaRuleIds = prepared.evidence.canonicalFactIds,
+            ragFactCodes = prepared.evidence.ragFactCodes.orEmpty(),
+            assembly = assembly,
+            templateTextBody = prepared.evidence.templateTextBody,
+            calendarAttachment = prepared.payload.calendarAttachment,
+            meetingEvent = meetingEventOf(prepared.payload.meetingEvent),
+            outboundAttachments = prepared.payload.outboundAttachments
+        )
+    }
+
+    /**
+     * 结构化排期输入：只搬运同一次 validateAndBuild 已核对的 UTC 时刻与链接，
+     * 绝不重新取当前时间、重新生成 ICS 或接受浏览器排期对象。
+     */
+    private fun meetingEventOf(event: MeetingCalendarInput?): DelayedMeetingEventSnapshot? =
+        event?.let {
+            DelayedMeetingEventSnapshot(
+                startUtcMs = it.startUtc.toEpochMilli(),
+                endUtcMs = it.endUtc.toEpochMilli(),
+                meetingLink = it.meetingLink?.takeIf { link -> link.isNotBlank() }
+            )
+        }
+
+    /**
+     * 已验证内容摘要：final subject/text/html + ICS 语义摘要 + 附件 sha256 顺序。
+     * 重发/撤回恢复必须以同一份正文为准，绝不把改变后的内容复用旧确认。
+     */
+    private fun verifiedContentSha256(payload: DelayedSendPayloadSnapshot): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        fun feed(value: String?) {
+            val bytes = (value ?: "").toByteArray(Charsets.UTF_8)
+            digest.update(
+                byteArrayOf(
+                    (bytes.size ushr 24).toByte(),
+                    (bytes.size ushr 16).toByte(),
+                    (bytes.size ushr 8).toByte(),
+                    bytes.size.toByte()
+                )
+            )
+            digest.update(bytes)
+        }
+        feed(payload.subject)
+        feed(payload.finalText)
+        feed(payload.finalHtml)
+        feed(payload.calendarAttachment?.semanticSha256)
+        payload.outboundAttachments.forEach { feed(it.sha256) }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private const val MAX_AUDIT_TEXT_LENGTH = 4_000
+    private const val MAX_OPERATOR_LENGTH = 64
 }

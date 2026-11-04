@@ -9,8 +9,10 @@ import com.weibo.talentintroduction.campaign.service.MeetingCalendarService
 import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
+import com.weibo.talentintroduction.mail.domain.MailRecordRagFact
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
+import com.weibo.talentintroduction.mail.repository.MailRecordRagFactRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -34,7 +36,10 @@ class ManualReplySendAttemptService(
     // 调用方已在事务中，本方法即调用方）。
     private val meetingCalendarService: MeetingCalendarService,
     private val mailReplyDraftService: MailReplyDraftService? = null,
-    private val mailReviewDraftService: MailReviewDraftService? = null
+    private val mailReviewDraftService: MailReviewDraftService? = null,
+    // fast-p 02 (T3/I-5)：RAG 存证写入必须在 SENT 同一事务内完成。可空默认值保持既有
+    // 直接构造的单元测试零改动；RAG payload 入口在事务内 requireNotNull 防御性校验。
+    private val mailRecordRagFactRepository: MailRecordRagFactRepository? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(ManualReplySendAttemptService::class.java)
@@ -97,7 +102,19 @@ class ManualReplySendAttemptService(
         // Server-only raw snapshot, deliberately absent from the fingerprint byte stream.
         internal var draftSendRef: ValidatedDraftSendRef? = null
         internal var reviewSendRef: MailReviewSendRef? = null
+        /**
+         * fast-p 02 (T3/I-5)：RAG 存证（请求顺序的 fact_code + 发送时语料指纹）。
+         * server-only、不进入 computeFingerprint；finalizeSuccess 在 SENT 同一事务内
+         * 写入 mail_record_rag_fact。null 表示本次发送无 RAG 证据（空列表同样不写行）。
+         */
+        internal var ragEvidence: RagEvidence? = null
     }
+
+    /** RAG 存证载荷（有序、可重复；绝不进入指纹/审计正文）。 */
+    internal data class RagEvidence(
+        val factCodes: List<String>,
+        val corpusFingerprint: String
+    )
 
     /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
     data class CompletedOutboundReply(
@@ -446,6 +463,11 @@ class ManualReplySendAttemptService(
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun finalizeSuccess(payload: SendPayload, attemptId: Long, messageId: String): Long {
+        // fast-p 02 (T3/I-5)：QA 与 RAG 证据互斥 —— 在任何写入之前 fail closed，
+        // 绝不产生同时写入 mail_record_qa_rule 与 mail_record_rag_fact 的记录。
+        require(payload.ragEvidence == null || payload.canonicalQaRuleIds.isEmpty()) {
+            "QA and RAG evidence are mutually exclusive"
+        }
         val review = payload.reviewSendRef?.let { reviewService().lockForSendResult(it) }
         validateReviewPayload(payload)
         check(review == null || review.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
@@ -517,6 +539,28 @@ class ManualReplySendAttemptService(
                         qaRuleId = qaRuleId,
                         ordinal = ordinal
                     )
+                )
+            }
+        }
+
+        // fast-p 02 (T3/I-5)：RAG 存证与 SENT mail_record 在同一 REQUIRES_NEW 事务内提交。
+        // 来源仍是发送前已验证的 payload.ragEvidence（请求顺序，可重复，不排序不去重）；
+        // 空列表表示无 RAG 事实，绝不写行、也绝不伪造 QA（QA 与 RAG 互斥）。
+        // 写入异常向上抛出 → 整个成功事务回滚（attempt 仍为 DELIVERY_IN_PROGRESS），
+        // 由调用方按既有安全分类收敛为 UNKNOWN，绝不留下「已 SENT 但事实缺失」。
+        payload.ragEvidence?.let { evidence ->
+            if (evidence.factCodes.isNotEmpty()) {
+                requireNotNull(mailRecordRagFactRepository) {
+                    "MailRecordRagFactRepository is not wired for RAG send"
+                }.saveAll(
+                    evidence.factCodes.mapIndexed { ordinal, factCode ->
+                        MailRecordRagFact(
+                            mailRecordId = mailRecordId,
+                            factCode = factCode,
+                            ordinal = ordinal,
+                            corpusFingerprint = evidence.corpusFingerprint
+                        )
+                    }
                 )
             }
         }
