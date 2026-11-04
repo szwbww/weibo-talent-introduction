@@ -56,7 +56,7 @@ delayedRef是server-only任务ID/revision/token，为后续完成事务传递授
 
 ### T4 回归（I-3/I-4/I-5）
 
-现有PendingMailOperationServiceTest覆盖同步发送/safety/attachment/RAG结果，TrustWorkbenchTest覆盖assembly/source/归档。ManualReplySendAttemptServiceTest验证原hash、QA/RAG、finalize事务调用。MailReplyDraftSendIntegrationTest真实事务验证失败rollback与成功closeSent。新增snapshot codec矩阵放Models对应的新test。
+现有PendingMailOperationServiceTest覆盖同步发送/safety/attachment/RAG结果，TrustWorkbenchTest覆盖assembly/source/归档。ManualReplySendAttemptServiceTest验证原hash、QA/RAG、finalize事务调用。MailReplyDraftSendIntegrationTest真实事务验证失败rollback与成功closeSent。RagSendBridgeTest的3个RAG成功用例原断言Pending内saveAll，T3迁移后改为断言SendPayload.ragEvidence有序证据与最终事务落库（A1修订）。新增snapshot codec矩阵放Models对应的新test。
 
 ## 变更文件清单
 
@@ -69,6 +69,7 @@ delayedRef是server-only任务ID/revision/token，为后续完成事务传递授
 |5|src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt|回归|
 |6|src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt|回归|
 |7|src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplySnapshotTest.kt|新增快照矩阵|
+|8|src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt|修改（A1）：RAG成功用例改断言ragEvidence与最终事务|
 
 MailReplyDraftSendIntegrationTest只运行不修改，如发现真实相关失配，先在03列出的该文件范围内修复并通过后才能继续。
 
