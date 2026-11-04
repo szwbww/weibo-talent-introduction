@@ -1,6 +1,6 @@
 # 03 事务状态机与草稿绑定
 
-前置02通过。单一发送事务子系统，11个文件（A3：审核请求代次字段从07提前，用户特批文件上限）。入口仍关闭，使用隔离MySQL直接调用服务验收。
+前置02通过。单一发送事务子系统，12个文件（A3：审核请求代次字段从07提前；A6：既有测试直接服务调用补真实事务，用户授权必要测试兼容修订）。入口仍关闭，使用隔离MySQL直接调用服务验收。
 
 ## 需求描述
 
@@ -118,6 +118,7 @@ DelayedManualReplyService提供recoverStale与preflightFailure短事务；已知
 |9|src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt|草稿/成功事务回归|
 |10|src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt|审核回归|
 |11|src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt|A3：审核请求delayExpectedRevision从07提前|
+|12|src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt|A6：原直接服务保存/放弃调用进入真实READ_COMMITTED事务，保留业务断言|
 
 ## 验收标准
 
@@ -152,4 +153,6 @@ DelayedManualReplyService提供recoverStale与preflightFailure短事务；已知
 ## 修正记录
 
 - A3（2026-11-05 用户批准）：解决 Verify03Lifecycle P-1，增加 `MailReviewDraftModels.kt` 授权并提前实现审核请求代次与 CANCELLED prepareSend 校验。总计划 A2 特批本阶段 11 文件；07 按 A4 仅接通消费。保留全部原验收，不采用原实现报告中未经批准的延期。修复范围同时包含核验报告已证明的 F-1～F-11，不扩展无关功能。
+
+- A6（2026-11-05 用户批准「授权必要测试兼容修订并持续执行」）：修复F-1后的事务锁守卫使 `MailReplyDraftRepositoryIT.kt` 原直接构造服务用例（报告位置82–113）在无事务时失败。仅为这些原写调用补真实 READ_COMMITTED 事务或既有Spring事务代理，保留所有业务断言；禁止恢复生产无事务锁绕过。核验该测试与原完整门禁，比较已记录的 MailReviewQueryIT:239 基线失败，不重新制造基线或新增工作树。
 
