@@ -79,6 +79,8 @@ class DelayedManualReplyLifecycleIT {
     @Autowired private lateinit var reviews: MailReviewDraftService
     @Autowired private lateinit var jdbc: JdbcTemplate
     @MockBean private lateinit var translation: MailTranslationService
+    @org.springframework.boot.test.mock.mockito.SpyBean private lateinit var permissionGuard: ExpertMailPermissionGuard
+    @Autowired private lateinit var attachmentService: OutboundAttachmentService
 
     private val threadPool = Executors.newFixedThreadPool(4)
 
@@ -174,7 +176,21 @@ class DelayedManualReplyLifecycleIT {
                 MeetingCalendarInput(Instant.ofEpochMilli(it.startUtcMs), Instant.ofEpochMilli(it.endUtcMs), it.meetingLink)
             },
             outboundAttachments = snapshot.payload.outboundAttachments
-        )
+        ).also { payload ->
+            when (val restore = snapshot.restore) {
+                is DelayedDraftRestore -> payload.draftSendRef = ValidatedDraftSendRef(restore.owner,
+                    restore.draftId, restore.draftVersion,
+                    MailReplyDraftTarget(restore.contactId, MailReplyDraftKind.valueOf(restore.targetKind),
+                        restore.processingId, restore.accountScope),
+                    MailReplyDraftContent(restore.subject, restore.html, restore.text,
+                        MailReplyDraftContextCodec.parse(restore.contextJson)), restore.sendAttemptId, restore.sendVersion)
+                is DelayedReviewRestore -> payload.reviewSendRef =
+                    MailReviewSendRef(reviewRow(restore.reviewId), restore.actor, restore.confirmationEventId)
+                is DelayedLegacyRestore -> Unit
+            }
+            if (snapshot.evidence.ragFactCodes.isNotEmpty()) payload.ragEvidence =
+                ManualReplySendAttemptService.RagEvidence(snapshot.evidence.ragFactCodes, snapshot.evidence.ragCorpusFingerprint)
+        }
 
     private fun queued(outcome: DelayedEnqueueOutcome): DelayedManualReplyView =
         (outcome as? DelayedEnqueueOutcome.Queued)?.job ?: throw AssertionError("Expected queued job, got $outcome")
@@ -585,10 +601,9 @@ class DelayedManualReplyLifecycleIT {
         assertEquals("SENT", jdbc.queryForObject("SELECT send_status FROM mail_record WHERE id=?", String::class.java, mailRecordId))
         assertNotNull(jdbc.queryForObject("SELECT sent_at FROM mail_record WHERE id=?", java.sql.Timestamp::class.java, mailRecordId))
 
-        // A second late result cannot create another record or downgrade SENT.
-        assertThrows(IllegalStateException::class.java) {
-            attempts.finalizeDelayedSuccess(payloadOf(snapshot), attemptId, messageIdOf(attemptId), claim.dispatchRef)
-        }
+        // Duplicate success is a read-only return of the durable result.
+        assertEquals(mailRecordId, attempts.finalizeDelayedSuccess(payloadOf(snapshot), attemptId,
+            messageIdOf(attemptId), claim.dispatchRef))
         assertThrows(IllegalStateException::class.java) {
             attempts.finalizeDelayedFailure(payloadOf(snapshot), attemptId, messageIdOf(attemptId),
                 MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, "late", claim.dispatchRef)
@@ -615,6 +630,13 @@ class DelayedManualReplyLifecycleIT {
             attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId, messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
         }
         assertEquals("WAITING", job(view.id)["status"])
+        makeDuePast(view.id)
+        val nextClaim = requireNotNull(delays.claim(view.id))
+        assertNotEquals(claim.dispatchRef.dispatchToken, nextClaim.dispatchRef.dispatchToken)
+        assertThrows(IllegalStateException::class.java) {
+            attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId, messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+        }
+        assertEquals("SENDING", job(view.id)["status"])
         assertEquals(1L, count("delayed_manual_reply"))
         assertEquals(1L, count("mail_record", "mail_type='MANUAL_RICH_REPLY'"))
     }
@@ -726,9 +748,17 @@ class DelayedManualReplyLifecycleIT {
             reviews.confirmContext(ADMIN, row.id, row.version, reviews.context(ADMIN, row.id).currentToken)
         }.status)
         assertEquals("WAITING", job(view.id)["status"])
-        delays.cancel(view.id, ADMIN, view.revision)
-        // After cancel the approved draft can be prepared again (queue revision is carried by 04/06).
-        assertEquals(row.version, reviews.prepareSend(ADMIN, row.id, MailReviewSendRequest(row.version, null)).draft.version)
+        val cancelled = delays.cancel(view.id, ADMIN, view.revision)
+        for (revision in listOf(null, cancelled.revision - 1)) {
+            assertEquals(409, assertThrows(MailReviewDraftException::class.java) {
+                reviews.prepareSend(ADMIN, row.id, MailReviewSendRequest(row.version, delayExpectedRevision = revision))
+            }.status)
+        }
+        assertEquals(400, assertThrows(MailReviewDraftException::class.java) {
+            reviews.prepareSend(ADMIN, row.id, MailReviewSendRequest(row.version, delayExpectedRevision = 0))
+        }.status)
+        assertEquals(row.version, reviews.prepareSend(ADMIN, row.id,
+            MailReviewSendRequest(row.version, delayExpectedRevision = cancelled.revision)).draft.version)
         assertEquals(MailReviewDraftState.APPROVED, reviewRow(row.id).state)
     }
 
@@ -740,5 +770,336 @@ class DelayedManualReplyLifecycleIT {
         val after = reviews.context(ADMIN, row.id)
         assertEquals(before.currentToken, after.currentToken)
         assertFalse(after.changed)
+    }
+
+    @Test
+    fun `permission snapshot before enqueue cannot overwrite the committed binding`() {
+        val draft = saveDraft()
+        val permissionRead = CountDownLatch(1)
+        val queueCommitted = CountDownLatch(1)
+        val intercept = java.util.concurrent.atomic.AtomicBoolean(true)
+        org.mockito.Mockito.doAnswer { invocation ->
+            val result = invocation.callRealMethod()
+            if (intercept.compareAndSet(true, false)) {
+                permissionRead.countDown()
+                check(queueCommitted.await(15, TimeUnit.SECONDS))
+            }
+            result
+        }.`when`(permissionGuard).requireFull(OWNER, 1)
+        val saving = threadPool.submit<MailReplyDraftDetail> { saveDraft("Edited", draft.version) }
+        try {
+            assertTrue(permissionRead.await(15, TimeUnit.SECONDS))
+            queued(delays.enqueue(draftSnapshot(draft), OWNER))
+        } finally { queueCommitted.countDown() }
+        val result = await(saving)
+        assertTrue(result.isFailure)
+        assertEquals("Hello", drafts.get(OWNER, requireNotNull(draft.id)).content?.text)
+        assertEquals(1L, count("delayed_manual_reply", "status='WAITING'"))
+    }
+
+    @Test
+    fun `legacy competing fingerprints serialize on the real inbound source`() {
+        val results = race(Callable { delays.enqueue(legacySnapshot("A"), OWNER) },
+            Callable { delays.enqueue(legacySnapshot("B"), OWNER) })
+        assertEquals(1, listOf(results.first, results.second).count { it.isSuccess })
+        assertEquals(1L, count("delayed_manual_reply"))
+        assertEquals(1L, count("mail_send_attempt"))
+    }
+
+    @Test
+    fun `fingerprint collisions cannot replace actor or source kind`() {
+        val draft = saveDraft()
+        val view = queued(delays.enqueue(draftSnapshot(draft), OWNER))
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") { delays.enqueue(legacySnapshot("Hello"), ADMIN) }
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") { delays.enqueue(legacySnapshot("Hello"), OWNER) }
+        val cancelled = delays.cancel(view.id, OWNER, view.revision)
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") {
+            delays.enqueue(legacySnapshot("Hello"), OWNER, cancelled.revision)
+        }
+        assertEquals("DRAFT", job(view.id)["origin_kind"])
+        assertEquals("CANCELLED", job(view.id)["status"])
+        assertEquals(1L, count("mail_send_attempt"))
+    }
+
+    @Test
+    fun `sending repeat and retry cancel requeue follow job state`() {
+        val snapshot = legacySnapshot("Hello")
+        val view = queued(delays.enqueue(snapshot, OWNER))
+        makeDuePast(view.id)
+        val claim = requireNotNull(delays.claim(view.id))
+        val repeated = queued(delays.enqueue(snapshot, OWNER))
+        assertEquals(claim.job.revision, repeated.revision)
+        assertEquals(claim.job.dueAtMs, repeated.dueAtMs)
+        attempts.finalizeDelayedFailure(payloadOf(snapshot), claim.job.sendAttemptId, messageIdOf(claim.job.sendAttemptId),
+            MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, "451", claim.dispatchRef)
+        val retried = delays.retry(view.id, OWNER, number(job(view.id), "revision"))
+        val cancelled = delays.cancel(view.id, OWNER, retried.revision)
+        val requeued = queued(delays.enqueue(snapshot, OWNER, cancelled.revision))
+        assertEquals(DelayedManualReplyStatus.WAITING, requeued.status)
+        assertEquals(cancelled.revision + 1, requeued.revision)
+    }
+
+    @Test
+    fun `failed draft same body save retries current version and edited body starts new job`() {
+        val original = saveDraft()
+        val view = queued(delays.enqueue(draftSnapshot(original), OWNER))
+        val failed = delays.preflightFailure(view.id, view.revision, DelayedReplyPublicError.TEMPORARY_DELIVERY_FAILURE)
+        val saved = saveDraft(version = original.version)
+        assertNull(saved.sendAttemptStatus)
+        val retried = delays.retry(view.id, OWNER, failed.revision)
+        assertEquals(saved.version, retried.originVersion)
+        assertEquals(saved.version, jdbc.queryForObject("SELECT send_version FROM mailbox_reply_draft", Long::class.java))
+        val failedAgain = delays.preflightFailure(view.id, retried.revision, DelayedReplyPublicError.TEMPORARY_DELIVERY_FAILURE)
+        val changed = saveDraft("Changed", saved.version)
+        assertFalse(requireNotNull(delays.findVisible(view.id)).canRetry)
+        failure(409) { delays.retry(view.id, OWNER, failedAgain.revision) }
+        val fresh = queued(delays.enqueue(draftSnapshot(changed, "Changed"), OWNER))
+        assertNotEquals(view.id, fresh.id)
+        assertEquals(2L, count("delayed_manual_reply"))
+    }
+
+    @Test
+    fun `downgrade blocks claim but not admin cancellation or preflight failure`() {
+        val draft = saveDraft()
+        val view = queued(delays.enqueue(draftSnapshot(draft), OWNER))
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ'")
+        val cancelled = delays.cancel(view.id, ADMIN, view.revision)
+        assertEquals(DelayedManualReplyStatus.CANCELLED, cancelled.status)
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='FULL'")
+        val waiting = queued(delays.enqueue(draftSnapshot(draft), OWNER, cancelled.revision))
+        jdbc.update("DELETE FROM expert_mail_read_access")
+        makeDuePast(view.id)
+        assertThrows(MailReadAccessDeniedException::class.java) { delays.claim(view.id) }
+        val failed = delays.preflightFailure(view.id, waiting.revision, DelayedReplyPublicError.ACCESS_CHANGED)
+        assertFalse(failed.canRetry)
+        assertFalse(requireNotNull(delays.findVisible(view.id)).canRetry)
+        assertEquals("FAILED", job(view.id)["status"])
+    }
+
+    @Test
+    fun `review revocation and context change block admission and claim but remain resolvable`() {
+        val row = approvedReview()
+        val snapshot = reviewSnapshot(row)
+        assertEquals(row.version, reviews.prepareSend(ADMIN, row.id, MailReviewSendRequest(row.version)).draft.version)
+        jdbc.update("DELETE FROM expert_mail_read_access")
+        assertThrows(MailReviewDraftException::class.java) { delays.enqueue(snapshot, ADMIN) }
+        assertEquals(0L, count("mail_send_attempt"))
+        jdbc.update("INSERT INTO expert_mail_read_access(username,expert_contact_id,access_level,granted_by,created_at) VALUES('user1',1,'READ','admin',NOW(3))")
+        val view = queued(delays.enqueue(snapshot, ADMIN))
+        makeDuePast(view.id)
+        jdbc.update("DELETE FROM expert_mail_read_access")
+        assertThrows(MailReviewDraftException::class.java) { delays.claim(view.id) }
+        jdbc.update("INSERT INTO expert_mail_read_access(username,expert_contact_id,access_level,granted_by,created_at) VALUES('user1',1,'READ','admin',NOW(3))")
+        inbound(101)
+        makeDuePast(view.id)
+        assertThrows(MailReviewDraftException::class.java) { delays.claim(view.id) }
+        val failed = delays.preflightFailure(view.id, view.revision, DelayedReplyPublicError.REVIEW_CONTEXT_CHANGED)
+        assertFalse(requireNotNull(delays.findVisible(view.id)).canRetry)
+        reviews.confirmContext(ADMIN, row.id, row.version, reviews.context(ADMIN, row.id).currentToken)
+        assertTrue(requireNotNull(delays.findVisible(view.id)).canRetry)
+        val retry = delays.retry(view.id, ADMIN, failed.revision)
+        val restore = DelayedManualReplySnapshotCodec.decodeOrNull(job(view.id)["snapshot_json"].toString())!!.restore as DelayedReviewRestore
+        assertNotNull(restore.confirmationEventId)
+        inbound(102)
+        assertEquals(DelayedManualReplyStatus.CANCELLED, delays.cancel(view.id, ADMIN, retry.revision).status)
+    }
+
+    @Test
+    fun `missing source and downgraded owner do not strand recovery`() {
+        val draft = saveDraft()
+        val view = queued(delays.enqueue(draftSnapshot(draft), OWNER))
+        makeDuePast(view.id)
+        val claim = requireNotNull(delays.claim(view.id))
+        jdbc.update("DELETE FROM mailbox_reply_draft")
+        jdbc.update("DELETE FROM expert_mail_read_access")
+        val at = requireNotNull(claim.job.claimedAtMs)
+        assertEquals(listOf(view.id), delays.recoverStale(at, at))
+        assertEquals("UNKNOWN", job(view.id)["status"])
+    }
+
+    @Test
+    fun `actual delivered results survive grant and review context changes`() {
+        val draft = saveDraft()
+        val snapshot = draftSnapshot(draft)
+        val view = queued(delays.enqueue(snapshot, OWNER))
+        makeDuePast(view.id)
+        val claim = requireNotNull(delays.claim(view.id))
+        jdbc.update("DELETE FROM expert_mail_read_access")
+        val recordId = attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+            messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+        assertEquals("SENT", jdbc.queryForObject("SELECT state FROM mailbox_reply_draft", String::class.java))
+        assertEquals(recordId, attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+            messageIdOf(claim.job.sendAttemptId), claim.dispatchRef))
+        jdbc.update("INSERT INTO expert_mail_read_access(username,expert_contact_id,access_level,granted_by,created_at) VALUES('user1',1,'READ','admin',NOW(3))")
+        val review = approvedReview()
+        val reviewSnapshot = reviewSnapshot(review)
+        val reviewJob = queued(delays.enqueue(reviewSnapshot, ADMIN))
+        makeDuePast(reviewJob.id)
+        val reviewClaim = requireNotNull(delays.claim(reviewJob.id))
+        jdbc.update("DELETE FROM expert_mail_read_access")
+        inbound(101)
+        attempts.finalizeDelayedSuccess(payloadOf(reviewSnapshot), reviewClaim.job.sendAttemptId,
+            messageIdOf(reviewClaim.job.sendAttemptId), reviewClaim.dispatchRef)
+        assertEquals("SENT", job(reviewJob.id)["status"])
+        assertEquals(MailReviewDraftState.APPROVED, reviewRow(review.id).state)
+        assertEquals(review.version, reviewRow(review.id).version)
+    }
+
+    @Test
+    fun `account capability stays disabled until current availability is restored`() {
+        val view = queued(delays.enqueue(legacySnapshot("Hello"), OWNER))
+        jdbc.update("UPDATE mail_sender_account SET enabled=FALSE")
+        val failed = delays.preflightFailure(view.id, view.revision, DelayedReplyPublicError.ACCOUNT_UNAVAILABLE)
+        assertFalse(failed.canRetry)
+        assertFalse(requireNotNull(delays.findVisible(view.id)).canRetry)
+        failure(409, "ACCOUNT_UNAVAILABLE") { delays.retry(view.id, OWNER, failed.revision) }
+        jdbc.update("UPDATE mail_sender_account SET enabled=TRUE")
+        assertTrue(requireNotNull(delays.findVisible(view.id)).canRetry)
+        assertEquals(DelayedManualReplyStatus.WAITING, delays.retry(view.id, OWNER, failed.revision).status)
+    }
+
+    @Test
+    fun `retry and old finalization barrier cannot complete the new round`() {
+        val snapshot = legacySnapshot("Hello")
+        val view = queued(delays.enqueue(snapshot, OWNER))
+        makeDuePast(view.id)
+        val claim = requireNotNull(delays.claim(view.id))
+        attempts.finalizeDelayedFailure(payloadOf(snapshot), claim.job.sendAttemptId, messageIdOf(claim.job.sendAttemptId),
+            MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, "451", claim.dispatchRef)
+        val revision = number(job(view.id), "revision")
+        val result = race(Callable { delays.retry(view.id, OWNER, revision) },
+            Callable { attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+                messageIdOf(claim.job.sendAttemptId), claim.dispatchRef) as Any })
+        assertTrue(result.first.isSuccess)
+        assertTrue(result.second.isFailure)
+        assertEquals("WAITING", job(view.id)["status"])
+        assertEquals("FAILED_SAFE_TO_RETRY", jdbc.queryForObject("SELECT status FROM mail_send_attempt", String::class.java))
+    }
+
+    @Test
+    fun `illegal queued attempt matrix fails closed without claiming`() {
+        val view = queued(delays.enqueue(legacySnapshot("Hello"), OWNER))
+        jdbc.update("UPDATE mail_send_attempt SET status='SENT'")
+        makeDuePast(view.id)
+        failure(409, "DELAYED_REPLY_STATE_CONFLICT") { delays.claim(view.id) }
+        assertEquals("WAITING", job(view.id)["status"])
+        assertNull(job(view.id)["dispatch_token"])
+    }
+
+    @Test
+    fun `real service transaction smoke preserves attached draft and commits one result`() {
+        val upload = attachmentService.upload(1, OWNER, "evidence.txt", "text/plain", "evidence".byteInputStream())
+        val target = MailReplyDraftTarget(1, MailReplyDraftKind.INBOUND, 100, ACCOUNT)
+        val content = MailReplyDraftContent("Re: Test", "<p>Hello</p>", "Hello",
+            MailReplyDraftContext(outboundAttachmentDraft = MailReplyDraftAttachments(1,
+                listOf(MailReplyDraftAttachmentItem("one", "ready", upload.id)))))
+        val draft = drafts.save(OWNER, target, MailReplyDraftSaveRequest(0, content))
+        val file = attachmentService.resolveForSend(1, listOf(upload.id), OWNER).snapshots.single()
+        val initial = draftSnapshot(draft)
+        val snapshot = initial.copy(payload = initial.payload.copy(outboundAttachments = listOf(file)))
+        val waiting = queued(delays.enqueue(snapshot, OWNER))
+        assertEquals(waiting.dueAtMs, queued(delays.enqueue(snapshot, OWNER)).dueAtMs)
+        val frozen = jdbc.queryForMap("SELECT subject,html_body,text_body,context_json FROM mailbox_reply_draft")
+        assertThrows(MailReplyDraftException::class.java) { drafts.save(OWNER, target, MailReplyDraftSaveRequest(draft.version, content)) }
+        assertThrows(MailReplyDraftException::class.java) { drafts.discard(OWNER, requireNotNull(draft.id), draft.version) }
+        val cancelled = delays.cancel(waiting.id, OWNER, waiting.revision)
+        assertEquals(frozen, jdbc.queryForMap("SELECT subject,html_body,text_body,context_json FROM mailbox_reply_draft"))
+        val queued = queued(delays.enqueue(snapshot, OWNER, cancelled.revision))
+        jdbc.update("UPDATE outbound_mail_attachment SET sha256=?", "0".repeat(64))
+        val failed = delays.preflightFailure(waiting.id, queued.revision, DelayedReplyPublicError.ATTACHMENT_UNAVAILABLE)
+        assertFalse(requireNotNull(delays.findVisible(waiting.id)).canRetry)
+        failure(409, "ATTACHMENT_UNAVAILABLE") { delays.retry(waiting.id, OWNER, failed.revision) }
+        jdbc.update("UPDATE outbound_mail_attachment SET sha256=?", file.sha256)
+        assertTrue(requireNotNull(delays.findVisible(waiting.id)).canRetry)
+        delays.retry(waiting.id, OWNER, failed.revision)
+        makeDuePast(waiting.id)
+        val claim = requireNotNull(delays.claim(waiting.id))
+        val restored = requireNotNull(DelayedManualReplySnapshotCodec.decodeOrNull(claim.job.snapshotJson))
+        val record = attempts.finalizeDelayedSuccess(payloadOf(restored), claim.job.sendAttemptId,
+            messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+        assertEquals(record, attempts.finalizeDelayedSuccess(payloadOf(restored), claim.job.sendAttemptId,
+            messageIdOf(claim.job.sendAttemptId), claim.dispatchRef))
+        assertEquals("SENT", job(waiting.id)["status"])
+        assertEquals("SENT", jdbc.queryForObject("SELECT state FROM mailbox_reply_draft", String::class.java))
+        assertEquals(1L, count("mail_record", "mail_send_attempt_id=${claim.job.sendAttemptId}"))
+        assertTrue(jdbc.queryForObject("SELECT outbound_attachments_json FROM mail_record WHERE id=?",
+            String::class.java, record)!!.contains(upload.id))
+    }
+
+    private fun calendarSnapshot(): CalendarAttachmentSnapshot {
+        val text = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:lifecycle@test\r\nDTSTART:20261106T010000Z\r\nDTEND:20261106T020000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return CalendarAttachmentSnapshot(1, "meeting-2026-11-06-lifecycle.ics",
+            MeetingConfirmationDomain.CALENDAR_CONTENT_TYPE, text, hash, hash)
+    }
+
+    @Test
+    fun `QA RAG calendar and final job failures roll back the complete production transaction`() {
+        for (table in listOf("mail_record_qa_rule", "mail_record_rag_fact", "meeting_calendar_event", "delayed_manual_reply")) {
+            seed()
+            val draft = saveDraft()
+            val base = draftSnapshot(draft)
+            val calendar = calendarSnapshot()
+            val event = DelayedMeetingEventSnapshot(Instant.parse("2026-11-06T01:00:00Z").toEpochMilli(),
+                Instant.parse("2026-11-06T02:00:00Z").toEpochMilli(), "https://example.test/meeting")
+            val qaIds = if (table == "mail_record_qa_rule")
+                listOf(jdbc.queryForObject("SELECT MIN(id) FROM qa_rule", Long::class.java)!!) else emptyList()
+            val codes = if (qaIds.isEmpty()) listOf("programme.scope") else emptyList()
+            val snapshot = base.copy(payload = base.payload.copy(canonicalQaRuleIds = qaIds,
+                primaryRuleId = qaIds.firstOrNull(), calendarAttachment = calendar, meetingEvent = event),
+                evidence = base.evidence.copy(carriesQa = qaIds.isNotEmpty(), canonicalFactIds = qaIds,
+                    ragFactCodes = codes, ragCorpusFingerprint = if (codes.isEmpty()) "" else "f".repeat(64)))
+            val view = queued(delays.enqueue(snapshot, OWNER))
+            makeDuePast(view.id)
+            val claim = requireNotNull(delays.claim(view.id))
+            val operation = if (table == "delayed_manual_reply") "UPDATE" else "INSERT"
+            jdbc.execute("""CREATE TRIGGER lifecycle_fault BEFORE $operation ON $table FOR EACH ROW
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='lifecycle rollback injection'""")
+            try {
+                assertThrows(Exception::class.java) {
+                    attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+                        messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+                }
+            } finally { jdbc.execute("DROP TRIGGER lifecycle_fault") }
+            assertEquals("SENDING", job(view.id)["status"], table)
+            assertEquals("DELIVERY_IN_PROGRESS", jdbc.queryForObject("SELECT status FROM mail_send_attempt", String::class.java), table)
+            assertEquals("ACTIVE", jdbc.queryForObject("SELECT state FROM mailbox_reply_draft", String::class.java), table)
+            assertEquals(0L, count("mail_record", "mail_send_attempt_id=${claim.job.sendAttemptId}"), table)
+            for (child in listOf("mail_record_qa_rule", "mail_record_rag_fact", "meeting_calendar_event")) assertEquals(0L, count(child), "$table/$child")
+            val record = attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+                messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+            assertEquals(record, attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+                messageIdOf(claim.job.sendAttemptId), claim.dispatchRef))
+            assertEquals(1L, count("meeting_calendar_event"))
+            assertEquals(1L, count(if (qaIds.isEmpty()) "mail_record_rag_fact" else "mail_record_qa_rule"))
+            assertEquals("SENT", jdbc.queryForObject("SELECT state FROM mailbox_reply_draft", String::class.java))
+        }
+    }
+
+    @Test
+    fun `review result event failure rolls back record attempt and job`() {
+        val row = approvedReview()
+        val snapshot = reviewSnapshot(row)
+        val view = queued(delays.enqueue(snapshot, ADMIN))
+        makeDuePast(view.id)
+        val claim = requireNotNull(delays.claim(view.id))
+        jdbc.execute("""CREATE TRIGGER lifecycle_review_fault BEFORE INSERT ON mailbox_review_draft_event FOR EACH ROW
+            BEGIN IF NEW.event_type='SEND_SUCCEEDED' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='review result rollback'; END IF; END""")
+        try {
+            assertThrows(Exception::class.java) {
+                attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+                    messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+            }
+        } finally { jdbc.execute("DROP TRIGGER lifecycle_review_fault") }
+        assertEquals("SENDING", job(view.id)["status"])
+        assertEquals(0L, count("mail_record", "mail_send_attempt_id=${claim.job.sendAttemptId}"))
+        assertEquals(0L, count("mailbox_review_draft_event", "event_type='SEND_SUCCEEDED'"))
+        val record = attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+            messageIdOf(claim.job.sendAttemptId), claim.dispatchRef)
+        assertEquals(record, attempts.finalizeDelayedSuccess(payloadOf(snapshot), claim.job.sendAttemptId,
+            messageIdOf(claim.job.sendAttemptId), claim.dispatchRef))
+        assertEquals(1L, count("mailbox_review_draft_event", "event_type='SEND_SUCCEEDED'"))
+        assertEquals(row.version, reviewRow(row.id).version)
     }
 }

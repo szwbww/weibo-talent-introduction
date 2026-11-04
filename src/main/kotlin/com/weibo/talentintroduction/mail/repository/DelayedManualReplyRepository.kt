@@ -97,6 +97,23 @@ class DelayedManualReplyRepository(private val jdbc: NamedParameterJdbcTemplate)
         mapper
     )
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockLegacySource(contactId: Long, processingId: Long?, accountCode: String): Boolean {
+        mandatory()
+        return if (processingId != null) {
+            jdbc.queryForList("""SELECT id FROM inbound_mail_processing
+                WHERE id=:id AND expert_contact_id=:contact AND sender_account_code=:account FOR UPDATE""",
+                mapOf("id" to processingId, "contact" to contactId, "account" to accountCode)).size == 1
+        } else {
+            jdbc.queryForList("SELECT id FROM expert_contact WHERE id=:contact FOR UPDATE",
+                mapOf("contact" to contactId)).size == 1
+        }
+    }
+
+    fun enabledAccountExists(accountCode: String): Boolean = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM mail_sender_account WHERE account_code=:account AND enabled=TRUE AND account_code<>'SIMULATOR_NOOP'",
+        mapOf("account" to accountCode), Long::class.java) == 1L
+
     /** 超时 SENDING 扫描：只返回 id，恢复必须逐条重新加锁核对。 */
     fun scanStaleSendingIds(claimedBeforeMs: Long): List<Long> = jdbc.query(
         "SELECT id FROM delayed_manual_reply WHERE status='SENDING' AND claimed_at_ms<=:cutoff " +

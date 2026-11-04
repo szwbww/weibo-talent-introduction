@@ -179,10 +179,17 @@ class MailReviewDraftService(
         return mapOf("ok" to result.ok, "translatedText" to result.text, "reason" to result.reason)
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     fun prepareSend(actor: String?, id: Long, request: MailReviewSendRequest): MailReviewSendRef {
         val username = requireAdmin(actor)
-        val row = repository.find(id)?.takeIf { it.ownerUsername == MailReadOnlyPolicy.READER_USERNAME } ?: notFound()
+        if (request.delayExpectedRevision != null && request.delayExpectedRevision <= 0)
+            throw MailReviewDraftException(400, "INVALID_REQUEST", "非法 delayExpectedRevision")
+        val observed = repository.find(id)?.takeIf { it.ownerUsername == MailReadOnlyPolicy.READER_USERNAME } ?: notFound()
+        grant(observed.ownerUsername, observed.contactId, true)
+        val row = repository.find(id, true) ?: notFound()
+        val delayed = row.sendAttemptId?.let { repository.lockDelayedPreparation(it) }
+        if (delayed?.first == "CANCELLED" && request.delayExpectedRevision != delayed.second)
+            throw MailReviewDraftException(409, "DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
         validateSendRow(row, request.expectedVersion)
         return MailReviewSendRef(row, username, request.confirmationEventId)
     }
@@ -199,7 +206,7 @@ class MailReviewDraftService(
 
     /** Delivery has already happened: concurrent grant/target changes cannot discard its result. */
     fun lockForSendResult(ref: MailReviewSendRef): MailReviewDraftRow {
-        val row = repository.find(ref.draft.id, true) ?: notFound()
+        val row = lockDelayedResult(ref.draft.id) ?: notFound()
         version(row, ref.draft.version)
         state(row, MailReviewDraftState.APPROVED)
         check(row.subject == ref.draft.subject && row.html == ref.draft.html && row.text == ref.draft.text &&
@@ -285,14 +292,20 @@ class MailReviewDraftService(
         repository.bindAttempt(row, attemptId)
     }
 
-    /** fast-p 03：状态迁移/领取只锁审核稿行，不做权限或内容比较（保持源→attempt→job 锁序）。 */
-    internal fun lockDelayedResult(reviewId: Long): MailReviewDraftRow? = repository.find(reviewId, true)
+    /** Lock in authorization/source order, without making delivery results depend on current grants. */
+    internal fun lockDelayedResult(reviewId: Long): MailReviewDraftRow? {
+        val observed = repository.find(reviewId) ?: return null
+        repository.lockAccess(observed.ownerUsername, observed.contactId)
+        return repository.find(reviewId, true)
+    }
 
     /** fast-p 03 (T3)：SEND_QUEUED/SEND_CANCELLED/SEND_REQUEUED 去重事件（job+revision）。 */
     fun recordQueueEvent(row: MailReviewDraftRow, eventType: String, jobId: Long, revision: Long): MailReviewDraftEvent? =
         repository.appendJobEvent(row.id, row.version, eventType, MailReadOnlyPolicy.ADMIN_USERNAME, jobId, revision, now())
 
     private fun lockDelayedReviewRow(actor: String, restore: DelayedReviewRestore): MailReviewDraftRow {
+        val observed = repository.find(restore.reviewId) ?: notFound()
+        grant(observed.ownerUsername, observed.contactId, true)
         val row = access(actor, restore.reviewId, true)
         if (row.deletedAt != null) conflictState()
         state(row, MailReviewDraftState.APPROVED)
@@ -302,6 +315,8 @@ class MailReviewDraftService(
             row.sendRequestId != restore.sendRequestId || row.approvedContextToken != restore.approvedContextToken) {
             throw MailReviewDraftException(409, "REVIEW_CONTENT_CHANGED", "Approved content changed")
         }
+        if (!repository.validTarget(row))
+            throw MailReviewDraftException(422, "REVIEW_TARGET_NOT_FOUND", "The original reply target is no longer valid")
         return row
     }
 

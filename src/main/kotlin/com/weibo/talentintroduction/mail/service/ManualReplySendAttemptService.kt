@@ -618,35 +618,43 @@ class ManualReplySendAttemptService(
      * UNKNOWN 只允许这一次收敛，绝不重发。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun finalizeDelayedSuccess(
+    internal fun finalizeDelayedSuccess(
         payload: SendPayload,
         attemptId: Long,
         messageId: String,
-        delayedRef: DelayedDispatch
+        delayedRef: DelayedDispatchRef
     ): Long = finalizeSuccessTx(payload, attemptId, messageId, delayedRef)
 
     private fun finalizeSuccessTx(
         payload: SendPayload,
         attemptId: Long,
         messageId: String,
-        delayedRef: DelayedDispatch?
+        delayedRef: DelayedDispatchRef?
     ): Long {
         // fast-p 02 (T3/I-5)：QA 与 RAG 证据互斥 —— 在任何写入之前 fail closed，
         // 绝不产生同时写入 mail_record_qa_rule 与 mail_record_rag_fact 的记录。
         require(payload.ragEvidence == null || payload.canonicalQaRuleIds.isEmpty()) {
             "QA and RAG evidence are mutually exclusive"
         }
+        if (delayedRef != null && payload.draftSendRef == null && payload.reviewSendRef == null)
+            requireNotNull(delayedManualReplyRepository).lockLegacySource(payload.contactId, payload.inboundProcessingId, payload.accountCode)
         val review = payload.reviewSendRef?.let { reviewService().lockForSendResult(it) }
         validateReviewPayload(payload)
         check(review == null || review.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
-        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+        val attempt = if (delayedRef != null) lockDelayedAttempt(attemptId) else attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
         }
         // fast-p 03 (I-2)：延迟任务的完成必须保持 attempt→job 的锁序（恢复路径同序），
         // 否则与 recoverStale 形成交叉等待。
-        if (delayedRef != null) lockAttemptRow(attempt)
+        if (delayedRef != null) requireFingerprintIdentity(attempt, payload, computeFingerprint(payload))
         val lateSuccessJob = delayedRef?.let { verifyDelayedFinalize(it, payload, attemptId) }
+        if (lateSuccessJob?.status == DelayedManualReplyStatus.SENT) {
+            check(attempt.status == MailSendAttemptStatus.SENT) { "Delayed SENT attempt mismatch" }
+            return requireNotNull(mailRecordRepository.findByMailSendAttemptId(attemptId)?.id) {
+                "Completed send has no durable record"
+            }
+        }
         if (lateSuccessJob == null) {
             require(attempt.status == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
                 "Cannot finalize success: attempt $attemptId is not DELIVERY_IN_PROGRESS (current: ${attempt.status})"
@@ -783,13 +791,13 @@ class ManualReplySendAttemptService(
      * 迟到的失败既不能改 SENT，也不能覆盖新代次。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun finalizeDelayedFailure(
+    internal fun finalizeDelayedFailure(
         payload: SendPayload,
         attemptId: Long,
         messageId: String,
         resultStatus: String,
         errorSummary: String?,
-        delayedRef: DelayedDispatch
+        delayedRef: DelayedDispatchRef
     ): Long = finalizeFailureTx(payload, attemptId, messageId, resultStatus, errorSummary, delayedRef)
 
     private fun finalizeFailureTx(
@@ -798,16 +806,18 @@ class ManualReplySendAttemptService(
         messageId: String,
         resultStatus: String,
         errorSummary: String?,
-        delayedRef: DelayedDispatch?
+        delayedRef: DelayedDispatchRef?
     ): Long {
+        if (delayedRef != null && payload.draftSendRef == null && payload.reviewSendRef == null)
+            requireNotNull(delayedManualReplyRepository).lockLegacySource(payload.contactId, payload.inboundProcessingId, payload.accountCode)
         val review = payload.reviewSendRef?.let { reviewService().lockForSendResult(it) }
         validateReviewPayload(payload)
         check(review == null || review.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
-        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+        val attempt = if (delayedRef != null) lockDelayedAttempt(attemptId) else attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
         }
-        if (delayedRef != null) lockAttemptRow(attempt)
+        if (delayedRef != null) requireFingerprintIdentity(attempt, payload, computeFingerprint(payload))
         val delayedJob = delayedRef?.let { ref ->
             verifyDelayedFinalize(ref, payload, attemptId, allowUnknown = true)
         }
@@ -1025,15 +1035,9 @@ class ManualReplySendAttemptService(
      * 只接受与本次 attempt 绑定、令牌相同、来源一致且仍处于 SENDING/UNKNOWN 的任务。
      * 任何其他状态（SENT 已收敛、新代次、旧令牌）都 fail closed，迟到结果不能覆盖。
      */
-    /** fast-p 03：在 source 之后、job 之前锁定 attempt 行（统一锁序）。 */
-    private fun lockAttemptRow(attempt: MailSendAttempt) {
-        val locked = attemptRepository.findByOrcidIdAndMailTypeForUpdate(attempt.orcidId, attempt.mailType)
-            ?: throw IllegalStateException("Mail send attempt not found: ${attempt.id}")
-        check(locked.id == attempt.id) { "Mail send attempt identity changed while locking" }
-    }
 
     private fun verifyDelayedFinalize(
-        ref: DelayedDispatch,
+        ref: DelayedDispatchRef,
         payload: SendPayload,
         attemptId: Long,
         allowUnknown: Boolean = false
@@ -1046,10 +1050,19 @@ class ManualReplySendAttemptService(
         check(locked.expertContactId == payload.contactId && locked.accountCode == payload.accountCode) {
             "Delayed job source mismatch"
         }
+        check(when (locked.originKind) {
+            DelayedManualReplyOriginKind.DRAFT -> payload.draftSendRef?.let {
+                it.id == locked.originId && it.version == locked.originVersion && it.owner == locked.actorUsername
+            } == true
+            DelayedManualReplyOriginKind.REVIEW -> payload.reviewSendRef?.let {
+                it.draft.id == locked.originId && it.draft.version == locked.originVersion && it.actor == locked.actorUsername
+            } == true
+            DelayedManualReplyOriginKind.LEGACY -> payload.draftSendRef == null && payload.reviewSendRef == null
+        }) { "Delayed result origin mismatch" }
         check(locked.revision >= ref.revision) { "Delayed job revision regressed" }
         val allowed = when {
             allowUnknown -> setOf(DelayedManualReplyStatus.SENDING)
-            else -> setOf(DelayedManualReplyStatus.SENDING, DelayedManualReplyStatus.UNKNOWN)
+            else -> setOf(DelayedManualReplyStatus.SENDING, DelayedManualReplyStatus.UNKNOWN, DelayedManualReplyStatus.SENT)
         }
         check(locked.status in allowed) {
             "Delayed job $attemptId cannot be completed from ${locked.status}"
@@ -1062,7 +1075,7 @@ class ManualReplySendAttemptService(
         return locked
     }
 
-    private fun completeDelayedSuccess(ref: DelayedDispatch, job: DelayedManualReplyRow) {
+    private fun completeDelayedSuccess(ref: DelayedDispatchRef, job: DelayedManualReplyRow) {
         val repository = requireNotNull(delayedManualReplyRepository) { "Delayed replies are not wired" }
         val nowMs = repository.currentTimeMs()
         val completed = if (job.status == DelayedManualReplyStatus.UNKNOWN) {
@@ -1076,7 +1089,7 @@ class ManualReplySendAttemptService(
     /**
      * 失败分类 → 固定公开码（T2/I-10）。永久失败仍然禁用原内容重发；SMTP 未知绝不重发。
      */
-    private fun completeDelayedFailure(ref: DelayedDispatch, job: DelayedManualReplyRow, resultStatus: String) {
+    private fun completeDelayedFailure(ref: DelayedDispatchRef, job: DelayedManualReplyRow, resultStatus: String) {
         val repository = requireNotNull(delayedManualReplyRepository) { "Delayed replies are not wired" }
         check(job.status == DelayedManualReplyStatus.SENDING) {
             "Delayed job ${ref.jobId} already completed as ${job.status}"

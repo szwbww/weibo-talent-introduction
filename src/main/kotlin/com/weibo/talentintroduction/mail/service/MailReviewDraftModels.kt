@@ -75,7 +75,8 @@ data class MailReviewSendRequest(
     val expectedVersion: Long,
     val confirmationEventId: Long? = null,
     val safetyWarningConfirmed: Boolean = false,
-    val strongConfirmationText: String? = null
+    val strongConfirmationText: String? = null,
+    val delayExpectedRevision: Long? = null
 )
 
 /** Server-constructed frozen identity, never accepted from an HTTP payload. */

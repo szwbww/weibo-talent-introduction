@@ -57,14 +57,8 @@ sealed interface DelayedEnqueueOutcome {
     data class AlreadySent(val attemptId: Long, val mailRecordId: Long, val messageId: String) : DelayedEnqueueOutcome
 }
 
-/**
- * claim 成功后才存在的 server-only 令牌（job + 代次 + 唯一令牌）。
- * 只用于投递/完成接缝；绝不进入 HTTP DTO 或前端可写字段。
- */
-data class DelayedDispatch(val jobId: Long, val revision: Long, val dispatchToken: String)
-
 /** claim 成功后的载荷：job 行快照 + 本轮唯一令牌。 */
-data class DelayedClaimRow(val job: DelayedManualReplyRow, val dispatchRef: DelayedDispatch)
+internal data class DelayedClaimRow(val job: DelayedManualReplyRow, val dispatchRef: DelayedDispatchRef)
 
 /**
  * fast-p 03：人工回复延迟发送的事务状态机。
@@ -83,6 +77,7 @@ class DelayedManualReplyService(
     private val reviews: MailReviewDraftService,
     private val permissionGuard: ExpertMailPermissionGuard,
     private val mailRecords: MailRecordRepository,
+    private val attachments: OutboundAttachmentService,
     private val properties: ManualReplyDelayProperties = ManualReplyDelayProperties(),
     transactionManager: PlatformTransactionManager
 ) {
@@ -100,6 +95,11 @@ class DelayedManualReplyService(
 
     private val transactions = TransactionTemplate(transactionManager).apply {
         propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        isolationLevel = TransactionDefinition.ISOLATION_READ_COMMITTED
+    }
+
+    private val eligibilityTransactions = TransactionTemplate(transactionManager).apply {
+        propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRED
         isolationLevel = TransactionDefinition.ISOLATION_READ_COMMITTED
     }
 
@@ -124,10 +124,24 @@ class DelayedManualReplyService(
         val payload = payloadOf(snapshot, source, actor)
         val reservation = attempts.reserveDelayed(payload)
 
+        repository.lockByAttemptId(reservation.attemptId)?.let { existing ->
+            requireSameIdentity(existing, snapshot, actor)
+            requireMatrix(existing, reservation.state.name)
+            when (existing.status) {
+                DelayedManualReplyStatus.WAITING,
+                DelayedManualReplyStatus.SENDING,
+                DelayedManualReplyStatus.SENT -> return DelayedEnqueueOutcome.Queued(view(existing))
+                DelayedManualReplyStatus.UNKNOWN ->
+                    throw conflict(DelayedReplyPublicError.DELIVERY_UNKNOWN.code, DelayedReplyPublicError.DELIVERY_UNKNOWN.message)
+                DelayedManualReplyStatus.FAILED ->
+                    throw conflict("DELAYED_REPLY_REQUIRES_RETRY", "该回复已失败，请使用重新发送")
+                DelayedManualReplyStatus.CANCELLED ->
+                    return DelayedEnqueueOutcome.Queued(requeueCancelled(existing, snapshot, source, reservation, actor, expectedCancelledRevision))
+            }
+        }
+
         when (reservation.state) {
             ManualReplySendAttemptService.DelayedReservationState.SENT -> {
-                val job = repository.findByAttemptId(reservation.attemptId)
-                if (job != null) return DelayedEnqueueOutcome.Queued(view(job))
                 val record = mailRecords.findByMailSendAttemptId(reservation.attemptId)
                 return DelayedEnqueueOutcome.AlreadySent(
                     attemptId = reservation.attemptId,
@@ -145,22 +159,9 @@ class DelayedManualReplyService(
             ManualReplySendAttemptService.DelayedReservationState.PREPARED -> Unit
         }
 
-        repository.findByAttemptId(reservation.attemptId)?.let { existing ->
-            when (existing.status) {
-                DelayedManualReplyStatus.WAITING,
-                DelayedManualReplyStatus.SENDING,
-                DelayedManualReplyStatus.SENT -> return DelayedEnqueueOutcome.Queued(view(existing))
-                DelayedManualReplyStatus.UNKNOWN ->
-                    throw conflict(DelayedReplyPublicError.DELIVERY_UNKNOWN.code, DelayedReplyPublicError.DELIVERY_UNKNOWN.message)
-                DelayedManualReplyStatus.FAILED ->
-                    throw conflict("DELAYED_REPLY_REQUIRES_RETRY", "该回复已失败，请使用重新发送")
-                DelayedManualReplyStatus.CANCELLED ->
-                    return DelayedEnqueueOutcome.Queued(requeueCancelled(existing, snapshot, source, reservation, actor, expectedCancelledRevision))
-            }
-        }
 
         // 同一源仍有未决任务：禁止换指纹另排（LEGACY 也按真实目标与 actor 检查）。
-        if (unresolvedJobFor(snapshot, reservation.attemptId) != null) {
+        if (unresolvedJobFor(snapshot, reservation.attemptId, actor) != null) {
             throw conflict("DELAYED_REPLY_SOURCE_CONFLICT", "该回复已有待发送任务，请先撤回或等待完成")
         }
 
@@ -246,7 +247,7 @@ class DelayedManualReplyService(
             throw conflict("DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
         }
         val snapshot = decodeSnapshot(observed)
-        val source = lockTransitionSource(observed, snapshot)
+        lockStateSource(observed, snapshot)
         val now = repository.currentTimeMs()
         if (now >= observed.dueAtMs) {
             throw DelayedManualReplyException(409, "DELAYED_REPLY_TOO_LATE", "已超过撤回期限")
@@ -257,8 +258,15 @@ class DelayedManualReplyService(
             }
             throw conflict("DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
         }
-        (source as? SlottedSource.Draft)?.let { drafts.releaseDelayedBinding(it.row, observed.sendAttemptId) }
-        recordReviewQueueEvent(source, "SEND_CANCELLED", jobId, expectedRevision + 1)
+        when (val restore = snapshot.restore) {
+            is DelayedDraftRestore -> drafts.lockDelayedTransition(restore.owner, restore.draftId)?.let {
+                if (it.sendVersion == restore.draftVersion) drafts.releaseDelayedBinding(it, observed.sendAttemptId)
+            }
+            is DelayedReviewRestore -> reviews.lockDelayedResult(restore.reviewId)?.let {
+                reviews.recordQueueEvent(it, "SEND_CANCELLED", jobId, expectedRevision + 1)
+            }
+            is DelayedLegacyRestore -> Unit
+        }
         return view(requireNotNull(repository.findById(jobId)))
     }
 
@@ -282,9 +290,17 @@ class DelayedManualReplyService(
         if (observed.revision != expectedRevision) {
             throw conflict("DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
         }
+        val error = DelayedReplyPublicError.ofOrInvalid(observed.publicErrorCode)
+        if (error?.retryableAfterRevalidation != true)
+            throw conflict(error?.code ?: DelayedReplyPublicError.SNAPSHOT_INVALID.code,
+                error?.message ?: DelayedReplyPublicError.SNAPSHOT_INVALID.message)
         val snapshot = decodeSnapshot(observed)
         val source = lockTransitionSource(observed, snapshot)
+        requireRuntimeAvailable(snapshot)
         val attempt = attempts.lockDelayedAttempt(observed.sendAttemptId)
+        if (repository.lockById(jobId) != observed)
+            throw conflict("DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
+        requireMatrix(observed, attempt.status)
         if (attempt.status != MailSendAttemptStatus.FAILED_SAFE_TO_RETRY) {
             throw conflict(DelayedReplyPublicError.PERMANENT_DELIVERY_FAILURE.code,
                 DelayedReplyPublicError.PERMANENT_DELIVERY_FAILURE.message)
@@ -335,13 +351,27 @@ class DelayedManualReplyService(
     // 刻意不给 jobId 之外任何参数：Kotlin 默认参数在 CGLIB 代理下会以代理实例求值
     // 目标字段，事务代理调用时会得到 null。到期时间一律在事务内读数据库时钟。
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
-    fun claim(jobId: Long): DelayedClaimRow? {
+    internal fun claim(jobId: Long): DelayedClaimRow? {
         val nowMs = repository.currentTimeMs()
         val observed = repository.findById(jobId) ?: return null
         if (observed.status != DelayedManualReplyStatus.WAITING) return null
         if (nowMs < observed.dueAtMs) return null
         val snapshot = decodeSnapshot(observed)
-        lockClaimSource(observed, snapshot)
+        val source = lockEnqueueSource(snapshot, observed.actorUsername)
+        when (source) {
+            is SlottedSource.Draft -> check(source.row.version == observed.originVersion &&
+                source.row.sendVersion == observed.originVersion && source.row.sendAttemptId == observed.sendAttemptId) {
+                "Delayed draft binding changed"
+            }
+            is SlottedSource.Review -> check(source.row.sendAttemptId == observed.sendAttemptId) {
+                "Delayed review binding changed"
+            }
+            SlottedSource.Legacy -> Unit
+        }
+        val attempt = attempts.lockDelayedAttempt(observed.sendAttemptId)
+        val locked = repository.lockById(jobId) ?: return null
+        if (locked != observed) return null
+        requireMatrix(locked, attempt.status)
         check(attempts.claimDelayed(observed.sendAttemptId)) {
             "Delayed attempt ${observed.sendAttemptId} is not claimable"
         }
@@ -350,7 +380,7 @@ class DelayedManualReplyService(
             throw IllegalStateException("Delayed job $jobId lost the claim CAS")
         }
         val claimed = requireNotNull(repository.findById(jobId))
-        return DelayedClaimRow(claimed, DelayedDispatch(jobId, claimed.revision, token))
+        return DelayedClaimRow(claimed, DelayedDispatchRef(jobId, claimed.revision, token))
     }
 
     // ---------------------------------------------------------------- 投递前失败与恢复
@@ -370,7 +400,7 @@ class DelayedManualReplyService(
             throw conflict("DELAYED_REPLY_STATE_CONFLICT", "当前任务状态不可标记失败")
         }
         val snapshot = runCatching { decodeSnapshot(observed) }.getOrNull()
-        if (snapshot != null) lockTransitionSource(observed, snapshot)
+        lockStateSource(observed, snapshot)
         attempts.failDelayedBeforeDelivery(observed.sendAttemptId, error.code)
         if (!repository.failBeforeDelivery(jobId, expectedRevision, error.code, repository.currentTimeMs())) {
             throw conflict("DELAYED_REPLY_STATE_CONFLICT", "当前任务状态不可标记失败")
@@ -401,7 +431,7 @@ class DelayedManualReplyService(
         if (observed.claimedAtMs == null || observed.claimedAtMs > claimedBeforeMs) return false
         val token = observed.dispatchToken ?: return false
         // 锁序：源 → attempt → job；源缺失时仍恢复（任务不因源删除而永久卡住）。
-        runCatching { decodeSnapshot(observed) }.getOrNull()?.let { lockTransitionSource(observed, it) }
+        lockStateSource(observed, runCatching { decodeSnapshot(observed) }.getOrNull())
         attempts.recoverDelayedUnknown(observed.sendAttemptId)
         val recovered = repository.recoverToUnknown(
             id = jobId,
@@ -433,7 +463,7 @@ class DelayedManualReplyService(
             canCancel = row.status == DelayedManualReplyStatus.WAITING &&
                 row.publicErrorCode == null && current < row.dueAtMs,
             canRetry = row.status == DelayedManualReplyStatus.FAILED &&
-                error?.retryableAfterRevalidation == true,
+                error?.retryableAfterRevalidation == true && retryEligible(row),
             publicErrorCode = error?.code,
             publicErrorMessage = error?.message,
             sentMailRecordId = if (row.status == DelayedManualReplyStatus.SENT) {
@@ -443,6 +473,32 @@ class DelayedManualReplyService(
     }
 
     fun findVisible(jobId: Long): DelayedManualReplyView? = repository.findById(jobId)?.let { view(it) }
+
+    private fun retryEligible(row: DelayedManualReplyRow): Boolean =
+        !org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive() &&
+        eligibilityTransactions.execute {
+            runCatching {
+                val snapshot = decodeSnapshot(row)
+                requireActorCanTransition(row, row.actorUsername)
+                lockTransitionSource(row, snapshot)
+                requireRuntimeAvailable(snapshot)
+                val attempt = attempts.lockDelayedAttempt(row.sendAttemptId)
+                repository.lockById(row.id) == row &&
+                    attempt.status == MailSendAttemptStatus.FAILED_SAFE_TO_RETRY
+            }.getOrDefault(false)
+        } == true
+
+    private fun requireRuntimeAvailable(snapshot: DelayedManualReplySnapshot) {
+        if (!repository.enabledAccountExists(snapshot.payload.accountCode))
+            throw conflict(DelayedReplyPublicError.ACCOUNT_UNAVAILABLE.code, DelayedReplyPublicError.ACCOUNT_UNAVAILABLE.message)
+        for (expected in snapshot.payload.outboundAttachments) {
+            val actual = runCatching {
+                attachments.resolveForMessageDownload(snapshot.payload.contactId, expected.id).snapshot
+            }.getOrNull()
+            if (actual != expected) throw conflict(DelayedReplyPublicError.ATTACHMENT_UNAVAILABLE.code,
+                DelayedReplyPublicError.ATTACHMENT_UNAVAILABLE.message)
+        }
+    }
 
     // ---------------------------------------------------------------- 内部：源锁
 
@@ -488,12 +544,15 @@ class DelayedManualReplyService(
             is DelayedLegacyRestore -> {
                 if (payload.contactId <= 0) throw conflict(DelayedReplyPublicError.SOURCE_CHANGED.code, "回复目标已变更")
                 permissionGuard.requireFull(actor, payload.contactId)
+                if (!repository.lockLegacySource(payload.contactId, payload.inboundProcessingId, payload.accountCode)) {
+                    throw conflict(DelayedReplyPublicError.SOURCE_CHANGED.code, "回复目标已变更")
+                }
                 SlottedSource.Legacy
             }
         }
     }
 
-    /** 撤回/重试/投递前失败的源锁：审核稿重新解析最新上下文确认，普通稿要求冻结内容不变。 */
+    /** Retry admission validates the current source and latest explicit review confirmation. */
     private fun lockTransitionSource(job: DelayedManualReplyRow, snapshot: DelayedManualReplySnapshot): SlottedSource =
         when (val restore = snapshot.restore) {
             is DelayedDraftRestore -> {
@@ -504,16 +563,23 @@ class DelayedManualReplyService(
                 val resolved = reviews.lockDelayedReviewForRetry(job.actorUsername, restore)
                 SlottedSource.Review(resolved.first, resolved.second)
             }
-            is DelayedLegacyRestore -> SlottedSource.Legacy
+            is DelayedLegacyRestore -> lockEnqueueSource(snapshot, job.actorUsername)
         }
 
-    /** 领取只锁源行保持锁序，不做内容比较：内容已在排队与重排时冻结校验。 */
-    private fun lockClaimSource(job: DelayedManualReplyRow, snapshot: DelayedManualReplySnapshot) {
-        when (val restore = snapshot.restore) {
-            is DelayedDraftRestore -> drafts.lockDelayedTransition(restore.owner, restore.draftId)
-            is DelayedReviewRestore -> reviews.lockDelayedResult(restore.reviewId)
-            is DelayedLegacyRestore -> Unit
+    /** Result transitions lock sources without re-admitting their content or permissions. */
+    private fun lockStateSource(job: DelayedManualReplyRow, snapshot: DelayedManualReplySnapshot?) {
+        when (job.originKind) {
+            DelayedManualReplyOriginKind.DRAFT -> (snapshot?.restore as? DelayedDraftRestore)?.let {
+                drafts.lockDelayedTransition(it.owner, it.draftId)
+            }
+            DelayedManualReplyOriginKind.REVIEW -> job.originId?.let { reviews.lockDelayedResult(it) }
+            DelayedManualReplyOriginKind.LEGACY ->
+                repository.lockLegacySource(job.expertContactId, snapshot?.payload?.inboundProcessingId, job.accountCode)
         }
+        val attempt = attempts.lockDelayedAttempt(job.sendAttemptId)
+        val locked = repository.lockById(job.id) ?: throw notFound()
+        if (locked != job) throw conflict("DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
+        requireMatrix(locked, attempt.status)
     }
 
     private fun failedSource(): ValidatedDraftSendRef =
@@ -540,12 +606,13 @@ class DelayedManualReplyService(
     // ---------------------------------------------------------------- 内部：租约与身份
 
     /** 未决任务：同源（DRAFT/REVIEW 按 origin，LEGACY 按真实来信 id）只能存在一个。 */
-    private fun unresolvedJobFor(snapshot: DelayedManualReplySnapshot, attemptId: Long): DelayedManualReplyRow? {
+    private fun unresolvedJobFor(snapshot: DelayedManualReplySnapshot, attemptId: Long, actor: String): DelayedManualReplyRow? {
         val kind = snapshot.restore.originKind()
         val originId = snapshot.restore.originId()
         val candidates = if (kind == DelayedManualReplyOriginKind.LEGACY) {
             repository.findUnresolvedByContact(snapshot.payload.contactId).filter {
-                it.sendAttemptId != attemptId && decodeLegacyInboundId(it) == snapshot.payload.inboundProcessingId
+                it.sendAttemptId != attemptId && it.actorUsername == actor &&
+                    decodeLegacyInboundId(it) == snapshot.payload.inboundProcessingId
             }
         } else {
             repository.findByOrigin(kind, requireNotNull(originId)).filter { it.sendAttemptId != attemptId }
@@ -556,6 +623,32 @@ class DelayedManualReplyService(
     private fun decodeLegacyInboundId(row: DelayedManualReplyRow): Long? =
         (DelayedManualReplySnapshotCodec.decodeOrNull(row.snapshotJson)?.restore as? DelayedLegacyRestore)
             ?.inboundProcessingId
+
+    private fun requireSameIdentity(job: DelayedManualReplyRow, snapshot: DelayedManualReplySnapshot, actor: String) {
+        val original = decodeSnapshot(job)
+        val sameOwner = when (val restore = original.restore) {
+            is DelayedDraftRestore -> (snapshot.restore as? DelayedDraftRestore)?.owner == restore.owner
+            is DelayedReviewRestore -> snapshot.restore is DelayedReviewRestore &&
+                snapshot.restore.version == restore.version
+            is DelayedLegacyRestore -> snapshot.restore is DelayedLegacyRestore
+        }
+        if (job.actorUsername != actor || job.originKind != snapshot.restore.originKind() ||
+            job.originId != snapshot.restore.originId() || !sameOwner) {
+            throw conflict("DELAYED_REPLY_SOURCE_CONFLICT", "发送任务来源或操作者不一致")
+        }
+    }
+
+    private fun requireMatrix(job: DelayedManualReplyRow, attemptStatus: String) {
+        val valid = when (job.status) {
+            DelayedManualReplyStatus.WAITING, DelayedManualReplyStatus.CANCELLED ->
+                attemptStatus == "PREPARED" || attemptStatus == "FAILED_SAFE_TO_RETRY"
+            DelayedManualReplyStatus.SENDING -> attemptStatus == "DELIVERY_IN_PROGRESS"
+            DelayedManualReplyStatus.SENT -> attemptStatus == "SENT"
+            DelayedManualReplyStatus.UNKNOWN -> attemptStatus == "DELIVERY_UNKNOWN"
+            DelayedManualReplyStatus.FAILED -> attemptStatus == "FAILED" || attemptStatus == "FAILED_SAFE_TO_RETRY"
+        }
+        if (!valid) throw conflict("DELAYED_REPLY_STATE_CONFLICT", "发送任务状态不一致")
+    }
 
     private fun payloadOf(
         snapshot: DelayedManualReplySnapshot,

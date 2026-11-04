@@ -142,6 +142,14 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
         RowMapper { r: ResultSet, _: Int -> r.getString("status") }
     ).singleOrNull()
 
+    fun lockDelayedPreparation(attemptId: Long): Pair<String, Long>? {
+        jdbc.queryForList("SELECT id FROM mail_send_attempt WHERE id=:attempt FOR UPDATE",
+            mapOf("attempt" to attemptId))
+        return jdbc.query("SELECT status,revision FROM delayed_manual_reply WHERE send_attempt_id=:attempt FOR UPDATE",
+            mapOf("attempt" to attemptId), RowMapper { r, _ -> r.getString("status") to r.getLong("revision") })
+            .singleOrNull()
+    }
+
     /** fast-p 03：当前 admin 针对当前上下文令牌的最新确认事件（重试时重新解析，禁止自建）。 */
     fun latestContextConfirmation(draftId: Long, draftVersion: Long, actor: String, contextToken: String): Long? = jdbc.query(
         """SELECT id FROM mailbox_review_draft_event

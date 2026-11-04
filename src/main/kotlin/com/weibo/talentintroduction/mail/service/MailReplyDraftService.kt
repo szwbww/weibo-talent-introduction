@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
@@ -46,13 +47,13 @@ class MailReplyDraftService(
     // Each write is one atomic CAS statement; conflict rereads must not use an old REPEATABLE READ snapshot.
     // fast-p 03 (T3/I-2/I-6)：目标行在同一事务内先行加锁并读取绑定任务，排队的回复
     // （WAITING/SENDING/UNKNOWN）在服务端拒绝自动保存/重开，绝不只靠前端禁用按钮。
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     fun save(owner: String, target: MailReplyDraftTarget, request: MailReplyDraftSaveRequest): MailReplyDraftDetail {
         identity(owner); targetShape(target)
         authorizeTarget(owner, target)
         if (request.expectedVersion < 0) invalid("非法 expectedVersion")
         repository.lockTargetRow(owner,target)
-        val existing = repository.findTarget(owner,target)
+        var existing = repository.findTarget(owner,target)
         requireNotQueued(existing)
         if (existing == null) {
             if (request.expectedVersion != 0L || request.reopen) conflict(null)
@@ -60,6 +61,7 @@ class MailReplyDraftService(
             if (existing.version != request.expectedVersion) conflict(existing)
             if (existing.state != MailReplyDraftState.ACTIVE && !request.reopen) conflict(existing, true)
         }
+        existing = existing?.let { releaseTerminalDelayedBinding(it) }
         validateTarget(target)
         val content = normalizeAttachments(owner,target,request.content,existing)
         val json = MailReplyDraftContextCodec.serialize(content.context)
@@ -77,7 +79,7 @@ class MailReplyDraftService(
             sendVersion=if (existing.state == MailReplyDraftState.ACTIVE) existing.sendVersion else null,
             sendAttemptStatus=if (existing.state == MailReplyDraftState.ACTIVE) existing.sendAttemptStatus else null))
     }
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     fun discard(owner: String, id: Long, expectedVersion: Long): MailReplyDraftDetail {
         identity(owner)
         repository.lockOwned(owner,id)
@@ -178,6 +180,14 @@ class MailReplyDraftService(
             restore.processingId,
             restore.accountScope
         )
+        if (row.target == expected && row.state == MailReplyDraftState.SENT &&
+            row.version == restore.draftVersion + 1 && row.sendVersion == restore.draftVersion &&
+            row.sendAttemptId != null && row.sendAttemptStatus == MailSendAttemptStatus.SENT) {
+            val frozen = MailReplyDraftContent(restore.subject, restore.html, restore.text,
+                MailReplyDraftContextCodec.parse(restore.contextJson))
+            return DelayedDraftSource(row, ValidatedDraftSendRef(owner, row.id, restore.draftVersion,
+                row.target, frozen, row.sendAttemptId, row.sendVersion), true)
+        }
         if (row.target != expected || row.state != MailReplyDraftState.ACTIVE) {
             return DelayedDraftSource(row, null, false)
         }
@@ -198,9 +208,17 @@ class MailReplyDraftService(
 
     /** fast-p 03：把当前草稿版本绑定到已存在的 attempt（重排/重试）。 */
     internal fun bindDelayed(ref: ValidatedDraftSendRef, attemptId: Long) {
+        requireNotQueuedBinding(ref, attemptId)
         if (!repository.bindAttempt(ref.owner, ref.id, ref.version, attemptId)) {
             throw MailReplyDraftException(HttpStatus.CONFLICT, "DRAFT_SEND_QUEUED", "回复已加入发送队列，暂不可修改", ref.version)
         }
+    }
+
+    private fun requireNotQueuedBinding(ref: ValidatedDraftSendRef, attemptId: Long) {
+        val row = locked(ref.owner, ref.id)
+        if (row.sendAttemptId == attemptId && row.sendVersion == ref.version) return
+        requireNotQueued(row)
+        releaseTerminalDelayedBinding(row)
     }
 
     /**
@@ -211,6 +229,13 @@ class MailReplyDraftService(
         val version = row.sendVersion ?: return false
         if (row.sendAttemptId != attemptId) return false
         return repository.releaseCompletedBinding(row.username, row.id, version, attemptId)
+    }
+
+    private fun releaseTerminalDelayedBinding(row: MailReplyDraftRow): MailReplyDraftRow {
+        val attemptId = row.sendAttemptId ?: return row
+        if (repository.delayedJobStatus(attemptId) !in setOf("FAILED", "CANCELLED")) return row
+        check(releaseDelayedBinding(row, attemptId)) { "Draft binding release failed" }
+        return row.copy(sendAttemptId = null, sendVersion = null, sendAttemptStatus = null)
     }
 
     internal fun releaseBinding(row: MailReplyDraftRow) {

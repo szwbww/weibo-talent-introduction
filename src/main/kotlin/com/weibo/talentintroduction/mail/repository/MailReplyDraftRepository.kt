@@ -41,9 +41,7 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     fun lockTargetRow(owner: String, target: MailReplyDraftTarget) {
-        // 生产路径（service REQUIRES_NEW）必然在事务内加行锁；直接构造 service 的测试路径
-        // 没有事务时不加锁，退回原有单条 CAS 语义（不加锁也不会比旧实现更弱）。
-        if (!TransactionSynchronizationManager.isActualTransactionActive()) return
+        mandatory()
         jdbc.queryForList("SELECT id FROM mailbox_reply_draft WHERE username=:owner AND expert_contact_id=:contact AND target_kind=:kind AND inbound_processing_id=:processing AND account_scope=:scope FOR UPDATE",
             targetParams(owner, target))
     }
@@ -64,11 +62,15 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
     fun save(owner: String, id: Long, version: Long, state: MailReplyDraftState, content: MailReplyDraftContent, contextJson: String, now: LocalDateTime): Boolean {
         val resetBinding = if (state == MailReplyDraftState.ACTIVE) "" else ",send_attempt_id=NULL,send_version=NULL"
         return jdbc.update("""UPDATE mailbox_reply_draft SET version=version+1,state='ACTIVE',subject=:subject,html_body=:html,text_body=:text,context_json=:context,updated_at=:now$resetBinding
-            WHERE id=:id AND username=:owner AND version=:version AND state=:state""",
+            WHERE id=:id AND username=:owner AND version=:version AND state=:state
+            AND NOT EXISTS (SELECT 1 FROM delayed_manual_reply j WHERE j.send_attempt_id=mailbox_reply_draft.send_attempt_id
+                AND j.status IN ('WAITING','SENDING','UNKNOWN'))""",
             mapOf("owner" to owner,"id" to id,"version" to version,"state" to state.name,"subject" to content.subject,"html" to content.html,"text" to content.text,"context" to contextJson,"now" to now)) == 1
     }
     fun discard(owner: String, id: Long, version: Long, now: LocalDateTime): Boolean = jdbc.update("""UPDATE mailbox_reply_draft SET state='DISCARDED',version=version+1,subject=NULL,html_body=NULL,text_body=NULL,context_json=NULL,updated_at=:now
-        WHERE id=:id AND username=:owner AND version=:version AND state='ACTIVE'""", mapOf("owner" to owner,"id" to id,"version" to version,"now" to now)) == 1
+        WHERE id=:id AND username=:owner AND version=:version AND state='ACTIVE'
+        AND NOT EXISTS (SELECT 1 FROM delayed_manual_reply j WHERE j.send_attempt_id=mailbox_reply_draft.send_attempt_id
+            AND j.status IN ('WAITING','SENDING','UNKNOWN'))""", mapOf("owner" to owner,"id" to id,"version" to version,"now" to now)) == 1
 
     private fun scopeSql(scope: String?) = if (scope == null) "" else " AND d.account_scope=:scope"
     private fun accessSql(owner: String) = if (!MailReadOnlyPolicy.isReader(owner)) "" else """
