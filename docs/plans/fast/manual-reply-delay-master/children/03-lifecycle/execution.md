@@ -122,3 +122,10 @@ None.
 - Original product head retained: 798206d5b2c8dafd892f5c5f275e952a99c18fa8. Epoch 1 repair count stays zero; epoch 2 starts at zero before acquiring its repair writer.
 - Later children stay PENDING until each preceding independent light verdict and artifact checkpoint passes. No review-fast-p dispatch is authorized.
 
+
+## Epoch 3 — Necessary test compatibility resume
+
+- Epoch2 repair boundary: ed041935a500aa4517ca9f880644a2e7110063d5; complete commands and runtime proof in fix-log.md. One required RepositoryIT direct-service invocation lacks its transaction; known MailReviewQueryIT baseline failure is unchanged.
+- Human approval: 「授权必要测试兼容修订并持续执行」 and repeated instruction to execute subsequent children until ready for review-fast-p without invoking it.
+- A5/A6 plan commit: 0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9. Epoch3 counter begins at zero; only existing-test transaction adaptation remains before independent whole-child lightweight re-verification.
+

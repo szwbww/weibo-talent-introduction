@@ -62,3 +62,13 @@ Return only: READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit SHA, comma
 - Epoch 2 repair commit format: `fix(fast-p): repair 03-lifecycle round <N>`. Append canonical `## Epoch 2 — Round <N>/3` entry to fix-log.md with findings, Before SHA, actual fix commit SHA, authorized files, commands/results and notes. Preserve all prior log entries; exclude all fast-p evidence from the product commit.
 - Independent fresh lightweight re-verification follows each repair. Do not invoke verify-p/review-p/repair-p or review-fast-p in this loop.
 
+
+## Epoch 3 — Required existing-test compatibility (A5/A6)
+
+- Approved child plan identity is now commit 0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9. It adds `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt` (12 authorized files total).
+- Epoch2 repair commit ed041935a500aa4517ca9f880644a2e7110063d5 already implements F-1–F-11/P-1 and passed 37 lifecycle cases, but is not independently verified. Do not replay that product work.
+- Epoch3 round1 changes only the now-authorized existing RepositoryIT direct-service write calls to execute in a real READ_COMMITTED transaction using its existing datasource/proxy. Keep all behavior assertions. Do not alter production code or restore no-transaction locking bypass.
+- Required commands remain the four commands above, at the final state. Known MailReviewQueryIT:239 is baseline-only; do not fix it or reproduce it in another worktree. No extra worktree or optional full suite.
+- Append exact canonical `## Epoch 3 — Round 1/3`, `- Before: ed041935a500aa4517ca9f880644a2e7110063d5`, `- Fix commit: <actual bare SHA>`, `- Findings: ...`, `- Authorized files changed: ...`, `- Commands: ...`, `- Result: FIXED | PAUSE`, `- Notes: ...` to fix-log.md. Preserve earlier epochs. Commit only the test as `fix(fast-p): repair 03-lifecycle round 1`.
+- Human approval also covers later evidence-backed necessary existing-test compatibility amendments; controller must still record each exact change and identity. No broad approval of new production behavior or safety relaxation, and no review-fast-p execution.
+
