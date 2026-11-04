@@ -481,7 +481,7 @@ class ExpertMailReadAccessIT {
             INSERT INTO expert_mail_read_access (username, expert_contact_id, granted_by, created_at)
             VALUES ('user1', 1, 'admin', '2020-01-01'), ('user1', 2, 'admin', '2020-01-02')
         """.trimIndent())
-        val result = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).load().migrate()
+        val result = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).target("172").load().migrate()
         assertEquals("172", result.targetSchemaVersion)
         assertEquals(3, result.migrationsExecuted)
         assertEquals(2L, jdbcTemplate.queryForObject(
@@ -498,11 +498,11 @@ class ExpertMailReadAccessIT {
     }
 
     @Test
-    fun `fresh database applies the complete prefix through V172`() {
+    fun `fresh database applies the complete prefix through V174`() {
         val flyway = Flyway.configure().dataSource(dataSource).placeholderReplacement(false)
             .cleanDisabled(false).load()
         flyway.clean()
-        assertEquals("172", flyway.migrate().targetSchemaVersion)
+        assertEquals("174", flyway.migrate().targetSchemaVersion)
         assertEquals(0L, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM expert_mail_read_access", Long::class.java))
     }
 
