@@ -164,18 +164,18 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 顺序 | 子计划 | 修改文件数 | 前置 |
 |---|---|---:|---|
 | 01 | [持久模型与迁移](manual-reply-delay-01-storage.md) | 7 | 无 |
-| 02 | [冻结与投递分离](manual-reply-delay-02-preparation.md) | 7 | 01 |
-| 03 | [事务状态机与草稿](manual-reply-delay-03-lifecycle.md) | 10 | 02 |
+| 02 | [冻结与投递分离](manual-reply-delay-02-preparation.md) | 8（A1） | 01 |
+| 03 | [事务状态机与草稿](manual-reply-delay-03-lifecycle.md) | 11（A2/A3） | 02 |
 | 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 7 | 03 |
 | 05 | [会话读模型](manual-reply-delay-05-query.md) | 7 | 04 |
 | 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 9 | 05 |
-| 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 8 | 06 |
+| 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4） | 06 |
 
 技术契约与每步具体任务在子计划正文中。共同门禁为 I-1～I-11，子计划不得用测试 mock 覆盖掉真实事务边界。
 
 ## 变更文件清单
 
-总计划为编排文档，代码修改清单为零。执行代码授权以各子计划表为准，每份≤10个文件、≤2个子系统。新增表为独立存储，既有 mail_send_attempt/mail_record/草稿/审核表新增字段均为零，满足共享表每计划≤1新字段限制。同一文件跨阶段修改必须顺序进行，禁止并行编辑。
+总计划为编排文档，代码修改清单为零。执行代码授权以各子计划表为准，通常每份≤10个文件、≤2个子系统；用户批准 A2/A3 后，03 仅为提前实现审核请求代次字段允许 11 个文件，其他阶段上限不变。新增表为独立存储，既有 mail_send_attempt/mail_record/草稿/审核表新增字段均为零，满足共享表每计划≤1新字段限制。同一文件跨阶段修改必须顺序进行，禁止并行编辑。
 
 ## 验收标准
 
@@ -280,3 +280,10 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 知识回写：补充RAG提交后写点、出站附件边界，新增reviewContext共用UI union与双submit helper事实；Flyway版本断言条目命中达到10，已向CLAUDE.md提升一行规则。选中条目均已本日复核，无需衰减归档；这些条目各管指纹、投递分类、草稿、附件、样式等不同约束，没有5条相同主题可无损合并。仓库没有agents/*.md或templates/project-CLAUDE.md角色文件，未凭空新建角色配置。现存用户修改保留。
 
 拟采用的设计选择包括数据库队列、服务器截止时间、UNKNOWN禁重发、已审核撤回后仍APPROVED、原内容永久失败禁重发。生产开关在07完整验收后由发布环境显式启用，仓库默认false；实际上线仍按项目发布流程。以上设计不冒充当前已实现行为。
+
+## 修正记录
+
+- A2/A3/A4（2026-11-05 用户选择「在 03 补齐审核请求代次」）：为保持 I-3/I-6 与 03T3，`MailReviewSendRequest.delayExpectedRevision` 从 07 提前到 03，03 文件上限由 10 特批为 11，07 仅消费该字段并接通发送链，文件数降为 7。不延后撤回后重新准备时的代次校验，不改变最终业务验收。批准与 Before/After 身份见 `../fast/manual-reply-delay-master/ledger.md`。
+- 02 文件数按此前已批准 A1 同步为 8；原静态自检计数仍是计划创建时的历史证据，不冒充修订后的自检。
+- 用户追加执行边界：「批准后续所有子计划 直到可以执行review-fast-p 不要直接执行review-fast-p」。继续顺序执行、独立轻量核验和证据检查点；终态为 READY_FOR_HUMAN_REVIEW，不启动 review-fast-p，不声明全系统 PASS。
+

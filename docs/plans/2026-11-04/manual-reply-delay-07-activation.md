@@ -1,6 +1,6 @@
 # 07 人工入口接通与完整集成门禁
 
-前置01～06逐项通过。发送入口、发布配置两个子系统，8个文件。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
+前置01～06逐项通过。发送入口、发布配置两个子系统，7个文件（A4：审核请求字段已提前到03）。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
 
 ## 需求描述
 
@@ -58,7 +58,7 @@
 
 ### T2 审核入口（I-1/I-3/I-7）
 
-修改MailReviewDraftModels的MailReviewSendRequest加可空delayExpectedRevision；MailReviewSendService仍先prepareSend取得冻结row/ref，再把revision传两条Pending方法。不接受html/text/body覆盖，不改稿版本和approvedContextToken。
+A4：复用03已实现的 `MailReviewSendRequest.delayExpectedRevision` 及 CANCELLED 准备校验，不在本阶段重新添加字段。MailReviewSendService仍先prepareSend取得冻结row/ref，再把revision传两条Pending方法。不接受html/text/body覆盖，不改稿版本和approvedContextToken。
 
 review首次WAITING、重复同请求WAITING原due；取消后再次发送需当前job revision。刷新后通过04按origin查询定位job，不能仅靠浏览器内存得revision。REVIEW_CONTEXT_CHANGED失败后的retry需要现有confirmContext产生当前确认；03/04重建时只更新确认引用、不改正文指纹。
 
@@ -83,11 +83,10 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 |1|src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt|入口分支/request/result|
 |2|src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt|传递revision|
 |3|src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt|request/传递revision|
-|4|src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt|审核请求revision|
-|5|src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt|审核接通|
-|6|src/main/resources/application.yml|新入队开关，保留已有修改|
-|7|src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplyDelayEndToEndIT.kt|新增端到端IT|
-|8|src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt|开关/响应回归|
+|4|src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt|审核接通，消费03请求代次|
+|5|src/main/resources/application.yml|新入队开关，保留已有修改|
+|6|src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplyDelayEndToEndIT.kt|新增端到端IT|
+|7|src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt|开关/响应回归|
 
 ## 验收标准
 
@@ -118,3 +117,8 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 - 操作步骤 — 1. 从总计划导出人工验收勾选文件。2. 执行总A-1～A-12。3. 每项填写操作者、日期、结果和截图/接口证据。4. 有失败先修权威plan/对应实现再复验。
 - 预期结果 — 12项都有明确通过证据；未经执行项标未验收；全部通过前不标功能完成、不启生产开关。
 - 覆盖 — 总I-1～I-11、S-1～S-4、所有需求与交互点。
+
+## 修正记录
+
+- A4（2026-11-05 用户批准，与总计划A2/子计划03 A3同一决定）：`MailReviewDraftModels.kt` 请求字段归属提前到03，本阶段删去该文件修改授权，仅在发送适配器传递现有 `delayExpectedRevision` 并完成全链路验收；文件数由8改7，其他要求不变。连续执行到可进行 review-fast-p，但不直接调用该技能。
+

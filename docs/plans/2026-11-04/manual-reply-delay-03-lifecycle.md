@@ -1,6 +1,6 @@
 # 03 事务状态机与草稿绑定
 
-前置02通过。单一发送事务子系统，10个文件。入口仍关闭，使用隔离MySQL直接调用服务验收。
+前置02通过。单一发送事务子系统，11个文件（A3：审核请求代次字段从07提前，用户特批文件上限）。入口仍关闭，使用隔离MySQL直接调用服务验收。
 
 ## 需求描述
 
@@ -93,6 +93,8 @@
 
 普通详情sendAttemptStatus通过联表优先返回WAITING/SENDING/UNKNOWN；取消释放后恢复原状态投影，不新增草稿表列。审核sendProjection同理：WAITING/SENDING不可发送；CANCELLED投影可再次准备但必须携带queue revision。保留审核attempt绑定以追踪历史，通过job状态判断是否发送锁；不改APPROVED内容/版本。增加去重事件SEND_QUEUED/SEND_CANCELLED/SEND_REQUEUED，以job+revision标识，每轮最多一个。recordSendResult沿用既有去重。
 
+A3：本阶段在 `MailReviewDraftModels.kt` 的 `MailReviewSendRequest` 末尾新增可空 `delayExpectedRevision: Long? = null`。首次准备允许为空；CANCELLED 再次 `prepareSend` 必须在来源/attempt/job 同序锁定后校验当前任务 revision，缺失或过期返回409，不允许以旧请求绕过。非正值按原请求异常机制返回400。APPROVED 内容、版本和审核历史不变。07 只消费本字段并传到 Pending/enqueue，不再新增平行字段；回归在本阶段已授权 MySQL 测试中覆盖首次、缺失、过期和正确代次。
+
 审核confirmContext仅在非WAITING/SENDING状态允许重新确认；worker发现新来信而失败后，用户在原审核面板确认最新context，再retry。retry时服务端查找当前admin对相同draftId/version、当前contextToken的最新CONTEXT_CONFIRMED事件，重新验证后把其引用写入snapshot.confirmation；禁止自建确认事件，禁止复用其他操作者事件。不改冻结subject/html/text/指纹。
 
 ### T4 完成与恢复（I-2/I-3/I-5/I-10）
@@ -115,6 +117,7 @@ DelayedManualReplyService提供recoverStale与preflightFailure短事务；已知
 |8|src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyLifecycleIT.kt|新增真实MySQL并发测试|
 |9|src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt|草稿/成功事务回归|
 |10|src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt|审核回归|
+|11|src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt|A3：审核请求delayExpectedRevision从07提前|
 
 ## 验收标准
 
@@ -145,3 +148,8 @@ DelayedManualReplyService提供recoverStale与preflightFailure短事务；已知
 - 操作步骤 — 1. 到期领取并发送。2. 查事实审计、排期、草稿、审核结果。3. enabled=false通过原入口另发一封。
 - 预期结果 — 每个成功任务一封SMTP、一条SENT、对应事实/排期一次；旧入口仍同步SENT，无新delay job。未知模拟不允许retry。
 - 覆盖 — I-4（总计划）/I-5/I-10，保持旧链，X-4。
+
+## 修正记录
+
+- A3（2026-11-05 用户批准）：解决 Verify03Lifecycle P-1，增加 `MailReviewDraftModels.kt` 授权并提前实现审核请求代次与 CANCELLED prepareSend 校验。总计划 A2 特批本阶段 11 文件；07 按 A4 仅接通消费。保留全部原验收，不采用原实现报告中未经批准的延期。修复范围同时包含核验报告已证明的 F-1～F-11，不扩展无关功能。
+
