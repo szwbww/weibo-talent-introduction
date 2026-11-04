@@ -28,6 +28,48 @@ class DiscoveryPaperArchiveCaptureTest {
         DiscoveryPaperArchiveCapture.fullBody(token, bytes)
         DiscoveryPaperArchiveCapture.endAttempt(token)
     }
+    @Test fun `scope admission frees oldest task and capture continues without retry`() {
+        ArchiveFixture().use { f ->
+            f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+            val old = f.body(f.paper("old", 1), f.pdf())
+            val oldPath = f.root.resolve("blobs/${old.blobSha256!!.take(2)}/${old.blobSha256}.bin")
+            f.service.diskProbe = {
+                ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+                    if (Files.exists(oldPath)) ARCHIVE_GIB - 1 else ARCHIVE_GIB + 4096)
+            }
+            val expected = outcome()
+            assertSame(expected, DiscoveryPaperArchiveCapture(f.service, f.mapper).capture(context(2), "current", paper()) {
+                body(f.pdf(512, 66)); expected
+            })
+            assertFalse(Files.exists(oldPath))
+            val current = f.repository.records().single { it.executionId == 2L }
+            assertEquals(ArchiveAttemptStatus.SAVED, f.repository.attempts(current.id).single().status)
+            assertNotNull(current.outcomeJson)
+            assertFalse(DiscoveryPaperArchiveCapture.hasScope())
+        }
+    }
+    @Test fun `space lost during download reclaims old files without deleting the body being reused`() {
+        ArchiveFixture().use { f ->
+            f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+            val reused = f.body(f.paper("reused", 1), f.pdf())
+            val spare = f.body(f.paper("spare", 1), f.pdf(2048, 66))
+            val sparePath = f.root.resolve("blobs/${spare.blobSha256!!.take(2)}/${spare.blobSha256}.bin")
+            DiscoveryPaperArchiveCapture(f.service, f.mapper).capture(context(2), "current", paper()) {
+                val token = DiscoveryPaperArchiveCapture.beginAttempt(ArchiveAttemptKind.PDF_URL, null)
+                f.service.diskProbe = {
+                    ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+                        if (Files.exists(sparePath)) ARCHIVE_GIB - 1 else ARCHIVE_GIB + 2047)
+                }
+                DiscoveryPaperArchiveCapture.fullBody(token, f.pdf())
+                outcome()
+            }
+            val current = f.repository.records().single { it.executionId == 2L }
+            val attempt = f.repository.attempts(current.id).single()
+            assertTrue(attempt.reused); assertEquals(reused.blobSha256, attempt.blobSha256)
+            assertFalse(Files.exists(sparePath))
+            assertEquals(ArchiveAttemptStatus.SAVED, f.repository.attempt(reused.id)!!.status)
+        }
+    }
     @Test fun `disabled capture delegates unchanged and makes no archive writes`() {
         ArchiveFixture().use { f ->
             val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)

@@ -199,24 +199,56 @@ class DiscoveryPaperArchiveService(
     private val scopePermits = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ScopePermit, Boolean>())
     internal fun beginScope(executionId: Long, source: String, key: String, metadata: JsonNode): ScopePermit? = mutation {
         if (!properties.allowed || !repository.setting().enabled) return@mutation null
-        preflight()
+        preflight(executionId)
         ScopePermit(beginRecord(executionId, source, key, metadata).id).also { scopePermits.add(it) }
     }
     private fun permit(value: ScopePermit) {
         if (!scopePermits.contains(value)) throw ArchiveException("INVALID_SCOPE", 409)
     }
-    private fun preflight(bytes: Long = 0, requireHeadroom: Boolean = true) {
+    private fun preflight(executionId: Long, bytes: Long = 0, requireHeadroom: Boolean = true, keepHash: String? = null) {
         if (!properties.allowed) throw ArchiveException("ARCHIVE_DISABLED", 409)
         val settings = repository.setting()
         val base = root()
         if (!Files.isDirectory(base, LinkOption.NOFOLLOW_LINKS) || !Files.isWritable(base)) throw ArchiveException("STORAGE_UNAVAILABLE", 503)
-        val size = sizes()
-        if (bytes > settings.maxBytes - size.first - size.second ||
-            (requireHeadroom && bytes == 0L && size.first + size.second >= settings.maxBytes) ||
-            diskProbe(base).usable - bytes < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
+        fun hasCapacity(): Boolean {
+            val size = sizes()
+            val available = diskProbe(base).usable
+            return bytes <= settings.maxBytes - size.first - size.second &&
+                (!requireHeadroom || bytes != 0L || size.first + size.second < settings.maxBytes) &&
+                available - bytes >= settings.minFreeBytes
+        }
+        if (hasCapacity()) return
+        // An impossible single body must not evict the entire archive.
+        if (bytes <= settings.maxBytes) {
+            val selectedExecutions = mutableSetOf<Long>()
+            val activeRecords = scopePermits.map { it.recordId }.toSet()
+            for (oldExecution in repository.cleanupExecutions(executionId)) {
+                selectedExecutions.add(oldExecution)
+                var afterHash = ""
+                while (true) {
+                    val candidates = repository.cleanupBlobs(oldExecution, afterHash)
+                    if (candidates.isEmpty()) break
+                    for (blob in candidates) {
+                        afterHash = blob.sha256
+                        if (blob.sha256 == keepHash || (analysisReaders[blob.sha256] ?: 0) > 0) continue
+                        val refs = repository.references(blob.sha256)
+                        if (refs.isEmpty() || refs.any { ref ->
+                            val r = repository.record(ref.recordId)
+                            r == null || r.protected || r.executionId !in selectedExecutions || r.id in activeRecords
+                        }) continue
+                        if (!validBlob(blob)) continue
+                        val deleted = deleteBlob(blob)
+                        LOG.info("event=DISCOVERY_PAPER_AUTO_CLEANUP executionId={} sourceExecutionId={} hash={} bytes={} deleted={}",
+                            executionId, oldExecution, blob.sha256, blob.sizeBytes, deleted)
+                        if (hasCapacity()) return
+                    }
+                }
+            }
+        }
+        throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
     }
     internal fun beginScopeAttempt(value: ScopePermit, extractionId: UUID, sequence: Int, kind: ArchiveAttemptKind, url: String?): ArchiveAttempt = mutation {
-        permit(value); preflight()
+        permit(value); preflight(record(value.recordId).executionId)
         beginAttempt(value.recordId, extractionId, sequence, kind, url).also { value.attempts.add(it.id) }
     }
     internal fun saveScopeBody(value: ScopePermit, attemptId: Long, bytes: ByteArray, mediaType: String): ArchiveAttempt = mutation {
@@ -264,14 +296,14 @@ class DiscoveryPaperArchiveService(
         if (existing?.state == ArchiveBlobState.DELETING) throw ArchiveException("DELETE_IN_PROGRESS", 409)
         val reusable = existing?.takeIf { it.state == ArchiveBlobState.AVAILABLE && validBlob(it, true) }
         // Download admission needs headroom; verified reuse adds no physical bytes.
-        if (scope != null) preflight(if (reusable == null) bytes.size.toLong() else 0, requireHeadroom = false)
+        if (scope != null) preflight(record(a.recordId).executionId,
+            if (reusable == null) bytes.size.toLong() else 0, requireHeadroom = false, keepHash = hash)
         if (reusable != null) {
             repository.saveBody(attemptId, hash, reusable.sizeBytes, reusable.mediaType, true, Instant.now())
             return@mutation repository.attempt(attemptId)!!
         }
         if (scope == null) {
-            val size = sizes(); val disk = diskProbe(root())
-            if (bytes.size.toLong() > settings.maxBytes - size.first - size.second || disk.usable - bytes.size < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
+            preflight(record(a.recordId).executionId, bytes.size.toLong(), requireHeadroom = false, keepHash = hash)
         }
         val media = if (PaperContentFormat.detect(bytes, a.kind) == "PDF") "application/pdf" else "text/plain"
         val temp = root().resolve(".tmp").resolve(UUID.randomUUID().toString())
@@ -481,20 +513,26 @@ class DiscoveryPaperArchiveService(
         return Deletion(ArchiveDeletePreview(ids,sha(mapper.writeValueAsBytes(canonical)),deletable.size,deletable.sumOf { it.sizeBytes },protected,shared,busy,notStored,items),deletable)
     }
     fun deletePreview(ids: List<Long>): ArchiveDeletePreview = mutation { deletion(ids).preview }
+    /** Called under mutation; durable intent lets recovery finish an interrupted unlink. */
+    private fun deleteBlob(blob: ArchiveBlob): Boolean {
+        repository.transaction { repository.blobState(blob.sha256, ArchiveBlobState.DELETING); true }
+        failpoint("AFTER_DELETING")
+        return try {
+            Files.deleteIfExists(blobPath(blob.sha256))
+            failpoint("AFTER_UNLINK")
+            repository.finishDelete(blob.sha256, Instant.now())
+            true
+        } catch (_: Exception) { false }
+    }
     fun delete(request: ArchiveDeleteRequest): ArchiveDeleteResult = mutation {
         val d = deletion(request.ids)
         if (request.snapshotHash != d.preview.snapshotHash) throw ArchiveException("DELETE_SNAPSHOT_CHANGED",409,preview=d.preview)
         var files = 0; var bytes = 0L; val failed = mutableListOf<ArchiveConflict>()
         d.blobs.forEach { blob ->
             val refs = repository.references(blob.sha256)
-            repository.transaction { repository.blobState(blob.sha256,ArchiveBlobState.DELETING); true }
-            failpoint("AFTER_DELETING")
-            try {
-                Files.deleteIfExists(blobPath(blob.sha256))
-                failpoint("AFTER_UNLINK")
-                repository.finishDelete(blob.sha256,Instant.now())
+            if (deleteBlob(blob)) {
                 files++; bytes += blob.sizeBytes
-            } catch (_: Exception) { refs.map { it.recordId }.distinct().forEach { failed += ArchiveConflict(it,"DELETE_IO_ERROR") } }
+            } else refs.map { it.recordId }.distinct().forEach { failed += ArchiveConflict(it,"DELETE_IO_ERROR") }
         }
         ArchiveDeleteResult(files,bytes,d.preview.items.flatMap { item -> item.reasonCodes.map { ArchiveConflict(item.id,it) } },failed,sizes().third)
     }

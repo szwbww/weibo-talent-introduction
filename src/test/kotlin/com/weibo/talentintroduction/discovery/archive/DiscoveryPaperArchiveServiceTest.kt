@@ -26,6 +26,96 @@ class DiscoveryPaperArchiveServiceTest {
     private fun path(a: ArchiveAttempt) = f.root.resolve("blobs/${a.blobSha256!!.take(2)}/${a.blobSha256}.bin")
     private class Crash : Error("simulated process interruption")
 
+    private fun diskCapacity(bytes: Long) {
+        f.service.diskProbe = {
+            val used = Files.walk(f.root.resolve("blobs")).use { paths ->
+                paths.filter { Files.isRegularFile(it) }.mapToLong { Files.size(it) }.sum()
+            }
+            ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, ARCHIVE_GIB + bytes - used)
+        }
+    }
+
+    @Test fun `low space deletes oldest task first and stops once the incoming body fits`() {
+        f.enable()
+        ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2); ArchiveMysqlFixture.task(3, "RUNNING")
+        // Insert newest paper first so record order cannot masquerade as task age.
+        val newer = f.body(f.paper("newer", 2), f.pdf(1024, 66))
+        val oldPaper = f.paper("oldest", 1); val oldest = f.body(oldPaper, f.pdf())
+        val outcome = f.mapper.readTree("""{"schemaVersion":1,"emails":[]}""")
+        f.service.finishExtraction(oldPaper.id, outcome)
+        diskCapacity(2048)
+        // Read-only observations must not initiate cleanup.
+        f.service.stats(); f.service.list(ArchiveQuery()); f.service.deletePreview(listOf(oldPaper.id))
+        assertTrue(Files.exists(path(oldest)))
+        val incoming = f.body(f.paper("current", 3), f.pdf(512, 67))
+        assertFalse(Files.exists(path(oldest))); assertTrue(Files.exists(path(newer)))
+        assertEquals(ArchiveAttemptStatus.DELETED, f.repository.attempt(oldest.id)!!.status)
+        assertEquals(ArchiveBlobState.MISSING, f.repository.blob(oldest.blobSha256!!)!!.state)
+        assertEquals(outcome, f.service.detail(oldPaper.id).outcome)
+        assertEquals(1024L, f.repository.attempt(oldest.id)!!.completedBytes)
+        assertEquals(3L, f.service.stats().counts.savedAttempts)
+        assertEquals(ArchiveAttemptStatus.SAVED, incoming.status)
+    }
+
+    @Test fun `cleanup advances through old batches but keeps later batch and current files`() {
+        f.enable()
+        (1L..3L).forEach { ArchiveMysqlFixture.task(it) }; ArchiveMysqlFixture.task(4, "RUNNING")
+        val old = (1L..3L).map { f.body(f.paper("batch$it", it), f.pdf(1024, (64 + it).toByte())) }
+        val current = f.body(f.paper("already-current", 4), f.pdf(512, 70))
+        diskCapacity(3584)
+        f.body(f.paper("incoming", 4), f.pdf(2048, 71))
+        assertEquals(listOf(false, false, true), old.map { Files.exists(path(it)) })
+        assertTrue(Files.exists(path(current)))
+    }
+
+    @Test fun `automatic cleanup honors protection current sharing and analysis readers`() {
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val protected = f.paper("protected", 1); val protectedBody = f.body(protected, f.pdf(1024, 65))
+        f.protect(protected.id, true)
+        val shared = f.body(f.paper("shared-old", 1), f.pdf(1024, 66))
+        f.body(f.paper("shared-current", 2), f.pdf(1024, 66))
+        val reading = f.paper("reading", 1); val readingBody = f.body(reading, f.pdf(1024, 67))
+        val removable = f.body(f.paper("removable", 1), f.pdf(1024, 68))
+        diskCapacity(4096)
+        f.service.analysisLease(reading.id).use {
+            f.body(f.paper("incoming", 2), f.pdf(512, 69))
+        }
+        listOf(protectedBody, shared, readingBody).forEach { assertTrue(Files.exists(path(it))) }
+        assertFalse(Files.exists(path(removable)))
+    }
+
+    @Test fun `shared historical blob is reclaimed after both old batches enter cleanup`() {
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2); ArchiveMysqlFixture.task(3, "RUNNING")
+        val first = f.body(f.paper("shared1", 1), f.pdf())
+        val second = f.body(f.paper("shared2", 2), f.pdf())
+        diskCapacity(1024)
+        f.body(f.paper("incoming", 3), f.pdf(512, 66))
+        assertFalse(Files.exists(path(first)))
+        assertEquals(ArchiveAttemptStatus.DELETED, f.repository.attempt(second.id)!!.status)
+        assertTrue(f.repository.attempt(second.id)!!.reused)
+    }
+
+    @Test fun `cleanup also makes archive quota headroom without touching unrelated files`() {
+        f.enable(ARCHIVE_GIB); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val old = f.body(f.paper("old", 1), f.pdf())
+        val filler = f.root.resolve("blobs/filler.bin")
+        FileChannel.open(filler, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
+            it.position(ARCHIVE_GIB - 1024 - 1); it.write(ByteBuffer.wrap(byteArrayOf(0)))
+        }
+        f.body(f.paper("incoming", 2), f.pdf(512, 66))
+        assertFalse(Files.exists(path(old))); assertTrue(Files.exists(filler))
+        assertEquals(ARCHIVE_GIB - 512, f.service.stats().storage.archiveUsedBytes)
+    }
+
+    @Test fun `exhausted cleanup stays blocked without deleting current task`() {
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val old = f.body(f.paper("old", 1), f.pdf())
+        val current = f.body(f.paper("current", 2), f.pdf(1024, 66))
+        diskCapacity(2048)
+        code("ARCHIVE_STORAGE_BLOCKED") { f.body(f.paper("too-much", 2), f.pdf(2048, 67)) }
+        assertFalse(Files.exists(path(old))); assertTrue(Files.exists(path(current)))
+    }
+
     @Test fun `first email array counts names without proof and missing outcomes stay unknown`() {
         f.enable(); val p = f.paper("names")
         f.service.finishExtraction(p.id, f.mapper.readTree("""{"schemaVersion":1,"first":{"outcome":{"emails":[{"email":"a@x.org","givenNames":"Alice","familyNames":"Smith"},{"email":"b@x.org","givenNames":"Bob","familyNames":"Jones"},{"email":"c@x.org","givenNames":"Carol"}]}}}"""))

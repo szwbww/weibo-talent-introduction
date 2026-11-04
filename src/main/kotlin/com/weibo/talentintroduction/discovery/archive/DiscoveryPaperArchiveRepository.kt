@@ -59,6 +59,27 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
     }
     fun record(id: Long): ArchiveRecord? = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE id=?", recordMapper, id).firstOrNull()
     fun records(): List<ArchiveRecord> = jdbc.query("SELECT * FROM discovery_paper_archive_record ORDER BY id", recordMapper)
+    /** Task age, not paper insertion order, determines the reclamation order. */
+    fun cleanupExecutions(currentExecutionId: Long): List<Long> = jdbc.queryForList("""
+        SELECT t.id FROM task_execution t JOIN task_execution current_task ON current_task.id=?
+        WHERE current_task.task_type='EXPERT_DISCOVERY' AND t.task_type='EXPERT_DISCOVERY'
+          AND t.status IN ('SUCCESS','PARTIAL_SUCCESS','FAILED','INTERRUPTED','CANCELLED')
+          AND t.finished_at IS NOT NULL
+          AND (t.started_at<current_task.started_at OR (t.started_at=current_task.started_at AND t.id<current_task.id))
+          AND EXISTS (SELECT 1 FROM discovery_paper_archive_record r
+            JOIN discovery_paper_archive_attempt a ON a.record_id=r.id
+            JOIN discovery_paper_archive_blob b ON b.sha256=a.blob_sha256
+            WHERE r.execution_id=t.id AND a.status='SAVED' AND b.state='AVAILABLE')
+        ORDER BY t.started_at,t.id
+        """, Long::class.java, currentExecutionId)
+
+    fun cleanupBlobs(executionId: Long, afterHash: String): List<ArchiveBlob> = jdbc.query("""
+        SELECT DISTINCT b.* FROM discovery_paper_archive_blob b
+        JOIN discovery_paper_archive_attempt a ON a.blob_sha256=b.sha256
+        JOIN discovery_paper_archive_record r ON r.id=a.record_id
+        WHERE r.execution_id=? AND a.status='SAVED' AND b.state='AVAILABLE' AND b.sha256>?
+        ORDER BY b.sha256 LIMIT 200
+        """, blobMapper, executionId, afterHash)
     /** Exact origin uses the existing (execution, source, paper_key) unique index. */
     fun lookupOriginal(requests: List<PaperArchiveLookup>): Map<PaperArchiveLookup, ArchiveRecord?> {
         require(requests.size <= 100)

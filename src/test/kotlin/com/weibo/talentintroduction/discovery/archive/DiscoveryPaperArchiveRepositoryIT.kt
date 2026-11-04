@@ -30,6 +30,9 @@ internal object ArchiveMysqlFixture {
     }
     val dataSource by lazy { DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password).also {
         ResourceDatabasePopulator(ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql"), ClassPathResource("db/migration/V163__paper_archive_lookup_indexes.sql")).execute(it)
+        JdbcTemplate(it).execute("""CREATE TABLE task_execution (
+            id BIGINT PRIMARY KEY, task_type VARCHAR(64) NOT NULL, status VARCHAR(32) NOT NULL,
+            started_at DATETIME(3) NOT NULL, finished_at DATETIME(3) NULL)""")
     } }
     val jdbc by lazy { JdbcTemplate(dataSource) }
     val mapper = jacksonObjectMapper().findAndRegisterModules()
@@ -39,6 +42,13 @@ internal object ArchiveMysqlFixture {
         jdbc.update("DELETE FROM discovery_paper_archive_blob")
         jdbc.update("DELETE FROM discovery_paper_archive_record")
         jdbc.update("DELETE FROM discovery_paper_archive_setting")
+        jdbc.update("DELETE FROM task_execution")
+    }
+    fun task(id: Long, status: String = "SUCCESS", startedAt: Instant = Instant.parse("2026-10-01T00:00:00Z").plusSeconds(id),
+        type: String = "EXPERT_DISCOVERY") {
+        val started = java.time.LocalDateTime.ofInstant(startedAt, java.time.ZoneOffset.UTC)
+        jdbc.update("INSERT INTO task_execution VALUES (?,?,?,?,?)", id, type, status, started,
+            if (status in setOf("RUNNING", "CANCELLING")) null else started.plusSeconds(1))
     }
     fun stop() { if (mysql.isRunning) mysql.stop() }
 }
@@ -70,6 +80,48 @@ internal class ArchiveFixture(val realDisk: Boolean = false) : AutoCloseable {
 
 class DiscoveryPaperArchiveRepositoryIT {
     @BeforeEach fun clean() { ArchiveMysqlFixture.clean() }
+    @Test fun `cleanup task selection is oldest first and excludes active unknown and future executions`() {
+        ArchiveFixture().use { f ->
+            f.enable()
+            val epoch = Instant.parse("2026-10-01T00:00:00Z")
+            ArchiveMysqlFixture.task(10, startedAt = epoch.plusSeconds(10))
+            ArchiveMysqlFixture.task(20, startedAt = epoch.plusSeconds(5))
+            ArchiveMysqlFixture.task(30, "PARTIAL_SUCCESS", epoch.plusSeconds(10))
+            ArchiveMysqlFixture.task(40, "FAILED", epoch.plusSeconds(20))
+            ArchiveMysqlFixture.task(50, "INTERRUPTED", epoch.plusSeconds(25))
+            ArchiveMysqlFixture.task(60, "RUNNING", epoch)
+            ArchiveMysqlFixture.task(70, "CANCELLING", epoch)
+            ArchiveMysqlFixture.task(80, startedAt = epoch, type = "OTHER_TASK")
+            ArchiveMysqlFixture.task(90, "UNKNOWN", epoch)
+            ArchiveMysqlFixture.task(100, "RUNNING")
+            ArchiveMysqlFixture.task(110)
+            ArchiveMysqlFixture.task(130, startedAt = epoch)
+            ArchiveMysqlFixture.jdbc.update("UPDATE task_execution SET finished_at=NULL WHERE id=130")
+            (10L..130L step 10).forEach { id -> f.body(f.paper("task$id", id), f.pdf(512 + id.toInt())) }
+            assertEquals(listOf(20L, 10L, 30L, 40L, 50L), f.repository.cleanupExecutions(100))
+            assertTrue(f.repository.cleanupExecutions(999).isEmpty())
+            assertTrue(f.repository.cleanupExecutions(80).isEmpty())
+        }
+    }
+
+    @Test fun `cleanup blob keyset crosses the page limit without duplicates or other batches`() {
+        val r = ArchiveMysqlFixture.repository(); val now = Instant.parse("2026-10-01T00:00:00Z")
+        val paper = r.beginRecord(1, "OPENALEX", "many", "{}", now)
+        (1..201).forEach { n ->
+            val a = r.beginAttempt(paper.id, "attempt$n", ArchiveAttemptKind.PDF_URL, null, now)
+            r.saveBody(a.id, "%064x".format(n), 1, "application/pdf", false, now)
+        }
+        val first = r.cleanupBlobs(1, "")
+        assertEquals(200, first.size)
+        val second = r.cleanupBlobs(1, first.last().sha256)
+        assertEquals(1, second.size)
+        assertTrue(first.none { it.sha256 == second.single().sha256 })
+        assertTrue(r.cleanupBlobs(1, second.single().sha256).isEmpty())
+        assertTrue(r.cleanupBlobs(2, "").isEmpty())
+        r.blobState(second.single().sha256, ArchiveBlobState.DELETING)
+        assertTrue(r.cleanupBlobs(1, first.last().sha256).isEmpty())
+    }
+
     @Test fun `bounded exact origin and historical keyset lookup preserve cross run provenance`() {
         val r = ArchiveMysqlFixture.repository(); val now = Instant.parse("2026-10-24T00:00:00Z")
         val original = r.beginRecord(2,"OPENALEX","W1","""{"doi":"10.1234/example","pmid":"123","pmcId":"PMC123"}""",now)
