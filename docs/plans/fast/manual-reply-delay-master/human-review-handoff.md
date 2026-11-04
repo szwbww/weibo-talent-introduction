@@ -2,7 +2,7 @@
 
 - Outcome: PAUSED_FOR_HUMAN
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
-- Current/final code head: 798206d5b2c8dafd892f5c5f275e952a99c18fa8
+- Current/final code head: 9bbb3b050f533a0010d48d545b4756abc8aa7e82
 - Branch/worktree: fast/manual-reply-delay-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
 
 ## Child Status
@@ -10,34 +10,32 @@
 |---|---|---|---:|---|
 | 01-storage | LIGHT_PASS | 05342b4be63bbc7d9b30416ae73ada2d44b562df..d57026edc072b5469f08e8642c8c771acbd894e9 | 0 | 322495454e9a62d22c3739a5cfe09750e2941207 |
 | 02-preparation | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9..72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | bdda233d1a376bc2ea01f61f8540545a833f18c8 |
-| 03-lifecycle | PAUSED_FOR_HUMAN | 72906c0c5e36393429320817ea0de4f7d6f3ff05..798206d5b2c8dafd892f5c5f275e952a99c18fa8 | 0 | 17db797b5dce8c950d6b3fd5fe95ab5ca72eecbb |
-| 04-worker-api | PENDING | N/A | 0 | — |
+| 03-lifecycle | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 2 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 |
+| 04-worker-api | PAUSED_FOR_HUMAN | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 0 | a0633e8fd51c47a6444c44ad000870da8d11f25b |
 | 05-query | PENDING | N/A | 0 | — |
 | 06-frontend | PENDING | N/A | 0 | — |
 | 07-activation | PENDING | N/A | 0 | — |
 
+03 current epoch3 has two repair rounds; prior epoch2 has one repair at ed041935a500aa4517ca9f880644a2e7110063d5. All historical epochs remain in its logs. 04 has no product implementation or repair commit.
+
 ## RECORD_ONLY Index
 | Observation | Child | Evidence | Source report |
 |---|---|---|---|
-| O-1 unused injected RAG repository parameter | 02-preparation | PendingMailOperationService.kt:95 at reviewed boundary; hygiene only | children/02-preparation/verify-log.md |
-| O-2 positional deliverPrepared parameter naming | 02-preparation | claim versus claimedAttempt; positional contract unchanged | children/02-preparation/verify-log.md |
-| O-3 no-draft conversation snapshot limitation | 02-preparation | LEGACY requires non-null inboundProcessingId; later supported-entry coverage needs explicit resolution, not silent scope reduction | children/02-preparation/verify-log.md |
-| O-4 rehydrate runtime preparation | 02-preparation | 04 must reconstruct runtime source and resolved attachments while preserving frozen content | children/02-preparation/verify-log.md |
-| O-1 existing MailReviewQueryIT failure | 03-lifecycle | Required isolated-MySQL rerun: 81 tests, 1 failure at line 239 matching supplied base/head evidence | children/03-lifecycle/verify-log.md |
-| O-2 existing America/Coyhaique tzdata errors | 03-lifecycle | Implementer optional full-suite evidence only; independent verifier did not rerun that suite | children/03-lifecycle/verify-log.md |
+| O-1 unused injected RAG repository parameter | 02-preparation | Hygiene only | children/02-preparation/verify-log.md |
+| O-2 positional deliverPrepared parameter naming | 02-preparation | Positional contract unchanged | children/02-preparation/verify-log.md |
+| O-3 no-draft conversation snapshot limitation | 02-preparation | LEGACY requires inboundProcessingId; later supported-entry coverage must resolve without silent reduction | children/02-preparation/verify-log.md |
+| O-4 rehydrate runtime preparation | 02-preparation | Child04 reconstructs runtime source/attachments while preserving frozen content | children/02-preparation/verify-log.md |
+| O-1 existing MailReviewQueryIT failure | 03-lifecycle | Latest independent required MySQL run:99 tests,1 failure at239; lifecycle40/40, RepositoryIT8/8 | children/03-lifecycle/verify-log.md |
+| O-2 existing America/Coyhaique tzdata errors | 03-lifecycle | Historical optional-suite evidence only; latest independent verifier did not run optional suite | children/03-lifecycle/verify-log.md |
 
 ## Pause/Resume
-- Reason: Verify03Lifecycle returned PAUSE. P-1 is an unresolved authority conflict: 03T3 requires the current queue revision when preparing a CANCELLED review, while the request DTO is not authorized until child 07. The implementer's deferral to 04/06 was not approved.
-- Open repairs: F-1 through F-11 in children/03-lifecycle/verify-log.md. They cover post-lock draft reads, transition locks after access/context changes, fixed actor/origin identity, failed-binding release, existing job/attempt routing, claim-time authorization, duplicate success convergence, the shared dispatch reference, LEGACY source serialization, current retry eligibility, and mandatory MySQL acceptance evidence.
-- Resume from: child 03-lifecycle, retain epoch 1 evidence and product head 798206d5b2c8dafd892f5c5f275e952a99c18fa8; obtain explicit authority decision, record any approved plan amendment in its own commit and ledger row, then start a new epoch with repair counter zero. Dispatch bounded repair and a distinct fresh lightweight verifier. Do not replay children 01/02 or start 04 before 03 passes its child checkpoint.
-- Required command results: JDK11 compile exit0; attempt/draft unit tests 76/76; isolated MySQL 80/81 with the classified baseline failure; Pending regression 103/103. These runs do not prove the untested invariants identified by the verifier. No runtime/browser acceptance was performed by that verifier.
-- Amendment A1 is already approved and recorded; it authorizes RagSendBridgeTest changes for child 02 only, not P-1.
-- Later briefs were prepared as controller artifacts; children 04–07 have not been dispatched or implemented.
-- Workflow deviation: the 03 implementation report records creation/removal of temporary baseline worktrees despite the single-worktree contract. The controller recorded this fact and did not repeat the operation.
+- Current reason: child04 implementer found original LEGACY input restoration impossible within authorized files. Original assembly request structure and MeetingInput were not retained in the closed snapshot model. UTC event/ICS cannot reconstruct the original zone/local-time input; verified assembly results cannot reconstruct original frame/selection request.
+- Exact evidence and minimal amendment: children/04-worker-api/execution.md:20-44. Authorize DelayedManualReplyModels.kt in04, capture original inputs in already-authorized Pending, persist a bounded restore-only whitelist distinct from delivery evidence, and explicitly preserve old snapshot delivery compatibility while refusing fabricated restoration of absent data. Required child04 tests must cover round-trip and compatibility.
+- No04 production/test file changed; no04 compilation/tests/runtime commands performed. No independent verification verdict is claimed.
+- User's existing blanket approval covers later child execution and evidence-backed existing-test compatibility only, not this added production file or snapshot compatibility decision.
+- Resume after exact authority: commit amended plan alone, record master/child amendment identity rows, start04 epoch2 with fix_round0 at the retained product head. Do not replay01–03. Their completed-prefix clean checkpoint validated at82ba0687a37d6cf26e908053763c2227cebe2476 before04 dispatch.
+- Historical03 pause is resolved by A2–A6 and Reverify03Round2 COMPLETE_CHILD. F-1–F-12 and P-1 closed. Required latest exits0/0/1/0, sole recorded baseline failure; terminal evidence and actual repair SHAs remain in03 logs.
+- Historical workflow deviation:03's original implementer created/removed temporary baseline worktrees despite the single-worktree contract; recorded, not repeated.
+- Later05–07 briefs exist but are not implementation evidence and have not been dispatched.
 
-No whole-system verification was performed.
-
-## Resume correction — 2026-11-05
-
-This is the retained historical pause handoff, not the current terminal outcome. The user approved the recommended P-1 repair authority and continuous later-child execution, explicitly excluding review-fast-p. A2/A3/A4 at ea61d579425e894ee37c600f599beef1fdb46395 move the review request revision to 03 and update 07 ownership. Ledger status is RUNNING, child 03 epoch 2; all findings still require repair and independent re-verification. No completed child is replayed.
-
+No whole-system verification was performed. review-fast-p was not invoked.
