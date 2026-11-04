@@ -37,3 +37,12 @@ Record actual counts/skips, environment and exit codes. Exercise the real change
 
 ## Reporting and commit
 Read skill://execute-p first. One writer only; no push/merge/rebase/amend/reset or later-child implementation. Commit only authorized product/test files locally with the specified subject. Append execution report at docs/plans/fast/manual-reply-delay-master/children/04-worker-api/execution.md, including agent identity, base/head, commands/counts, runtime proof, contract decisions and any missing evidence. Do not include fast-p files in implementation commit. Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit SHA, command summary and report path.
+
+## Prior child terminal output
+
+- Child03 terminal code head / this child's product base: 9bbb3b050f533a0010d48d545b4756abc8aa7e82.
+- Shared dispatch reference is the inherited internal DelayedDispatchRef; child03 delayed result methods consume it. `PendingMailOperationService.deliverPrepared` already accepts it but forwarding into the delayed result finalizers belongs to this child, as recorded by the child03 verifier. Implement that forwarding on every result path; otherwise SMTP would not settle the job atomically. No second token type.
+- Review request `delayExpectedRevision` and CANCELLED prepareSend guard are already implemented by approved A3; final public-send propagation remains07.
+- Required historical note: MailReviewQueryIT:239 is a classified baseline failure, not a repair item. Child03 lifecycle40/40 and RepositoryIT8/8 passed; no SMTP integration proof is inherited from them.
+- Human approved necessary existing-test compatibility amendments with concrete failure evidence only; report them to controller for exact plan/ledger recording before editing an unlisted test. No production scope expansion or weakened invariants is authorized.
+
