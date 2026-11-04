@@ -164,6 +164,10 @@ class DelayedManualReplyService(
         if (unresolvedJobFor(snapshot, reservation.attemptId, actor) != null) {
             throw conflict("DELAYED_REPLY_SOURCE_CONFLICT", "该回复已有待发送任务，请先撤回或等待完成")
         }
+        if (source is SlottedSource.Draft &&
+            (snapshot.restore as DelayedDraftRestore).draftVersion != source.ref.version) {
+            throw conflict(DelayedReplyPublicError.SOURCE_CHANGED.code, DelayedReplyPublicError.SOURCE_CHANGED.message)
+        }
 
         val now = repository.currentTimeMs()
         val jobId = repository.insert(
@@ -199,6 +203,9 @@ class DelayedManualReplyService(
             throw conflict("DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
         }
         requireActorCanTransition(job, actor)
+        if (unresolvedJobFor(snapshot, reservation.attemptId, actor) != null) {
+            throw conflict("DELAYED_REPLY_SOURCE_CONFLICT", "该回复已有待发送任务，请先撤回或等待完成")
+        }
         val draftSource = source as? SlottedSource.Draft
         val now = repository.currentTimeMs()
         val updated = draftSource?.let {
@@ -304,6 +311,9 @@ class DelayedManualReplyService(
         if (attempt.status != MailSendAttemptStatus.FAILED_SAFE_TO_RETRY) {
             throw conflict(DelayedReplyPublicError.PERMANENT_DELIVERY_FAILURE.code,
                 DelayedReplyPublicError.PERMANENT_DELIVERY_FAILURE.message)
+        }
+        if (unresolvedJobFor(snapshot, observed.sendAttemptId, observed.actorUsername) != null) {
+            throw conflict("DELAYED_REPLY_SOURCE_CONFLICT", "该回复已有待发送任务，请先撤回或等待完成")
         }
         val now = repository.currentTimeMs()
         val draftSource = source as? SlottedSource.Draft

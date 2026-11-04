@@ -477,6 +477,83 @@ class DelayedManualReplyLifecycleIT {
         assertEquals(1L, count("mail_send_attempt"))
     }
 
+    @Test
+    fun `cancelled legacy job cannot requeue while another fingerprint is waiting`() {
+        val snapshot = legacySnapshot("A")
+        val first = queued(delays.enqueue(snapshot, OWNER))
+        val cancelled = delays.cancel(first.id, OWNER, first.revision)
+        val second = queued(delays.enqueue(legacySnapshot("B"), OWNER))
+        val beforeFirst = job(first.id)
+        val beforeSecond = job(second.id)
+
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") {
+            delays.enqueue(snapshot, OWNER, cancelled.revision)
+        }
+
+        assertEquals(beforeFirst, job(first.id))
+        assertEquals(beforeSecond, job(second.id))
+        assertEquals("CANCELLED", job(first.id)["status"])
+        assertEquals("WAITING", job(second.id)["status"])
+        assertEquals(1L, count("delayed_manual_reply", "status IN ('WAITING','SENDING','UNKNOWN')"))
+        assertEquals(2L, count("mail_send_attempt", "status='PREPARED'"))
+        makeDuePast(second.id)
+        assertNull(delays.claim(first.id))
+        assertNotNull(delays.claim(second.id))
+    }
+
+    @Test
+    fun `failed legacy job cannot retry while another fingerprint is waiting`() {
+        val first = queued(delays.enqueue(legacySnapshot("A"), OWNER))
+        val failed = delays.preflightFailure(first.id, first.revision, DelayedReplyPublicError.TEMPORARY_DELIVERY_FAILURE)
+        val second = queued(delays.enqueue(legacySnapshot("B"), OWNER))
+        val beforeFirst = job(first.id)
+        val beforeSecond = job(second.id)
+
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") {
+            delays.retry(first.id, OWNER, failed.revision)
+        }
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") {
+            delays.retry(first.id, ADMIN, failed.revision)
+        }
+
+        assertEquals(beforeFirst, job(first.id))
+        assertEquals(beforeSecond, job(second.id))
+        assertEquals("FAILED", job(first.id)["status"])
+        assertEquals("WAITING", job(second.id)["status"])
+        assertEquals(1L, count("delayed_manual_reply", "status IN ('WAITING','SENDING','UNKNOWN')"))
+        assertEquals(1L, count("mail_send_attempt", "status='FAILED_SAFE_TO_RETRY'"))
+        assertEquals(1L, count("mail_send_attempt", "status='PREPARED'"))
+        makeDuePast(second.id)
+        assertNull(delays.claim(first.id))
+        assertNotNull(delays.claim(second.id))
+    }
+
+    @Test
+    fun `unchanged autosave before first enqueue rejects stale snapshot without committing binding`() {
+        val original = saveDraft()
+        val snapshot = draftSnapshot(original)
+        val saved = saveDraft(version = original.version)
+        assertEquals(original.version + 1, saved.version)
+        val before = jdbc.queryForMap("SELECT * FROM mailbox_reply_draft WHERE id=?", saved.id)
+
+        failure(409, "SOURCE_CHANGED") { delays.enqueue(snapshot, OWNER) }
+
+        assertEquals(0L, count("delayed_manual_reply"))
+        assertEquals(0L, count("mail_send_attempt"))
+        assertEquals(before, jdbc.queryForMap("SELECT * FROM mailbox_reply_draft WHERE id=?", saved.id))
+        val persisted = drafts.get(OWNER, requireNotNull(saved.id))
+        assertEquals(saved.version, persisted.version)
+        assertNull(persisted.sendAttemptId)
+        assertNull(persisted.sendVersion)
+
+        val accepted = queued(delays.enqueue(draftSnapshot(saved), OWNER))
+        assertEquals(saved.version, number(job(accepted.id), "origin_version"))
+        assertEquals(saved.version, drafts.get(OWNER, requireNotNull(saved.id)).sendVersion)
+        makeDuePast(accepted.id)
+        assertNotNull(delays.claim(accepted.id))
+        assertEquals("SENDING", job(accepted.id)["status"])
+    }
+
     // ------------------------------------------------------------------ I-2 并发
 
     @Test
