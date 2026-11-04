@@ -1,0 +1,2 @@
+$ rg -n -F 20261102-paper-reprocess src/test
+exit=1

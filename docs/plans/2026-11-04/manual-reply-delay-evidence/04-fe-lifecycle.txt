@@ -1,0 +1,628 @@
+$ rg -n --no-ignore --glob !*.pyc --glob !*.png --glob !*.jpg manual-rich-reply|sendStatus|sendAttemptStatus|setInterval|clearInterval|visibilitychange|unmount|messageKey|SOURCE_MAIL_RECORD|SOURCE_INBOUND_PROCESSING|data-review-action src/main/resources/static src/test/js
+exit=0
+src/main/resources/static/task-modal-runtime.js:223:        clearInterval(modal.runListTimer);
+src/main/resources/static/meeting-records.js:154:        mount(session) { this.unmount(); const host=session.host.querySelector('[data-meeting-records]'); if (!host) return; current={session,host,items:[],page:0,total:0,seq:0}; load(current); },
+src/main/resources/static/meeting-records.js:155:        unmount() { current=null; xhr?.abort(); xhr=null; if(el('meetingEditor').open)el('meetingEditor').close();if(el('playerDialog').open)el('playerDialog').close(); }
+src/test/js/mailboxServerDrafts.test.js:131:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxServerDrafts.test.js:178:        a.sandbox.MailboxChat.unmount(a.host);
+src/test/js/mailboxServerDrafts.test.js:301:        ctx.sandbox.MailboxChat.unmount(ctx.host); ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} }); await H.flush();
+src/test/js/mailboxServerDrafts.test.js:509:            unmountAiTrainingTrustReply: () => {},
+src/test/js/mailboxServerDrafts.test.js:510:            unmountMailboxTrustReplyHosts: () => {},
+src/test/js/mailboxServerDrafts.test.js:511:            unmountMailboxChatHosts: () => calls.push(["unmount"]),
+src/test/js/mailboxServerDrafts.test.js:598:            sendAttemptId: 44, sendVersion: 1, sendAttemptStatus: "DELIVERY_UNKNOWN"
+src/test/js/mailboxServerDrafts.test.js:622:    it("loading SENT without an edit never reopens or writes, including pagehide and unmount", async () => {
+src/test/js/mailboxServerDrafts.test.js:627:        ctx.sandbox.MailboxChat.unmount(ctx.host); await H.flush();
+src/test/js/mailboxServerDrafts.test.js:686:                subject: "Review subject", html: "<p>Review B</p>", text: "Review B", commentCount: 0, sendStatus: "NOT_SENT" };
+src/test/js/mailboxServerDrafts.test.js:724:            ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxServerDrafts.test.js:731:            subject: "User subject", html: "<p>User review B</p>", text: "User review B", commentCount: 0, sendStatus: "NOT_SENT" };
+src/test/js/mailboxServerDrafts.test.js:751:        assert.equal(ctx.host.querySelector('[data-review-action="send"]'), null);
+src/test/js/mailboxServerDrafts.test.js:752:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxServerDrafts.test.js:759:    it("waits for original in-flight save and never persists review body through autosave/unmount", async () => {
+src/test/js/mailboxServerDrafts.test.js:762:            html: "<p>Review B</p>", text: "Review B", subject: "Review", sendStatus: "NOT_SENT" };
+src/test/js/mailboxServerDrafts.test.js:782:        ctx.sandbox.MailboxChat.unmount(ctx.host); await H.flush();
+src/main/resources/static/trust-reply-workbench.js:462:        function unmount() {
+src/main/resources/static/trust-reply-workbench.js:558:        // I-24：宿主事件委托；unmount 时逐对解绑（I-25）。
+src/main/resources/static/trust-reply-workbench.js:570:        return { unmount };
+src/main/resources/static/mailbox-chat.js:16: *   .mc-scroll，离开 tab/记录消失/切页/unmount 前必须 mcHostReleaseUnmatchedDetail 归还。
+src/main/resources/static/mailbox-chat.js:26: *   每会话 ≤500 条已加载消息；不写 localStorage 正文。scroll/selectExpert/unmount/
+src/main/resources/static/mailbox-chat.js:1003:                        unmount();
+src/main/resources/static/mailbox-chat.js:1322:            if (unknown) unknown.hidden = !rec.sendUnconfirmed && (!rec.detail || rec.detail.sendAttemptStatus !== "DELIVERY_UNKNOWN");
+src/main/resources/static/mailbox-chat.js:1384:            const unknown = rec.detail && rec.detail.sendAttemptStatus === "DELIVERY_UNKNOWN";
+src/main/resources/static/mailbox-chat.js:3576:                try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
+src/main/resources/static/mailbox-chat.js:3581:            const releaseMaterials = hostFn("unmountExpertMaterialsHosts");
+src/main/resources/static/mailbox-chat.js:5173:            if (message.sendStatus === "SENT") {
+src/main/resources/static/mailbox-chat.js:5176:            if (message.sendStatus === "FAILED") {
+src/main/resources/static/mailbox-chat.js:5451:        // ---- 会话状态保存（scroll/selectExpert/unmount/loadOlder/quiet） ----
+src/main/resources/static/mailbox-chat.js:5730:                try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
+src/main/resources/static/mailbox-chat.js:5787:                : (mode === "outbound" && targetMsg && targetMsg.direction === "OUTBOUND" && targetMsg.sendStatus === "SENT"
+src/main/resources/static/mailbox-chat.js:5841:        function reviewButton(action) { return host.querySelector(`[data-review-action="${action}"]`); }
+src/main/resources/static/mailbox-chat.js:5848:            if (draft.sendStatus === "SENT") return "已发送";
+src/main/resources/static/mailbox-chat.js:5849:            if (["UNKNOWN", "DELIVERY_UNKNOWN", "IN_PROGRESS", "DELIVERY_IN_PROGRESS"].includes(draft.sendStatus)) return "发送结果待确认，请勿重复发送";
+src/main/resources/static/mailbox-chat.js:5853:            return draft && !draft.deleted && draft.state === "APPROVED" && ["NOT_SENT", "PREPARED", "FAILED_SAFE_TO_RETRY"].includes(draft.sendStatus);
+src/main/resources/static/mailbox-chat.js:5889:                history.innerHTML = r.items.map((item) => `<article class="mail-review-entry"><span>草稿 #${Number(item.id)} · ${escapeText(reviewLabel(item))} · ${escapeText(item.updatedAt || "")}</span>${!item.deleted ? `<button class="mc-text-button" type="button" data-review-action="select" data-draft-id="${Number(item.id)}">打开草稿</button>` : ""}<button class="mc-text-button" type="button" data-review-action="events" data-draft-id="${Number(item.id)}">变动历史</button></article>`).join("");
+src/main/resources/static/mailbox-chat.js:5913:                compose.querySelector(".mc-compose-footer").insertAdjacentHTML("beforeend", '<button class="button primary" type="button" data-review-action="send">发送已审核回复</button>');
+src/main/resources/static/mailbox-chat.js:5925:            compose.querySelectorAll("[data-review-action]").forEach((button) => { button.disabled = !!r.busy; });
+src/main/resources/static/mailbox-chat.js:5996:                <div class="mail-review-actions"><button class="button" type="button" data-review-action="context-cancel">返回查看最新对话</button><button class="button primary" type="button" data-review-action="context-confirm">确认回复仍适用</button></div>
+src/main/resources/static/mailbox-chat.js:6084:                    + (r.detail && Number(id) === r.detail.id && (!delegated || r.detail.state !== "APPROVED") ? '<textarea class="mail-review-input" aria-label="评论内容" maxlength="2000"></textarea><button class="button" type="button" data-review-action="comment">发布评论</button>' : "")
+src/main/resources/static/mailbox-chat.js:6085:                    + (r.eventBefore ? '<button class="mc-text-button" type="button" data-review-action="more-events">加载更早历史</button>' : "");
+src/main/resources/static/mailbox-chat.js:6128:                    catch (_) { if (reviewCurrent(ctx)) r.detail = { ...r.detail, sendStatus: "UNKNOWN" }; }
+src/main/resources/static/mailbox-chat.js:6287:                    ${!delegated && instance.user === "admin" ? `<button class="mc-text-button mc-review-entry" type="button" data-review-action="open-review" hidden></button>
+src/main/resources/static/mailbox-chat.js:6291:                        <button class="mc-text-button" type="button" data-review-action="more-drafts" hidden>更多</button>
+src/main/resources/static/mailbox-chat.js:6292:                        <button class="mc-text-button" type="button" data-review-action="history">草稿历史</button>
+src/main/resources/static/mailbox-chat.js:6293:                        <button class="mc-text-button" type="button" data-review-action="manual">返回人工回复</button>
+src/main/resources/static/mailbox-chat.js:6311:                        ${delegated ? "" : '<button class="mc-text-button" type="button" data-review-action="translate">翻译</button>'}
+src/main/resources/static/mailbox-chat.js:6312:                        <button class="mc-text-button" type="button" data-review-action="comments">评论 0</button>
+src/main/resources/static/mailbox-chat.js:6313:                        <button class="mc-text-button" type="button" data-review-action="events">变动历史</button>
+src/main/resources/static/mailbox-chat.js:6319:                        <button class="button" type="button" data-review-action="return">退回修改</button>
+src/main/resources/static/mailbox-chat.js:6320:                        <button class="button primary" type="button" data-review-action="approve">审核通过</button>
+src/main/resources/static/mailbox-chat.js:6324:                        <div class="mail-review-actions"><button class="button" type="button" data-review-action="cancel-return">取消</button><button class="button primary" type="button" data-review-action="confirm-return">确认退回</button></div>
+src/main/resources/static/mailbox-chat.js:6729:                const releaseProfile = hostFn("unmountExpertManualProfilePanels");
+src/main/resources/static/mailbox-chat.js:7171:                || !!(rec.detail && ["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(rec.detail.sendAttemptStatus)));
+src/main/resources/static/mailbox-chat.js:7496:                    && String(item.sendStatus) === "SENT"
+src/main/resources/static/mailbox-chat.js:9283:            const key = article && article.dataset ? article.dataset.messageKey : "";
+src/main/resources/static/mailbox-chat.js:9367:                    if (["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(detail.sendAttemptStatus)) {
+src/main/resources/static/mailbox-chat.js:9544:                    if (stillCurrent && detail.sendAttemptStatus === "SENT") afterSuccessfulSend(key);
+src/main/resources/static/mailbox-chat.js:9693:        // 事件（host 委托 + portal 委托；unmount 解绑）
+src/main/resources/static/mailbox-chat.js:9697:            const key = button.dataset ? button.dataset.messageKey : "";
+src/main/resources/static/mailbox-chat.js:9706:            const reviewButton = target && target.closest ? target.closest("[data-review-action]") : null;
+src/main/resources/static/mailbox-chat.js:9883:                markResolvedByKey(data.messageKey || "");
+src/main/resources/static/mailbox-chat.js:9895:                openProcessConfirm(data.messageKey || "");
+src/main/resources/static/mailbox-chat.js:9900:                const key = article && article.dataset ? article.dataset.messageKey : "";
+src/main/resources/static/mailbox-chat.js:9905:                toggleTranslateByKey(data.messageKey || "");
+src/main/resources/static/mailbox-chat.js:10454:        function unmount() {
+src/main/resources/static/mailbox-chat.js:10469:            // 04（I-3）：unmount 后迟到回包不得再写 DOM（applyReadAccessView 亦被 disposed 拦下）。
+src/main/resources/static/mailbox-chat.js:10607:            unmount,
+src/main/resources/static/mailbox-chat.js:10636:            unmount: () => { if (controller) controller.unmount(); },
+src/main/resources/static/mailbox-chat.js:10645:    function unmount(host) {
+src/main/resources/static/mailbox-chat.js:10648:        if (api && typeof api.unmount === "function") {
+src/main/resources/static/mailbox-chat.js:10649:            api.unmount();
+src/main/resources/static/mailbox-chat.js:10679:        unmount,
+src/main/resources/static/contact-details.js:84: const nativeUnmount=unmountExpertManualProfileSession;
+src/main/resources/static/contact-details.js:85: unmountExpertManualProfileSession=function(session){if(session&&!session.closed&&!session.delegated)ExpertMeetingRecords.unmount();return nativeUnmount(session)};
+src/test/js/expertManualProfile.test.js:766:        unmountExpertMaterialsHosts: () => {},
+src/test/js/expertManualProfile.test.js:954:        assert.ok(extractFunction("beginContactDetailPresentation").includes("unmountExpertManualProfilePanels()"));
+src/test/js/expertManualProfile.test.js:955:        assert.ok(extractFunction("returnToMobileContactsList").includes("unmountExpertManualProfilePanels()"));
+src/test/js/expertManualProfile.test.js:1387:        harness.sandbox.unmountExpertManualProfilePanels(harness.fixture.contactDetail);
+src/test/js/expertManualProfile.test.js:1391:        assert.strictEqual(section.scrollCalls.length, 0, "unmount must remove listeners");
+src/test/js/expertManualProfile.test.js:1789:    it("reuses native profile editors and CAS, skips video/layout/history mount and unmount", async () => {
+src/test/js/expertManualProfile.test.js:1791:        const video = { mount: 0, unmount: 0, records: 0 };
+src/test/js/expertManualProfile.test.js:1795:        h.sandbox.unmountExpertMeetingVideos = () => { video.unmount += 1; };
+src/test/js/expertManualProfile.test.js:1800:            unmount: () => { video.records += 1; }
+src/test/js/expertManualProfile.test.js:1832:        h.sandbox.unmountExpertManualProfileSession(session);
+src/test/js/expertManualProfile.test.js:1833:        assert.strictEqual(video.unmount, 0);
+src/main/resources/static/mailbox-readonly.js:72:    function messageKey(message) {
+src/main/resources/static/mailbox-readonly.js:95:            var key = messageKey(message);
+src/main/resources/static/mailbox-readonly.js:175:            if (delegated) delegated.unmount();
+src/main/resources/static/mailbox-readonly.js:656:            var node = target && target.closest("[data-review-action]");
+src/main/resources/static/mailbox-readonly.js:1250:                doc.addEventListener("visibilitychange", onVisibilityChange);
+src/main/resources/static/mailbox-readonly.js:1283:                doc.removeEventListener("visibilitychange", onVisibilityChange);
+src/main/resources/static/mailbox-readonly.js:1305:                unmount: function () {
+src/main/resources/static/mailbox-readonly.js:1306:                    unmount(host);
+src/main/resources/static/mailbox-readonly.js:1314:        unmount(host);
+src/main/resources/static/mailbox-readonly.js:1326:    function unmount(host) {
+src/main/resources/static/mailbox-readonly.js:1335:        unmount: unmount
+src/main/resources/static/discovery-recheck.js:409:            listen(doc, "visibilitychange", () => { invalidate(); if (!doc.hidden && run) poll(); });
+src/main/resources/static/discovery-recheck.js:417:        function unmount() {
+src/main/resources/static/discovery-recheck.js:423:        return { mount, unmount, onRows, openDetail };
+src/test/js/taskModalStateMachine.test.js:69:        setInterval: (fn, ms) => {
+src/test/js/taskModalStateMachine.test.js:72:        clearInterval: (timer) => {},
+src/test/js/taskModalStateMachine.test.js:617:            sandbox.clearInterval = (timer) => { clearedTimerId = timer.id; };
+src/test/js/taskModalStateMachine.test.js:675:            sandbox.clearInterval = (timer) => { clearedTimerId = timer.id; };
+src/test/js/taskModalStateMachine.test.js:883:            sandbox.setInterval = (fn, ms) => {
+src/test/js/taskActivityCenter.test.js:823:        sandbox.document.dispatch("visibilitychange");
+src/test/js/taskActivityCenter.test.js:827:        sandbox.document.dispatch("visibilitychange");
+src/test/js/taskActivityCenter.test.js:828:        sandbox.document.dispatch("visibilitychange");
+src/test/js/composedReplyOrder.test.js:15:        assert.ok(!appJsSource.includes('data-action="copy-to-manual-rich-reply"'));
+src/main/resources/static/app.js:181:function unmountAiTrainingTrustReply() {
+src/main/resources/static/app.js:182:    aiTrainingTrustReplyInstance?.unmount();
+src/main/resources/static/app.js:194:function unmountLiveTrustReply() {
+src/main/resources/static/app.js:196:    liveTrustReplyInstance?.unmount();
+src/main/resources/static/app.js:203:function unmountMailboxTrustReplyHosts() {
+src/main/resources/static/app.js:204:    unmountLiveTrustReply();
+src/main/resources/static/app.js:252:    /** Matched QA subset for send-path audit (composed-reply vs manual-rich-reply), not prompt rule set. */
+src/main/resources/static/app.js:450:    aiReplyState.progressTimerId = setInterval(() => {
+src/main/resources/static/app.js:464:    if (aiReplyState.progressTimerId) clearInterval(aiReplyState.progressTimerId);
+src/main/resources/static/app.js:976:                // 隐藏页暂停新请求；恢复可见时由 visibilitychange 立即补一轮。
+src/main/resources/static/app.js:1600:    document.addEventListener("visibilitychange", () => {
+src/main/resources/static/app.js:1848:        clearInterval(modal.pipelineTimer);
+src/main/resources/static/app.js:1888:    modal.pipelineTimer = setInterval(tick, PIPELINE_STATUS_POLL_MS);
+src/main/resources/static/app.js:1997:        watcher.intervalId = setInterval(() => pollTaskWatcher(taskType), TASK_WATCHER_INTERVAL_MS);
+src/main/resources/static/app.js:2015:            clearInterval(watcher.intervalId);
+src/main/resources/static/app.js:2336:    const progressTimer = pipelineMode ? null : setInterval(async () => {
+src/main/resources/static/app.js:2353:    const logTimer = setInterval(async () => {
+src/main/resources/static/app.js:2365:    const runListTimer = setInterval(async () => {
+src/main/resources/static/app.js:2415:        if (currentTaskModal.progressTimer) clearInterval(currentTaskModal.progressTimer);
+src/main/resources/static/app.js:2416:        if (currentTaskModal.logTimer) clearInterval(currentTaskModal.logTimer);
+src/main/resources/static/app.js:2417:        if (currentTaskModal.runListTimer) clearInterval(currentTaskModal.runListTimer);
+src/main/resources/static/app.js:2418:        if (currentTaskModal.pipelineTimer) clearInterval(currentTaskModal.pipelineTimer);
+src/main/resources/static/app.js:2760:    if (discoveryRecheckView) discoveryRecheckView.unmount();
+src/main/resources/static/app.js:2784:    if (discoveryRecheckView) discoveryRecheckView.unmount();
+src/main/resources/static/app.js:2874:    else if (discoveryRecheckView) discoveryRecheckView.unmount();
+src/main/resources/static/app.js:2979:        $$("#discoveryReviewPane [data-review-action]").forEach(function (btn) {
+src/main/resources/static/app.js:3439:        $$("#discoveryReviewPane [data-review-action]").forEach(function (btn) {
+src/main/resources/static/app.js:4476:                clearInterval(currentTaskModal.progressTimer);
+src/main/resources/static/app.js:4480:                clearInterval(currentTaskModal.logTimer);
+src/main/resources/static/app.js:4811:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:5185:    if (typeof unmountExpertManualProfilePanels === "function") {
+src/main/resources/static/app.js:5186:        unmountExpertManualProfilePanels();
+src/main/resources/static/app.js:5224:    if (typeof unmountExpertManualProfilePanels === "function") {
+src/main/resources/static/app.js:5225:        unmountExpertManualProfilePanels();
+src/main/resources/static/app.js:5269:        if (view !== "ai-training") unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:5270:        if (view !== "mailbox") unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:5273:        if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+src/main/resources/static/app.js:5274:            unmountMailboxChatHosts();
+src/main/resources/static/app.js:7849:    unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:7908:        unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:10999:    batchSendStatusTimer = setInterval(() => {
+src/main/resources/static/app.js:11006:        clearInterval(batchSendStatusTimer);
+src/main/resources/static/app.js:11188:    batchSendBannerTimer = setInterval(() => {
+src/main/resources/static/app.js:11195:        clearInterval(batchSendBannerTimer);
+src/main/resources/static/app.js:11610:// 已挂载会话登记表：unmount 依据它中止在途读请求、关闭弹窗，避免切专家后事件/请求悬挂。
+src/main/resources/static/app.js:11785:function unmountExpertManualProfileSession(session) {
+src/main/resources/static/app.js:11790:    if (typeof unmountExpertContactSharedNote === "function") {
+src/main/resources/static/app.js:11791:        unmountExpertContactSharedNote(session);
+src/main/resources/static/app.js:11794:    if (!session.delegated && typeof unmountExpertMeetingVideos === "function") {
+src/main/resources/static/app.js:11795:        unmountExpertMeetingVideos(session);
+src/main/resources/static/app.js:11811:function unmountExpertManualProfilePanels(rootEl) {
+src/main/resources/static/app.js:11818:        if (insideRoot || detached) unmountExpertManualProfileSession(session);
+src/main/resources/static/app.js:12201:    unmountExpertManualProfilePanels(rootEl);
+src/main/resources/static/app.js:12232:    unmountExpertMaterialsHosts(document);
+src/main/resources/static/app.js:12478:function unmountExpertContactSharedNote(session) {
+src/main/resources/static/app.js:13731:function unmountExpertMeetingVideos(session) {
+src/main/resources/static/app.js:13874:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:13875:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:14007:    // typeof 守卫沿用本文件既有的组件挂载约定（unmountExpertMaterialsHosts / mountExpertMaterialsInline），
+src/main/resources/static/app.js:14073:                    ${mail.sendStatus ? badge(mail.sendStatus, mail.sendStatus === "SENT" ? "ok" : "warn") : ""}
+src/main/resources/static/app.js:14077:            ${mail.sendStatus === "FAILED" && mail.errorSummary ? `
+src/main/resources/static/app.js:14435:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:14436:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:14778:function unmountExpertMaterialsHosts(rootEl) {
+src/main/resources/static/app.js:14780:    if (typeof window.ExpertMaterials.unmountHostsIn === "function") {
+src/main/resources/static/app.js:14781:        window.ExpertMaterials.unmountHostsIn(rootEl);
+src/main/resources/static/app.js:15173:    if (aiAnalysisState.pickerView && typeof aiAnalysisState.pickerView.unmount === "function") {
+src/main/resources/static/app.js:15174:        aiAnalysisState.pickerView.unmount();
+src/main/resources/static/app.js:15526:                <div><strong>发送状态:</strong> ${escapeHtml(after?.sendStatus || "-")}</div>
+src/main/resources/static/app.js:15533:                <div><strong>发送状态:</strong> ${escapeHtml(after?.sendStatus || "-")}</div>
+src/main/resources/static/app.js:17346:        const sendStatusLabel = detail.direction === "OUTBOUND"
+src/main/resources/static/app.js:17347:            ? (detail.sendStatus === "SENT" ? "已发送" : detail.sendStatus === "FAILED" ? "发送失败" : detail.sendStatus || "-")
+src/main/resources/static/app.js:17405:                    <div class="metadata-card"><div class="metadata-card-header"><span>发送状态</span></div><div class="metadata-card-value">${escapeHtml(sendStatusLabel)}</div></div>
+src/main/resources/static/app.js:17776:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:17824:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:18017:            <details class="detail-section reply-workflow-detail manual-rich-reply-section">
+src/main/resources/static/app.js:18034:                <button class="button primary" data-action="send-manual-rich-reply" data-record-id="${id}" style="margin-top:8px;">发送人工回复</button>
+src/main/resources/static/app.js:18084:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:18111:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:18152:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:18444:            const result = await postManualRichReplySnapshot(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:18477:    if (action === "send-manual-rich-reply") {
+src/main/resources/static/app.js:19224:            <td>${escapeHtml(r.subject || "-")}</td><td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td>
+src/main/resources/static/app.js:19244:            <td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td><td>${escapeHtml(r.sourceInbound?.subject || "-")}</td>
+src/main/resources/static/app.js:20146:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:20853:    document.addEventListener("visibilitychange", () => {
+src/main/resources/static/app.js:21197:        ["POST", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/manual-rich-reply$/],
+src/main/resources/static/app.js:21203:        ["POST", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*\/(manual-rich-reply|mark-resolved|cancel-resolved)$/],
+src/main/resources/static/app.js:21336:        if (readerState.handle && typeof readerState.handle.unmount === "function") readerState.handle.unmount();
+src/main/resources/static/app.js:21338:            && typeof window.MailboxReadOnly.unmount === "function") {
+src/main/resources/static/app.js:21339:            window.MailboxReadOnly.unmount($("#mailboxList"));
+src/main/resources/static/app.js:21597:        && typeof MailboxChat.unmount === "function";
+src/main/resources/static/app.js:21604:function unmountMailboxChatHosts() {
+src/main/resources/static/app.js:21609:        MailboxChat.unmount(list);
+src/main/resources/static/app.js:21740:        unmount: () => {
+src/main/resources/static/app.js:21742:                instance.unmount();
+src/main/resources/static/app.js:21753:    return submitManualRichReply(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:21761:    return submitManualRichReply(`/api/mail/mailbox/conversations/${id}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:22197:    if (typeof unmountMailboxChatHosts === "function") unmountMailboxChatHosts();
+src/main/resources/static/app.js:22317:    const sendStatus = (row.direction === "OUTBOUND" && row.sendStatus !== "SENT")
+src/main/resources/static/app.js:22330:                ${sendStatus}
+src/main/resources/static/app.js:25451:        clearInterval(batchTaskState.logRefreshTimer);
+src/main/resources/static/app.js:25521:            batchTaskState.logRefreshTimer = setInterval(function() {
+src/main/resources/static/app.js:25807:    if (row.sendStatus === "SENT") return "已发送";
+src/main/resources/static/app.js:25808:    if (row.sendStatus === "FAILED") return "发送失败" + suffix;
+src/main/resources/static/app.js:25809:    if (row.sendStatus === "SKIPPED") return "已跳过" + suffix;
+src/main/resources/static/app.js:25810:    if (row.sendStatus === "SENDING") return running ? "发送中" : "结果未确认";
+src/main/resources/static/app.js:25811:    if (row.sendStatus === "NOT_SENT") return "未发送" + suffix;
+src/main/resources/static/app.js:25812:    return String(row.sendStatus || "—") + suffix;
+src/test/js/batchSendControls.test.js:75:        setInterval: () => null,
+src/test/js/batchSendControls.test.js:76:        clearInterval: () => {}
+src/main/resources/static/world-clock.js:427:        doc.addEventListener("visibilitychange", onVisibilityChange);
+src/main/resources/static/world-clock.js:620:            state.timer = setInterval(tick, TICK_INTERVAL_MS);
+src/main/resources/static/world-clock.js:626:            clearInterval(state.timer);
+src/main/resources/static/world-clock.js:1012:            doc.removeEventListener("visibilitychange", onVisibilityChange);
+src/main/resources/static/contact-history.js:8:  const status=outbound?(m.sendStatus==='SENT'?'已发送':m.sendStatus==='FAILED'?'发送失败':m.sendStatus||''):(m.processStatus==='MANUAL_REVIEW'?'待处理':m.processStatus==='PROCESSED'?'已处理':'');
+src/test/js/mailboxChatBehavior.test.js:812:                sendAttemptId: null, sendVersion: null, sendAttemptStatus: null, attachmentDownloads: {}, attachmentsSendable: true }, extra);
+src/test/js/mailboxChatBehavior.test.js:821:            row.sendAttemptStatus = "SENT";
+src/test/js/mailboxChatBehavior.test.js:907:        unmounts: [],
+src/test/js/mailboxChatBehavior.test.js:1156:                unmount: () => { calls.unmounts.push(Number(processingId)); },
+src/test/js/mailboxChatBehavior.test.js:1187:        unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; },
+src/test/js/mailboxChatBehavior.test.js:1286:        latestMessage: { source: "INBOUND_PROCESSING", id: 101, direction: "INBOUND", subject: "Question 1", time: "2026-09-07T03:00:00", sendStatus: null },
+src/test/js/mailboxChatBehavior.test.js:1306:        latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Introduction", time: "2026-09-06T09:00:00", sendStatus: "SENT" },
+src/test/js/mailboxChatBehavior.test.js:1326:        latestMessage: { source: "MAIL_RECORD", id: 77, direction: "OUTBOUND", subject: "Intro", time: "2026-09-05T09:00:00", sendStatus: "SENT" },
+src/test/js/mailboxChatBehavior.test.js:1338:        { source: "MAIL_RECORD", id: 87, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro older", body: "old out", cleanedBody: "old out", eventAt: "2026-09-05T02:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m87", inReplyTo: null, tags: [] },
+src/test/js/mailboxChatBehavior.test.js:1339:        { source: "INBOUND_PROCESSING", id: 90, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Earlier question", body: "raw earlier", cleanedBody: "earlier cleaned", eventAt: "2026-09-06T08:00:00", sendStatus: null, processStatus: "PROCESSED", attachmentCount: 0, firstAttachmentNames: [], messageId: "m90", inReplyTo: "m87", tags: [mailTag(11, "会议安排", "QA", 3)] },
+src/test/js/mailboxChatBehavior.test.js:1340:        { source: "MAIL_RECORD", id: 88, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "intro body", cleanedBody: "intro body", eventAt: "2026-09-06T09:30:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m88", inReplyTo: null, tags: [] },
+src/test/js/mailboxChatBehavior.test.js:1341:        { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw question with <script>alert(1)</script>", cleanedBody: "cleaned question", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 2, firstAttachmentNames: ["a.pdf", "b.pdf"], messageId: "m101", inReplyTo: "m88", tags: [mailTag(7, "research", "CUSTOM")] }
+src/test/js/mailboxChatBehavior.test.js:1365:            sendStatus: direction === "OUTBOUND" ? "SENT" : null,
+src/test/js/mailboxChatBehavior.test.js:1842:    it("unmount：字段/按钮还原旧 toolbar、mc-refined 移除、portal 移除", async () => {
+src/test/js/mailboxChatBehavior.test.js:1855:        ctx.sandbox.MailboxChat.unmount(dom.list);
+src/test/js/mailboxChatBehavior.test.js:1862:        assert.ok(!dom.view.classList.contains("mc-refined"), "unmount 移除 mc-refined");
+src/test/js/mailboxChatBehavior.test.js:1887:        const keys = articles.map((article) => article.dataset.messageKey);
+src/test/js/mailboxChatBehavior.test.js:1889:        const pending = articles.find((article) => article.dataset.messageKey === "INBOUND_PROCESSING:101");
+src/test/js/mailboxChatBehavior.test.js:1895:        const processed = articles.find((article) => article.dataset.messageKey === "INBOUND_PROCESSING:90");
+src/test/js/mailboxChatBehavior.test.js:1900:        const outbound = articles.find((article) => article.dataset.messageKey === "MAIL_RECORD:88");
+src/test/js/mailboxChatBehavior.test.js:2322:        assert.strictEqual(ctx.calls.unmounts.length, 1, "切专家销毁旧 workbench mount");
+src/test/js/mailboxChatBehavior.test.js:2492:    it("服务器草稿跨专家切换恢复；unmount/重挂载仍恢复已确认版本", async () => {
+src/test/js/mailboxChatBehavior.test.js:2509:        // unmount 不是放弃；重新挂载仍恢复服务器已确认版本。
+src/test/js/mailboxChatBehavior.test.js:2510:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:2676:                            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102", inReplyTo: "m88", tags: []
+src/test/js/mailboxChatBehavior.test.js:3202:        const keys = articles.map((article) => article.dataset.messageKey);
+src/test/js/mailboxChatBehavior.test.js:3233:            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102b", tags: []
+src/test/js/mailboxChatBehavior.test.js:3240:        const keyList = Array.from(keys).map((el) => el.dataset.messageKey);
+src/test/js/mailboxChatBehavior.test.js:3272:        const keys = Array.from(ctx.host.querySelectorAll(".mc-message")).map((el) => el.dataset.messageKey);
+src/test/js/mailboxChatBehavior.test.js:3314:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:3378:            unmount: () => { calls.chatUnmounts += 1; return true; },
+src/test/js/mailboxChatBehavior.test.js:3429:        vm.runInContext(extractFn("unmountMailboxChatHosts"), sandbox);
+src/test/js/mailboxChatBehavior.test.js:3669:    it("I-5：记录消失/切占位 Tab/unmount 都先归还节点，右栏回落空态", async () => {
+src/test/js/mailboxChatBehavior.test.js:3693:        // 重新选中后 unmount：必须先归还再清空宿主
+src/test/js/mailboxChatBehavior.test.js:3701:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:3702:        assert.strictEqual(ctx.calls.unmatchedReleases, releasesBefore + 1, "unmount 归还 lease");
+src/test/js/mailboxChatBehavior.test.js:3783:            (entry) => /\/api\/mail\/mailbox\/conversations\/\d+\/(messages|manual-rich-reply)/.test(entry.url) && entry.url.includes("901")
+src/test/js/mailboxChatBehavior.test.js:3849:            unmountMailboxTrustReplyHosts: () => { calls.teardowns += 1; },
+src/test/js/mailboxChatBehavior.test.js:3990:            sendStatus: "SENT",
+src/test/js/mailboxChatBehavior.test.js:4011:            sendStatus: null,
+src/test/js/mailboxChatBehavior.test.js:4030:            followupMessage({ id: 4010, subject: "failed send", body: "failed", cleanedBody: "failed", eventAt: "2026-09-07T10:00:00", sendStatus: "FAILED" }),
+src/test/js/mailboxChatBehavior.test.js:5031:                    { source: "MAIL_RECORD", id: 4007, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "b", cleanedBody: "b", eventAt: "2026-09-06T09:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m4007", inReplyTo: null, tags: [] },
+src/test/js/mailboxChatBehavior.test.js:5032:                    { source: "MAIL_RECORD", id: 4011, contactId: 1, direction: "OUTBOUND", accountCode: "acc9", subject: "Other account send", body: "b", cleanedBody: "b", eventAt: "2026-09-06T10:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m4011", inReplyTo: null, tags: [] },
+src/test/js/mailboxChatBehavior.test.js:5033:                    { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw", cleanedBody: "cleaned", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m101", inReplyTo: null, tags: [] }
+src/test/js/mailboxChatBehavior.test.js:5072:            { source: "MAIL_RECORD", id: 4011, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Sent", body: "b", cleanedBody: "b", eventAt: "2026-09-06T10:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m4011", inReplyTo: null, tags: [] },
+src/test/js/mailboxChatBehavior.test.js:5073:            { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw", cleanedBody: "cleaned", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m101", inReplyTo: null, tags: [] }
+src/test/js/mailboxChatBehavior.test.js:5082:                        : baseItems.map((item) => (item.id === 4011 ? Object.assign({}, item, { sendStatus: "FAILED" }) : item));
+src/test/js/mailboxChatBehavior.test.js:5223:    it("I-7：Esc/X/取消走同一关闭路径；应用后焦点回正文；unmount 关闭并移除弹框", async () => {
+src/test/js/mailboxChatBehavior.test.js:5269:        // unmount 关闭并移除
+src/test/js/mailboxChatBehavior.test.js:5272:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:5273:        assert.strictEqual(ctx.doc.body.querySelector(".reply-template-dialog"), null, "unmount 关闭并移除弹框");
+src/test/js/mailboxChatBehavior.test.js:5809:    it("I-3/I-5：unmount 关闭并移除自有弹窗，迟到响应不再写 DOM", async () => {
+src/test/js/mailboxChatBehavior.test.js:5826:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:5827:        assert.strictEqual(timingDialog(ctx), null, "unmount 关闭并移除自有弹窗");
+src/test/js/mailboxChatBehavior.test.js:5830:        assert.strictEqual(timingDialog(ctx), null, "unmount 后迟到响应不得重开弹窗");
+src/test/js/mailboxChatBehavior.test.js:5881:    /** 需要组件 api（refreshFromHost/loadList/unmount）的挂载，避免 mountChat 的双重 loadList。 */
+src/test/js/mailboxChatBehavior.test.js:5933:                    latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Follow up", time: "2026-10-02T08:45:00", sendStatus: "SENT" }
+src/test/js/mailboxChatBehavior.test.js:6209:        ctx.api.unmount();
+src/test/js/mailboxChatBehavior.test.js:6343:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:6347:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:6364:    it("旋转零业务请求、编辑器不重建；unmount 清监听且采集正文", async () => {
+src/test/js/mailboxChatBehavior.test.js:6371:        ctx.sandbox.MailboxChat.unmount(ctx.host); assert.equal(ctx.mediaListeners.size, 0);
+src/test/js/mailboxChatBehavior.test.js:6632:    it("账号/待匹配/unmount 清理自有 dialog，晚 GET/PUT 不复活 DOM", async () => {
+src/test/js/mailboxChatBehavior.test.js:6633:        for (const boundary of ["account", "unmatched", "unmount"]) {
+src/test/js/mailboxChatBehavior.test.js:6643:            else ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:6648:        for (const boundary of ["account", "unmatched", "unmount"]) {
+src/test/js/mailboxChatBehavior.test.js:6656:            else ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxChatBehavior.test.js:6908:        ctx.api.unmount();
+src/test/js/mailboxChatBehavior.test.js:6926:        ctx.api.unmount();
+src/test/js/mailboxChatBehavior.test.js:6937:            ctx.api.unmount();
+src/test/js/mailboxChatBehavior.test.js:6941:    it("late messages after unmount cannot restore content or pending draft timers", async () => {
+src/test/js/mailboxChatBehavior.test.js:6948:        ctx.api.unmount();
+src/test/js/mailboxChatBehavior.test.js:6967:        ctx.api.unmount();
+src/test/js/mailboxChatBehavior.test.js:7037:        ctx.api.unmount();
+src/main/resources/static/expert-materials.js:14: * - 活动任务可见时每 2 秒刷新当前页与 summary；不可见（unmount）即暂停；
+src/main/resources/static/expert-materials.js:1437:                    view.unmount();
+src/main/resources/static/expert-materials.js:1554:                view.unmount();
+src/main/resources/static/expert-materials.js:1606:            unmount() {
+src/main/resources/static/expert-materials.js:1669:    function unmount(opts) {
+src/main/resources/static/expert-materials.js:1678:                view.unmount();
+src/main/resources/static/expert-materials.js:1685:    function unmountHostsIn(rootEl) {
+src/main/resources/static/expert-materials.js:1695:                view.unmount();
+src/main/resources/static/expert-materials.js:1741:        unmount,
+src/main/resources/static/expert-materials.js:1742:        unmountHostsIn,
+src/test/js/materialRequestIntegration.test.js:638:            subject: "Question " + contactId, time: "2026-09-07T03:00:00", sendStatus: null
+src/test/js/materialRequestIntegration.test.js:762:    await ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/main/resources/static/index.html:1290:              <button class="button secondary" type="button" data-review-action="APPROVE">通过所选</button>
+src/main/resources/static/index.html:1291:              <button class="button secondary" type="button" data-review-action="HOLD">暂缓所选</button>
+src/main/resources/static/index.html:1292:              <button class="button secondary" type="button" data-review-action="REJECT">不通过所选</button>
+src/test/js/expertMaterialAnalysisFlow.test.js:1001:            if (inline) sandbox.ExpertMaterials.unmountHostsIn(inline);
+src/test/js/expertMaterialAnalysisFlow.test.js:1003:            hosts.forEach((host) => sandbox.ExpertMaterials.unmountHostsIn(host));
+src/test/js/expertMaterialAnalysisFlow.test.js:1005:            if (appRoot) sandbox.ExpertMaterials.unmountHostsIn(appRoot);
+src/test/js/mailboxSuspension.test.js:767:        unmounts: [],
+src/test/js/mailboxSuspension.test.js:1008:                unmount: () => { calls.unmounts.push(Number(processingId)); },
+src/test/js/mailboxSuspension.test.js:1039:        unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; },
+src/test/js/mailboxSuspension.test.js:1129:        latestMessage: { source: "INBOUND_PROCESSING", id: 101, direction: "INBOUND", subject: "Q1", time: "2026-10-02T03:00:00", sendStatus: null },
+src/test/js/mailboxSuspension.test.js:1149:        sendStatus: null,
+src/test/js/aiReplyReviewConfirmation.test.js:18:        if (workbench.includes("manual-rich-reply") || workbench.includes("/send")) {
+src/test/js/aiReplyReviewConfirmation.test.js:65:    it("send-manual-rich-reply calls submitManualRichReply directly", function () {
+src/test/js/aiReplyReviewConfirmation.test.js:66:        const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
+src/test/js/aiReplyReviewConfirmation.test.js:100:        const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
+src/test/js/aiReplyReviewConfirmation.test.js:175:    it("training host never constructs manual-rich-reply payload", function () {
+src/test/js/aiReplyReviewConfirmation.test.js:177:        if (trainingBlock.includes("send-manual-rich-reply")) throw new Error("training host must not send");
+src/test/js/aiReplyReviewConfirmation.test.js:184:        const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
+src/test/js/aiReplyReviewConfirmation.test.js:202:    it("send-manual-rich-reply does not gate on generationState or usedLlm", function () {
+src/test/js/aiReplyReviewConfirmation.test.js:203:        const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
+src/test/js/aiReplyReviewConfirmation.test.js:215:        if (!app.includes('"send-manual-rich-reply"')) throw new Error("send handler missing");
+src/test/js/batchManualExecutionLog.test.js:196:            setInterval: () => 1,
+src/test/js/batchManualExecutionLog.test.js:197:            clearInterval: () => {},
+src/test/js/batchManualExecutionLog.test.js:221:            setInterval: () => 1,
+src/test/js/batchManualExecutionLog.test.js:222:            clearInterval: () => {},
+src/test/js/batchManualExecutionLog.test.js:244:            setInterval: () => 1,
+src/test/js/batchManualExecutionLog.test.js:245:            clearInterval: () => {},
+src/test/js/batchManualExecutionLog.test.js:491:            clearInterval: (timer) => { cleared.push(timer); }
+src/test/js/batchManualExecutionLog.test.js:508:    it("only one setInterval handle exists for the log drawer (I-7)", () => {
+src/test/js/batchManualExecutionLog.test.js:520:            const lines = source.split("\n").filter((line) => line.includes("setInterval"));
+src/test/js/batchManualExecutionLog.test.js:522:                assert.match(line, /batchTaskState\.logRefreshTimer\s*=\s*setInterval/,
+src/test/js/batchManualExecutionLog.test.js:523:                    name + " must assign setInterval only to batchTaskState.logRefreshTimer");
+src/test/js/mailboxReadOnly.test.js:153:            if (selector === "[data-review-action]" && node.dataset.reviewAction !== undefined) return node;
+src/test/js/mailboxReadOnly.test.js:487:        harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:507:            harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:541:        harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:562:        harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:587:            harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:687:                harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:810:    it("unmount 中止在途请求、清空 DOM，迟到响应不再渲染", async () => {
+src/test/js/mailboxReadOnly.test.js:825:        harness.handle.unmount();
+src/test/js/mailboxReadOnly.test.js:826:        assert.strictEqual(harness.host.children.length, 0, "unmount clears host content");
+src/test/js/mailboxReadOnly.test.js:827:        assert.strictEqual(detailCall.options.signal.aborted, true, "unmount aborts in-flight request");
+src/test/js/mailboxReadOnly.test.js:853:        harness.document.dispatch("visibilitychange", {});
+src/test/js/mailboxReadOnly.test.js:861:        harness.handle.unmount(); harness.runtime.dispatchWindow("focus",{}); await flush();
+src/test/js/mailboxReadOnly.test.js:1049:    assert.ok(h.calls.every(c=>c.options.method==="GET"));h.handle.unmount();
+src/test/js/discoveryRecheck.test.js:119:    assert.ok(html.indexOf('discoveryRecheckRoot') > html.indexOf('data-review-action="REJECT"'));
+src/test/js/discoveryRecheck.test.js:140:    h.view.unmount(); assert.equal(h.timers.size, 0);
+src/test/js/discoveryRecheck.test.js:156:        h.view.unmount();
+src/test/js/discoveryRecheck.test.js:169:    h.view.unmount(); h.view.mount(); await flush();
+src/test/js/discoveryRecheck.test.js:172:    h.view.unmount();
+src/test/js/discoveryRecheck.test.js:186:    h.view.unmount();
+src/test/js/discoveryRecheck.test.js:195:    assert.equal(h.find('start').disabled, true); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:217:    assert.deepEqual(JSON.parse(JSON.stringify(h.opened[0])), ref); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:227:        assert.equal(h.find('step-body').querySelectorAll('[data-step-quote]').length, 0); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:233:    assert.match(h.find('step-body').textContent, /截断.*101/); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:245:    h.view.unmount();
+src/test/js/discoveryRecheck.test.js:248:test('single 2s timer, hidden pause/resume GET and terminal stop; unmount removes listeners and stale requests', async () => {
+src/test/js/discoveryRecheck.test.js:253:    h.document.hidden = true; h.document.dispatch('visibilitychange'); assert.equal(h.timers.size, 0);
+src/test/js/discoveryRecheck.test.js:254:    h.document.hidden = false; h.document.dispatch('visibilitychange'); await flush(); assert.equal(h.timers.size, 1);
+src/test/js/discoveryRecheck.test.js:256:    h.view.unmount(); assert.equal(h.timers.size, 0);
+src/test/js/discoveryRecheck.test.js:279:    assert.equal(h.root.querySelectorAll('[style]').length, 0); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:294:    h.view.unmount();
+src/test/js/discoveryRecheck.test.js:303:    assert.equal(h.find('steps').querySelectorAll('[data-state]').length, 0); assert.equal(h.find('sync-retry').hidden, true); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:316:    const h = harness(); await flush(); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:338:    h.view.unmount();
+src/test/js/discoveryRecheck.test.js:345:test('public detail owner aborts stale paper-host requests on unmount and a newer detail context', async () => {
+src/test/js/discoveryRecheck.test.js:348:    await flush(); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:350:    await flush(); h.view.unmount();
+src/test/js/discoveryRecheck.test.js:360:    h.view.unmount(); h.view.mount(); await flush();
+src/test/js/discoveryRecheck.test.js:362:    h.view.unmount();
+src/test/js/authFlow.test.js:748:            return { refresh: () => Promise.resolve(), unmount() {} };
+src/test/js/authFlow.test.js:750:        unmount() {}
+src/test/js/expertAccessWorkspace.test.js:32:        sendStatus: "NOT_SENT", deleted: false };
+src/test/js/expertAccessWorkspace.test.js:103:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:115:    h.doc.root.dispatchEvent(new tools.MiniEvent("visibilitychange"));
+src/test/js/expertAccessWorkspace.test.js:119:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:134:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:156:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:170:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:193:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:196:test("tag dialog completing after delegated unmount never mutates the old expert", async () => {
+src/test/js/expertAccessWorkspace.test.js:206:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:228:    h.sandbox.unmountExpertMaterialsHosts = () => {};
+src/test/js/expertAccessWorkspace.test.js:237:    for (const release of ["focus", "visibility", "switch", "unmount"]) {
+src/test/js/expertAccessWorkspace.test.js:258:        if (release === "visibility") h.doc.root.dispatchEvent(new tools.MiniEvent("visibilitychange"));
+src/test/js/expertAccessWorkspace.test.js:260:        if (release === "unmount") h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:273:        h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:292:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:314:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:339:        ["POST", "/api/mail/mailbox/conversations/1/manual-rich-reply"],
+src/test/js/expertAccessWorkspace.test.js:346:        "/api/mail/mailbox/reply-drafts/1", "/api/mail/mailbox/conversations/01/manual-rich-reply",
+src/test/js/expertAccessWorkspace.test.js:347:        "/api/mail/mailbox/conversations/1/manual-rich-reply/", "/api/mail/mailbox/conversations/1/read-access/user1",
+src/test/js/expertAccessWorkspace.test.js:351:    assert.equal(allowed("/api/mail/mailbox/conversations/1/manual-rich-reply", { method: "GET" }), false);
+src/test/js/expertAccessWorkspace.test.js:486:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:507:    h.handle.unmount();
+src/test/js/expertAccessWorkspace.test.js:536:    h.handle.unmount();
+src/test/js/mailboxCalendarIntegration.test.js:4://    宿主 adapter 三函数、页面内变更广播的订阅与 unmount 解绑；
+src/test/js/mailboxCalendarIntegration.test.js:7://    头部三个操作按 mode 调宿主、广播只刷新当前 owner、unmount 后不再回读；
+src/test/js/mailboxCalendarIntegration.test.js:104:    it("页面内变更广播保留订阅、unmount 解绑及发送通知入口", () => {
+src/test/js/mailboxCalendarIntegration.test.js:952:    it("unmount 后解绑广播，不再回读", async () => {
+src/test/js/mailboxCalendarIntegration.test.js:956:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxCalendarIntegration.test.js:960:        assert.strictEqual(ctx.calls.summaries.length, before, "unmount 后必须解绑 meeting-calendar-changed");
+src/test/js/expertProfileAbsence.test.js:298:        unmountMailboxTrustReplyHosts() {},
+src/test/js/expertContactSharedNote.test.js:639:        unmountExpertMaterialsHosts: () => {},
+src/test/js/expertContactSharedNote.test.js:802:        assert.strictEqual(REGION_02.split("typeof unmountExpertContactSharedNote === \"function\"").length - 1, 1);
+src/test/js/expertContactSharedNote.test.js:1142:        harness.sandbox.unmountExpertManualProfilePanels();
+src/test/js/worldClock.test.js:652:        setInterval: global.setInterval,
+src/test/js/worldClock.test.js:653:        clearInterval: global.clearInterval,
+src/test/js/worldClock.test.js:693:    global.setInterval = (callback, delay) => {
+src/test/js/worldClock.test.js:697:    global.clearInterval = (id) => {
+src/test/js/worldClock.test.js:741:            global.setInterval = previous.setInterval;
+src/test/js/worldClock.test.js:742:            global.clearInterval = previous.clearInterval;
+src/test/js/worldClock.test.js:1671:    it("visibilitychange 暂停后台 tick，回来立即刷新当前时间", async () => {
+src/test/js/worldClock.test.js:1677:        dispatch(environment.doc, new StubEvent("visibilitychange"));
+src/test/js/worldClock.test.js:1681:        dispatch(environment.doc, new StubEvent("visibilitychange"));
+src/test/js/worldClock.test.js:1710:        assert.strictEqual(environment.doc.listeners.get("visibilitychange").length, 0);
+src/test/js/mailboxMailReadAccess.test.js:8://   - I-3：晚到读/写回包不写新专家、回旧专家重新 GET、unmount 后不新建节点；
+src/test/js/mailboxMailReadAccess.test.js:636:        latestMessage: { source: "INBOUND_PROCESSING", id: 101, direction: "INBOUND", subject: "Question 1", time: "2026-09-07T03:00:00", sendStatus: null },
+src/test/js/mailboxMailReadAccess.test.js:656:        latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Introduction", time: "2026-09-06T09:00:00", sendStatus: "SENT" },
+src/test/js/mailboxMailReadAccess.test.js:752:        unmountExpertMaterialsHosts: () => {},
+src/test/js/mailboxMailReadAccess.test.js:1022:    it("unmount后GET/PUT迟到都不能恢复节点", async () => {
+src/test/js/mailboxMailReadAccess.test.js:1029:            await flush(); ctx.api.unmount();
+src/test/js/expertMaterialsShared.test.js:6:// 跨页选择、筛选保留选择、跨专家提交隔离、500 上限、请求 epoch、unmount 停轮询、
+src/test/js/expertMaterialsShared.test.js:861:        inline.unmount();
+src/test/js/expertMaterialsShared.test.js:862:        drawer.unmount();
+src/test/js/expertMaterialsShared.test.js:918:        instance.unmount();
+src/test/js/expertMaterialsShared.test.js:930:        viewA.unmount(); // 切走专家：unmount 释放
+src/test/js/expertMaterialsShared.test.js:982:        instance.unmount();
+src/test/js/expertMaterialsShared.test.js:1018:        sandbox.ExpertMaterials.unmountHostsIn(host);
+src/test/js/expertMaterialsShared.test.js:1064:        sandbox.ExpertMaterials.unmountHostsIn(host);
+src/test/js/expertMaterialsShared.test.js:1101:        sandboxA.ExpertMaterials.unmountHostsIn(hostA);
+src/test/js/expertMaterialsShared.test.js:1102:        sandboxB.ExpertMaterials.unmountHostsIn(hostB);
+src/test/js/expertMaterialsShared.test.js:1142:        sandbox.ExpertMaterials.unmountHostsIn(host);
+src/test/js/expertMaterialsShared.test.js:1146:describe("expert-materials: 轮询 / unmount 释放 / 抽屉关闭队列继续", () => {
+src/test/js/expertMaterialsShared.test.js:1147:    it("活动任务可见时按 2s 轮询（测试注入短周期），unmount 停止轮询并释放全部监听", async () => {
+src/test/js/expertMaterialsShared.test.js:1170:        instance.unmount();
+src/test/js/expertMaterialsShared.test.js:1173:        assert.strictEqual(getsAfterUnmount, getsPolling, "unmount 后轮询停止，GET 不再增长");
+src/test/js/expertMaterialsShared.test.js:1175:        assert.strictEqual(countTreeListeners(rootBefore), 0, "unmount 释放该视图全部监听");
+src/test/js/expertMaterialsShared.test.js:1208:        drawer2.unmount();
+src/test/js/expertMaterialsShared.test.js:1209:        sandbox.ExpertMaterials.unmountHostsIn(inlineHost);
+src/test/js/expertMaterialsShared.test.js:1218:        const unmountPos = fn.indexOf('typeof unmountExpertMaterialsHosts === "function"');
+src/test/js/expertMaterialsShared.test.js:1221:        assert.ok(unmountPos > -1, "loadContactDetail 必须包含组件卸载守卫");
+src/test/js/expertMaterialsShared.test.js:1223:        assert.ok(unmountPos < innerHtmlPos && innerHtmlPos < mountPos, "顺序：unmount → innerHTML 写入 → mount");
+src/test/js/expertMaterialsShared.test.js:1236:                mount: (opts) => { mountCalls.push(opts); return { unmount() {} }; },
+src/test/js/expertMaterialsShared.test.js:1237:                unmountHostsIn: () => 0
+src/test/js/expertMaterialsShared.test.js:1310:        assert.ok(fn.indexOf('typeof unmountExpertMaterialsHosts === "function"') > -1, "showExpertDetail 在写 DOM 前也释放旧组件视图");
+src/test/js/expertMaterialsShared.test.js:1352:        assert.ok(result && typeof result.unmount === "function", "mount 返回带 unmount 的实例");
+src/test/js/expertMaterialsShared.test.js:1360:        result.unmount();
+src/test/js/expertMaterialsShared.test.js:1470:        sandbox.ExpertMaterials.unmountHostsIn(inlineHost);
+src/test/js/expertMaterialsShared.test.js:1471:        sandbox.ExpertMaterials.unmountHostsIn(drawerHost);
+src/test/js/expertMaterialsShared.test.js:1472:        sandbox.ExpertMaterials.unmountHostsIn(pickerHost);
+src/test/js/expertMaterialsShared.test.js:1473:        assert.strictEqual(inlineHost.querySelector(".em-upload-dialog"), null, "unmount 释放上传 dialog");
+src/test/js/expertMaterialsShared.test.js:1789:        inline.unmount(); drawer.unmount(); picker.unmount();
+src/test/js/expertMaterialsShared.test.js:1809:        instance.unmount();
+src/test/js/expertMaterialsShared.test.js:1823:        instance.unmount();
+src/test/js/mobileCoreNavigation.test.js:39:        unmountAiTrainingTrustReply() {}, unmountMailboxTrustReplyHosts() {}, closeOpenTrackingDetail() {},
+src/test/js/mailboxGroupPush.test.js:104:    for (const [node, event] of [[h.btn, "click"], [h.nodes.mailboxRefreshBtn, "click"], [h.nodes.logoutBtn, "click"], [h.document, "visibilitychange"]]) {
+src/test/js/mailboxGroupPush.test.js:260:    await h.document.emit("visibilitychange");
+src/test/js/mailboxGroupPush.test.js:272:    h.context.initMailboxGroupPush(); // component mount/unmount keeps this same node
+src/test/js/mailboxGroupPush.test.js:276:    await h.document.emit("visibilitychange");
+src/test/js/mailboxGroupPush.test.js:280:    await h.document.emit("visibilitychange");
+src/test/js/mailboxGroupPush.test.js:286:    await h.document.emit("visibilitychange");
+src/test/js/mailboxGroupPush.test.js:322:    await h.document.emit("visibilitychange");
+src/test/js/mailReviewAdmin.test.js:13:const action = (h, name) => h.host.querySelector('[data-review-action="' + name + '"]');
+src/test/js/mailReviewAdmin.test.js:16:function draft(id, contactId = 1, extra = {}) { return Object.assign({ id, contactId, version: 2, ownerUsername: "user1", state: "SUBMITTED", subject: "Review " + id, html: "<p>User body " + id + "</p>", text: "User body " + id, deleted: false, sendStatus: "NOT_SENT", commentCount: 0, currentContextToken: "initial", approvedContextToken: null }, extra); }
+src/test/js/mailReviewAdmin.test.js:47:        if (suffix === "send") { state.sends.push(body); row.sendStatus = "SENT"; return Promise.resolve({ sent: true }); }
+src/test/js/mailReviewAdmin.test.js:60:function finish(h) { h.sandbox.MailboxChat.unmount(h.host); }
+src/test/js/mailReviewAdmin.test.js:108:    const h = await setup({ rows: [draft(11, 1, { state: "APPROVED", sendStatus: status, approvedContextToken: "initial" })] });
+src/test/js/mailReviewAdmin.test.js:145:    assert.equal(history.querySelector('[data-review-action="select"][data-draft-id="12"]'), null);
+src/test/js/mailReviewAdmin.test.js:146:    H.click(history.querySelector('[data-review-action="events"][data-draft-id="12"]')); await H.flush();
+src/test/js/mailReviewAdmin.test.js:150:test("draft selector paginates beyond first page and stale detail cannot cross expert/session/unmount", async () => {
+src/test/js/mailReviewAdmin.test.js:240:const action = (ctx, name) => ctx.host.querySelector(`[data-review-action="${name}"]`);
+src/test/js/mailReviewAdmin.test.js:246:    return Object.assign({ id, contactId, ownerUsername: "user1", version: 2, state: "SUBMITTED", subject: "Review subject", html: "<p>User review body</p>", text: "User review body", submittedAt: "2026-10-30T10:00:00", updatedAt: "2026-10-30T10:00:00", deleted: false, commentCount: 0, currentContextToken: "context-A", approvedContextToken: null, sendStatus: "NOT_SENT" }, extra);
+src/test/js/mailReviewAdmin.test.js:281:            if (endpoint === "send") { row.sendStatus = "SENT"; state.sendCount++; }
+src/test/js/mailReviewAdmin.test.js:360:    const ctx = await boot({ rows: [detail(11, 1, { state: "APPROVED", sendStatus: status })] }); await select(ctx);
+src/test/js/mailReviewAdmin.test.js:412:    assert.equal(node(ctx, "review-history").querySelector('[data-review-action="select"][data-draft-id="99"]'), null);
+src/test/js/mailReviewAdmin.test.js:460:        if (r.url.endsWith("/send")) { r.state.rows[0].sendStatus = "DELIVERY_UNKNOWN"; return Promise.reject(new Error("unknown")); }
+src/test/js/contactMeetingRecords.test.js:38: const save=h.submit();h.session.closed=true;h.api.unmount();resolve({id:'meeting-id',version:1});await save;assert.equal(h.uploads.length,0);
+src/test/js/mailboxReplyIdentity.test.js:103:            ctx.api.unmount();
+src/test/js/mailboxReplyIdentity.test.js:126:        ctx.api.unmount();
+src/test/js/mailboxReplyIdentity.test.js:135:            ctx.api.unmount();
+src/test/js/mailboxReplyIdentity.test.js:146:        ctx.api.unmount();
+src/test/js/mailboxReplyIdentity.test.js:153:        hold.resolve(); await H.flush(); assert.equal(action(ctx, "mc-complete-reply-identity").disabled, false); ctx.api.unmount();
+src/test/js/mailboxReplyIdentity.test.js:155:    for (const scenario of ["edit", "contact", "unmount", "logout"]) {
+src/test/js/mailboxReplyIdentity.test.js:162:            if (scenario === "unmount") ctx.api.unmount();
+src/test/js/mailboxReplyIdentity.test.js:166:            if (scenario !== "unmount") ctx.api.unmount();
+src/test/js/ragAdoptSendBridge.test.js:145:        const sendIdx = app.indexOf('if (action === "send-manual-rich-reply")');
+src/test/js/ragAdoptSendBridge.test.js:146:        assert.ok(sendIdx > 0, "send-manual-rich-reply handler must exist");
+src/test/js/discoveryReview.test.js:146:            if (selector === "#discoveryReviewPane [data-review-action]") return actionButtons;
+src/test/js/discoveryReview.test.js:175:        setInterval: () => 0,
+src/test/js/discoveryReview.test.js:176:        clearInterval: () => {}
+src/test/js/discoveryReview.test.js:1109:        assert.ok(extractFn("resetDiscoveryReviewPanel").includes("discoveryRecheckView.unmount()"));
+src/test/js/discoveryScheduleSetting.test.js:145:        setInterval: (fn, ms) => {
+src/test/js/discoveryScheduleSetting.test.js:150:        clearInterval: (handle) => {
+src/test/js/batchDemandProgress.test.js:23:        setInterval: () => 7,
+src/test/js/expertTagBatchFix.test.js:558:        clearInterval: function(timer) { intervals = intervals.filter(function(i) { return i !== timer; }); },
+src/test/js/expertTagBatchFix.test.js:559:        setInterval: function(fn, ms) {
+src/test/js/expertTagBatchFix.test.js:593:            sb.batchTaskState.logRefreshTimer = sb.setInterval(function() {
+src/test/js/batchEmailVerification.test.js:212:        sendStatus: "SENT",
+src/test/js/batchEmailVerification.test.js:563:                    verificationRow({ id: 1, decision: "PASS", sendStatus: "NOT_SENT", sendReason: "TEMPLATE_RENDER_FAILED", providerState: "deliverable" }),
+src/test/js/batchEmailVerification.test.js:564:                    verificationRow({ id: 2, decision: "SKIP", providerState: "undeliverable", providerReason: "rejected_email", sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "APPLIED" }),
+src/test/js/batchEmailVerification.test.js:565:                    verificationRow({ id: 3, decision: "ERROR", providerState: null, providerReason: null, errorCode: "EMAIL_VERIFY_AUTH_ERROR", sendStatus: "NOT_SENT", tagStatus: "NOT_REQUIRED" }),
+src/test/js/batchEmailVerification.test.js:566:                    verificationRow({ id: 4, decision: "ERROR", providerState: null, providerReason: null, errorCode: "EMAIL_VERIFY_INCOMPLETE", sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_DEFERRED", tagStatus: "NOT_REQUIRED" }),
+src/test/js/batchEmailVerification.test.js:567:                    verificationRow({ id: 5, decision: "SKIP", providerState: "risky", providerReason: null, sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "FAILED", tagError: "ES_WRITE_FAILED:CANDIDATE" })
+src/test/js/batchEmailVerification.test.js:595:        const row = verificationRow({ reusedFromId: 42, requestCount: 0, sendStatus: "NOT_SENT" });
+src/test/js/batchEmailVerification.test.js:614:            items: [verificationRow({ decision: "PASS", sendStatus: "SENDING", checkedAt: null, requestCount: 2 })]
+src/test/js/batchEmailVerification.test.js:632:                    decision: "PENDING", sendStatus: "NOT_SENT", providerState: null,
+src/test/js/batchEmailVerification.test.js:1450:            sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_POLICY_SKIP", tagStatus: "NOT_REQUIRED"
+src/test/js/batchEmailVerification.test.js:1468:                    sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "APPLIED"
+src/test/js/batchEmailVerification.test.js:1472:                    sendStatus: "SKIPPED", sendReason: "SOME_UNKNOWN_REASON", tagStatus: "NOT_REQUIRED"
+src/test/js/unmatchedQaReplySource.test.js:13:        assert.ok(appJsSource.includes('class="detail-section reply-workflow-detail manual-rich-reply-section"'));
+src/test/js/expertMaterialsStyle.test.js:570:            sandbox.ExpertMaterials.unmountHostsIn(inlineHost);
+src/test/js/expertMaterialsStyle.test.js:571:            sandbox.ExpertMaterials.unmountHostsIn(drawerHost);
+src/test/js/expertMaterialsStyle.test.js:572:            sandbox.ExpertMaterials.unmountHostsIn(pickerHost);
+src/test/js/expertMaterialsStyle.test.js:593:            sandbox.ExpertMaterials.unmountHostsIn(host);
+src/test/js/expertMaterialsStyle.test.js:714:            sandbox.ExpertMaterials.unmountHostsIn(inlineHost);
+src/test/js/expertMaterialsStyle.test.js:715:            sandbox.ExpertMaterials.unmountHostsIn(drawerHost);
+src/test/js/expertMaterialsStyle.test.js:716:            sandbox.ExpertMaterials.unmountHostsIn(pickerHost);
+src/test/js/expertMaterialsStyle.test.js:792:            sandbox.ExpertMaterials.unmountHostsIn(host);
+src/test/js/expertMaterialsStyle.test.js:856:            sandbox.ExpertMaterials.unmountHostsIn(host);
+src/test/js/mailboxOutboundAttachments.test.js:835:        unmounts: [],
+src/test/js/mailboxOutboundAttachments.test.js:1019:                unmount: () => { calls.unmounts.push(Number(processingId)); },
+src/test/js/mailboxOutboundAttachments.test.js:1031:        unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; },
+src/test/js/mailboxOutboundAttachments.test.js:1163:        latestMessage: { source: "INBOUND_PROCESSING", id: 101, direction: "INBOUND", subject: "Question 1", time: "2026-09-07T03:00:00", sendStatus: null },
+src/test/js/mailboxOutboundAttachments.test.js:1183:        latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Introduction", time: "2026-09-06T09:00:00", sendStatus: "SENT" },
+src/test/js/mailboxOutboundAttachments.test.js:1203:        latestMessage: { source: "MAIL_RECORD", id: 77, direction: "OUTBOUND", subject: "Intro", time: "2026-09-05T09:00:00", sendStatus: "SENT" },
+src/test/js/mailboxOutboundAttachments.test.js:1215:        { source: "MAIL_RECORD", id: 87, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro older", body: "old out", cleanedBody: "old out", eventAt: "2026-09-05T02:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m87", inReplyTo: null, tags: [] },
+src/test/js/mailboxOutboundAttachments.test.js:1216:        { source: "INBOUND_PROCESSING", id: 90, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Earlier question", body: "raw earlier", cleanedBody: "earlier cleaned", eventAt: "2026-09-06T08:00:00", sendStatus: null, processStatus: "PROCESSED", attachmentCount: 0, firstAttachmentNames: [], messageId: "m90", inReplyTo: "m87", tags: [mailTag(11, "会议安排", "QA", 3)] },
+src/test/js/mailboxOutboundAttachments.test.js:1217:        { source: "MAIL_RECORD", id: 88, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "intro body", cleanedBody: "intro body", eventAt: "2026-09-06T09:30:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m88", inReplyTo: null, tags: [] },
+src/test/js/mailboxOutboundAttachments.test.js:1218:        { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw question with <script>alert(1)</script>", cleanedBody: "cleaned question", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 2, firstAttachmentNames: ["a.pdf", "b.pdf"], messageId: "m101", inReplyTo: "m88", tags: [mailTag(7, "research", "CUSTOM")] }
+src/test/js/mailboxOutboundAttachments.test.js:1242:            sendStatus: direction === "OUTBOUND" ? "SENT" : null,
+src/test/js/mailboxOutboundAttachments.test.js:1764:    it("LRU 淘汰不清持久化协调器：unmount 后迟到上传仍保存原 owner", async () => {
+src/test/js/mailboxOutboundAttachments.test.js:1775:                latestMessage: { source: "MAIL_RECORD", id: 2000 + i, direction: "OUTBOUND", subject: "Intro", time: "2026-09-06T09:00:00", sendStatus: "SENT" }
+src/test/js/mailboxOutboundAttachments.test.js:1790:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxOutboundAttachments.test.js:2295:    it("uploading then ready snapshots contain descriptors, not File/blob/downloadURL; unmount retains owner completion", async () => {
+src/test/js/mailboxOutboundAttachments.test.js:2306:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/mailboxOutboundAttachments.test.js:2353:        ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/unmatchedDetailResolvedAction.test.js:189:        assert.ok(!cancelBlock.includes("unmountMailboxTrustReplyHosts"), "cancel must not unmount the detail host");
+src/test/js/ragWorkbenchRender.test.js:442:        assert.ok(instance && typeof instance.unmount === "function");
+src/test/js/taskModalLifecycleIntegration.test.js:39:        setInterval: () => 1,
+src/test/js/taskModalLifecycleIntegration.test.js:40:        clearInterval: () => {},
+src/test/js/taskModalLifecycleIntegration.test.js:75:        sandbox.setInterval = () => {
+src/test/js/contactHistory.test.js:19:test('history response after expert unmount is ignored',async()=>{
+src/test/js/mailReviewReader.test.js:69:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:88:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:106:    assert.ok(h.calls.some(c => c.path === BASE + "/1" && c.options.method === "GET")); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:120:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:133:    assert.equal(role(h, "review-error").textContent, status === 409 ? "草稿已被更新，请重新加载" : "保存草稿失败：failed"); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:144:    h.runtime.dispatchWindow("focus", {}); await flush(); assert.equal(h.calls.length, count); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:157:    assert.equal(role(h, "review-error").textContent, "草稿已被更新，请重新加载"); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:160:test("late detail/events/create responses cannot enter a different expert or unmounted owner", async () => {
+src/test/js/mailReviewReader.test.js:174:        h.handle.unmount(); assert.equal(h.host.children.length, 0);
+src/test/js/mailReviewReader.test.js:188:    if (state === "APPROVED") assert.equal(role(h, "review-save-state").textContent, "已审核，不能修改"); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:197:    click(h, "more-events"); await flush(); assert.ok(h.calls.some(c => c.path.includes("beforeId=11"))); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:203:    assert.equal(role(h, "review-editor").textContent, "body"); assert.equal(role(h, "review-error").textContent, "编辑组件加载失败"); h.handle.unmount();
+src/test/js/mailReviewReader.test.js:204:    const safe = await setup(); await create(safe); assert.ok(safe.sanitized.includes("<p>body</p>")); safe.handle.unmount();
+src/test/js/mailReviewReader.test.js:226:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:239:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:266:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:288:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:318:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:330:    h.handle.unmount();
+src/test/js/mailReviewReader.test.js:352:    h.handle.unmount();
+src/test/js/autoPreviewWorkbenchHost.test.js:19:    "unmountAutoPreviewTrustReply",
+src/test/js/autoPreviewWorkbenchHost.test.js:49:    it("I-5: unmountMailboxTrustReplyHosts survives as the single teardown seam", () => {
+src/test/js/autoPreviewWorkbenchHost.test.js:50:        assert.match(appSource, /function unmountMailboxTrustReplyHosts\(\) \{\s*unmountLiveTrustReply\(\);\s*\}/,
+src/test/js/autoPreviewWorkbenchHost.test.js:52:        const callSites = (appSource.match(/unmountMailboxTrustReplyHosts\(\)/g) || []).length;
+src/test/js/trustReplyWorkbenchSharedMount.test.js:4:// 1) I-24 挂载契约（window.TrustReplyWorkbench.mount / instance.unmount / options 键集合不变）；
+src/test/js/trustReplyWorkbenchSharedMount.test.js:6:// 3) I-25 unmount 语义：abort 全部在途请求、解绑全部监听器、late response 不写宿主。
+src/test/js/trustReplyWorkbenchSharedMount.test.js:135:    it("I-24: mount is exposed with an unmount-returning instance and renders the workbench shell", async () => {
+src/test/js/trustReplyWorkbenchSharedMount.test.js:148:        assert.ok(instance && typeof instance.unmount === "function", "mount must return an instance with unmount");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:153:        instance.unmount();
+src/test/js/trustReplyWorkbenchSharedMount.test.js:154:        assert.strictEqual(host.listenerCount(), 0, "unmount must unbind every delegated listener");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:197:    it("I-25: unmount aborts the in-flight compose and no late response rewrites the host", async () => {
+src/test/js/trustReplyWorkbenchSharedMount.test.js:218:        instance.unmount();
+src/test/js/trustReplyWorkbenchSharedMount.test.js:219:        assert.strictEqual(host.listenerCount(), 0, "unmount must unbind every delegated listener");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:222:        assert.strictEqual(host.innerHTML, snapshot, "a late response must never rewrite an unmounted host");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:225:    it("I-25: unmount aborts the request signal so the fetch is cancelled", async () => {
+src/test/js/trustReplyWorkbenchSharedMount.test.js:254:        instance.unmount();
+src/test/js/trustReplyWorkbenchSharedMount.test.js:256:        assert.strictEqual(captured[0].aborted, true, "unmount must abort the in-flight request");
+src/test/js/expertMeetingVideo.test.js:851:        unmountExpertMaterialsHosts: () => {},
+src/test/js/expertMeetingVideo.test.js:1032:        assert.ok(extractFunction("unmountExpertManualProfileSession").includes("unmountExpertMeetingVideos"),
+src/test/js/expertMeetingVideo.test.js:1033:            "02 unmount must stop 05 through the typeof-guard convention");
+src/test/js/expertMeetingVideo.test.js:1686:        assert.strictEqual(xhr.abortCount, 1, "in-flight upload must be aborted on unmount");
+src/test/js/discoveryContinuousRun.test.js:53:    const setIntervalCalls = [];
+src/test/js/discoveryContinuousRun.test.js:101:        setInterval: (fn, ms) => {
+src/test/js/discoveryContinuousRun.test.js:103:            setIntervalCalls.push(handle);
+src/test/js/discoveryContinuousRun.test.js:106:        clearInterval: (handle) => {
+src/test/js/discoveryContinuousRun.test.js:131:    sandbox.setIntervalCalls = setIntervalCalls;
+src/test/js/discoveryContinuousRun.test.js:299:            const poll = sandbox.setIntervalCalls.find(call => call.ms === sandbox.__c3.statusPollMs);
+src/test/js/discoveryContinuousRun.test.js:598:            assert.strictEqual(sandbox.setIntervalCalls.filter(call => call.ms === 1000).length, 0,
+src/test/js/discoveryContinuousRun.test.js:600:            assert.strictEqual(sandbox.setIntervalCalls.filter(call => call.ms === 5000).length, 1,
+src/test/js/discoveryContinuousRun.test.js:603:            sandbox.setIntervalCalls.length = 0;
+src/test/js/discoveryContinuousRun.test.js:612:            assert.strictEqual(sandbox.setIntervalCalls.filter(call => call.ms === 1000).length, 1,
+src/test/js/meetingConfirmationIntegration.test.js:844:        unmounts: [],
+src/test/js/meetingConfirmationIntegration.test.js:988:                unmount: () => { calls.unmounts.push(Number(processingId)); },
+src/test/js/meetingConfirmationIntegration.test.js:1000:        unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; },
+src/test/js/meetingConfirmationIntegration.test.js:1123:        latestMessage: { source: "INBOUND_PROCESSING", id: 101, direction: "INBOUND", subject: "Question 1", time: "2026-09-07T03:00:00", sendStatus: null },
+src/test/js/meetingConfirmationIntegration.test.js:1143:        latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Introduction", time: "2026-09-06T09:00:00", sendStatus: "SENT" },
+src/test/js/meetingConfirmationIntegration.test.js:1163:        latestMessage: { source: "MAIL_RECORD", id: 77, direction: "OUTBOUND", subject: "Intro", time: "2026-09-05T09:00:00", sendStatus: "SENT" },
+src/test/js/meetingConfirmationIntegration.test.js:1175:        { source: "MAIL_RECORD", id: 87, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro older", body: "old out", cleanedBody: "old out", eventAt: "2026-09-05T02:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m87", inReplyTo: null, tags: [] },
+src/test/js/meetingConfirmationIntegration.test.js:1176:        { source: "INBOUND_PROCESSING", id: 90, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Earlier question", body: "raw earlier", cleanedBody: "earlier cleaned", eventAt: "2026-09-06T08:00:00", sendStatus: null, processStatus: "PROCESSED", attachmentCount: 0, firstAttachmentNames: [], messageId: "m90", inReplyTo: "m87", tags: [mailTag(11, "会议安排", "QA", 3)] },
+src/test/js/meetingConfirmationIntegration.test.js:1177:        { source: "MAIL_RECORD", id: 88, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "intro body", cleanedBody: "intro body", eventAt: "2026-09-06T09:30:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m88", inReplyTo: null, tags: [] },
+src/test/js/meetingConfirmationIntegration.test.js:1178:        { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw question with <script>alert(1)</script>", cleanedBody: "cleaned question", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 2, firstAttachmentNames: ["a.pdf", "b.pdf"], messageId: "m101", inReplyTo: "m88", tags: [mailTag(7, "research", "CUSTOM")] }
+src/test/js/meetingConfirmationIntegration.test.js:1202:            sendStatus: direction === "OUTBOUND" ? "SENT" : null,
+src/test/js/meetingConfirmationIntegration.test.js:1523:    it("dialog 唯一、body 直属；unmount 移除 dialog", async () => {
+src/test/js/meetingConfirmationIntegration.test.js:1528:        await ctx.sandbox.MailboxChat.unmount(ctx.host);
+src/test/js/meetingConfirmationIntegration.test.js:1530:        assert.strictEqual(meetingDialog(ctx), null, "unmount 必须移除 dialog");
+src/test/js/meetingConfirmationIntegration.test.js:1916:        assert.ok(!ctx.calls.api.some((e) => /manual-rich-reply/.test(e.url)), "确认不调用发送接口");
+src/test/js/meetingConfirmationIntegration.test.js:2119:                            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102", inReplyTo: "m88", tags: []
