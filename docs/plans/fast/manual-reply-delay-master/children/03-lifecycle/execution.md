@@ -129,3 +129,12 @@ None.
 - Human approval: 「授权必要测试兼容修订并持续执行」 and repeated instruction to execute subsequent children until ready for review-fast-p without invoking it.
 - A5/A6 plan commit: 0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9. Epoch3 counter begins at zero; only existing-test transaction adaptation remains before independent whole-child lightweight re-verification.
 
+
+## Terminal closing record — Epoch 3
+
+- Terminal code head: 9bbb3b050f533a0010d48d545b4756abc8aa7e82.
+- Independent verifier Reverify03Round2, epoch3 attempt2: LIGHT_PASS_WITH_NOTES, COMPLETE_CHILD. F-1–F-12 and P-1 closed; exact evidence remains in verify-log.md.
+- Repair history: epoch1 zero rounds; epoch2 one round ed041935a500aa4517ca9f880644a2e7110063d5; epoch3 two rounds 63bf74170d126428dc8a9cab279506cca157bc90 and 9bbb3b050f533a0010d48d545b4756abc8aa7e82. Ledger Fix round=2 describes current epoch; history is preserved here and in fix-log.md.
+- Fresh verifier commands: required exits 0/0/1/0; lifecycle40/40, RepositoryIT8/8; combined MySQL99 cases with only recorded MailReviewQueryIT:239 failure. No baseline reproduction, optional whole suite or SMTP/browser proof claimed.
+- Downstream: 04 uses inherited DelayedDispatchRef and forwards it from deliverPrepared into delayed result finalizers; 07 forwards the already-existing review request revision. The child checkpoint, not this narrative, authorizes the next dispatch.
+

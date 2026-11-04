@@ -83,3 +83,68 @@ Every Maven invocation used `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zul
 - Result: PAUSE
 - Notes: Canonical field aliases for the actual commit already reported above; no new execution or verifier verdict. A5/A6 authority is now recorded; next work is epoch3 compatibility repair, not redoing epoch2.
 
+
+## Epoch 3 — Round 1/3
+
+- Before: ed041935a500aa4517ca9f880644a2e7110063d5
+- Fix commit: 63bf74170d126428dc8a9cab279506cca157bc90
+- Findings: A5/A6 existing-test compatibility only. The raw-service attachment/ownership test now uses the same Spring `ProxyFactory` / `TransactionInterceptor` pattern as the existing HTTP test, backed by the existing isolated datasource transaction manager. Production `save` annotations supply real REQUIRES_NEW READ_COMMITTED transactions. All existing business assertions and mocks remain unchanged; no F-1–F-11/P-1 production work was replayed.
+- Authorized files changed: `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt` only (5 insertions, 1 deletion). This append-only report is excluded from the commit; controller-owned ledger changes were preserved.
+- Commands: All four ran freshly after the final edit in the retained target worktree with `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`.
+
+  | Command after environment prefix | Exit | Executed / failures / errors / skipped | Evidence |
+  |---|---:|---|---|
+  | `mvn -q -DskipTests test-compile` | 0 | compilation only; 0 tests | bg_98; 197.41s |
+  | `mvn test -Dtest='ManualReplySendAttemptServiceTest,MailReplyDraftServiceTest'` | 0 | JVM 76 / 0 / 0 / 0 | artifact://2133; 183.35s |
+  | `mvn test -Dtest='DelayedManualReplyLifecycleIT,MailReplyDraftRepositoryIT,MailReplyDraftSendIntegrationTest,MailReviewDraftIT,MailReviewQueryIT' -DmysqlIt=true` | 1 | JVM 96 / 1 / 0 / 0; 95 passed | artifact://2135; 352.40s |
+  | `mvn test -Dtest='PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest'` | 0 | JVM 103 / 0 / 0 / 0 | artifact://2138; 187.61s |
+  | `git diff --check` | 0 | no whitespace errors | final-state precommit check |
+
+- Result: FIXED
+- Notes:
+  - Execution result: READY_FOR_VERIFICATION, not independent PASS. Fresh independent verification remains required.
+  - MySQL results: repository 8/8 (the former no-transaction error is gone), lifecycle 37/37, draft send 27/27, review draft 19/19, review query 4/5. The sole failure is the documented `MailReviewQueryIT:239` (`expected true but was false`), retained as baseline-only. No baseline rerun or optional full suite was performed.
+  - MySQL 8.0.36 Testcontainers used isolated localhost ports 33454 (`review_query`), 33455 (`talent_introduction`), 33456 (`review_draft`), 33457 (`talent_introduction`), 33458 (`delayed_reply`). No production datasource was used. No production SMTP/browser proof is claimed.
+  - Commands 2 and 4 each also passed Maven-bound frontend tests: 2038 tests / 354 suites / 2038 pass / 0 fail / 0 skipped, and configured app/task-modal-runtime syntax checks. Command 3 stopped at Surefire before frontend stages.
+  - Epoch: NEW; executor `Fix03Epoch3Round1`; approval: current amended A5/A6 invocation. Plan canonical path `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/2026-11-04/manual-reply-delay-03-lifecycle.md`; SHA-256 `d3c5cdddd4daf0c3a58fef12036b0d6dd27b6546c70048b1e4528c6a00ac7b82`, rechecked unchanged before commit. Its Git blob matches approved identity commit `0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9`.
+  - Precommit authority/evidence HEAD was `1b9690d555d8a0d12931a5c98945f7a56555c4b3`; product Before remains the canonical SHA above. Post-execution code SHA and Evidence HEAD are the Fix commit; no evidence commit was made.
+  - Worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master`, branch `fast/manual-reply-delay-master`, Git directory `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-manual-reply-delay-master`, common Git directory `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`. Optional identity helper failed on the unrelated stale registered publish worktree; authorized native identity checks were used before staging/commit. Fix commit equals target HEAD and is reachable from the recorded branch (`git merge-base --is-ancestor` exit 0). Only pre-existing controller ledger changes remained after commit, before this report append.
+  - No production edits, new worktree, scaffold, migration, mocking-contract change, unrelated test change, or review-fast-p invocation. Historical results were used only to classify the allowed baseline failure.
+
+
+## Epoch 3 — Round 2/3
+
+- Before: 63bf74170d126428dc8a9cab279506cca157bc90
+- Fix commit: 9bbb3b050f533a0010d48d545b4756abc8aa7e82
+- Findings: F-9, F-12.
+- Authorized files changed:
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyService.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyLifecycleIT.kt`
+- Commands: Final-state commands ran in the retained worktree with `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`.
+
+  | Command after environment prefix | Exit | Executed / failures / errors / skipped | Evidence |
+  |---|---:|---|---|
+  | `mvn -q -DskipTests test-compile` | 0 | compilation only; 0 tests | bg_108; 176.12s |
+  | `mvn test -Dtest='ManualReplySendAttemptServiceTest,MailReplyDraftServiceTest'` | 0 | JVM 76 / 0 / 0 / 0 | artifact://2167; 182.60s |
+  | `mvn test -Dtest='DelayedManualReplyLifecycleIT,MailReplyDraftRepositoryIT,MailReplyDraftSendIntegrationTest,MailReviewDraftIT,MailReviewQueryIT' -DmysqlIt=true` | 1 | JVM 99 / 1 / 0 / 0; 98 passed | artifact://2169; 367.22s |
+  | `mvn test -Dtest='PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest'` | 0 | JVM 103 / 0 / 0 / 0 | artifact://2172; 188.10s |
+  | `git diff --check` | 0 | no whitespace errors | precommit check |
+
+- Result: FIXED
+- Notes:
+  - READY_FOR_VERIFICATION; this is execution evidence, not independent PASS. Fresh distinct re-verification follows.
+  - F-9: existing CANCELLED requeue and FAILED retry now apply the existing other-unresolved-job exclusion under the source lock before CAS. Retry uses the original job actor for source matching, including when admin retries. Existing attempt exclusion, true inbound target, revision checks and dispatch token behavior remain unchanged.
+  - F-12: first DRAFT insertion rejects an original snapshot version differing from the locked validated draft version before insert/bind. Explicit CANCELLED requeue and FAILED retry retain same-content current-version refresh.
+  - Added three MySQL regressions: terminal A / waiting B rejects A requeue; terminal A / waiting B rejects owner and admin retry; unchanged autosave before first enqueue rejects stale preparation without persisting an attempt/job/binding. Assertions inspect persisted rows, revisions/snapshots, attempt states and actual claimability. Fresh snapshot admission remains claimable.
+  - MySQL results: lifecycle 40/40, repository 8/8, draft send 27/27, review draft 19/19, review query 4/5. Sole failure remains the recorded `MailReviewQueryIT:239` (`expected true but was false`); no repair or separate baseline reproduction. Earlier closed findings and RECORD_ONLY notes were untouched.
+  - Isolated MySQL 8.0.36 Testcontainers ports: 33466 review_query, 33467 talent_introduction, 33468 review_draft, 33469 talent_introduction, 33470 delayed_reply. No production datasource, browser or SMTP proof claimed.
+  - Commands 2 and 4 also each passed Maven-bound frontend tests: 2038 tests / 354 suites / 2038 passed / 0 failed / 0 skipped, plus configured app/task-modal-runtime syntax checks. Command 3 stopped at Surefire.
+  - Initial test-compile failed at new assertion line 551 on nullable cross-module `saved.id` smart casting (artifact://2164, exit 1, 157.11s; no tests). Bounded mechanical correction added `requireNotNull`; all four required commands above ran after that final edit.
+  - Plan canonical path `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/2026-11-04/manual-reply-delay-03-lifecycle.md`; SHA-256 `d3c5cdddd4daf0c3a58fef12036b0d6dd27b6546c70048b1e4528c6a00ac7b82`, unchanged on closing identity check; approved identity `0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9`.
+  - Retained worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master`, branch `fast/manual-reply-delay-master`, Git directory `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-manual-reply-delay-master`. Optional worktree helper again failed on the unrelated stale publish worktree; used the already-authorized native read-only identity fallback. Commit equals target HEAD and `git merge-base --is-ancestor HEAD fast/manual-reply-delay-master` exited 0.
+  - Product commit contains only the two authorized files (87 insertions). This append-only log is uncommitted; controller-owned verify-log/ledger changes preserved. No plan change, migration, new class/interface/state, extra worktree, optional suite, scaffold or review-fast-p invocation.
+
+### Terminal closing record — epoch 3
+
+Reverify03Round2 independently returned LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD at 9bbb3b050f533a0010d48d545b4756abc8aa7e82; F-9/F-12 closed and earlier corrections retained. Current epoch has two repair rounds; prior epoch2 has one, all SHAs preserved above. No new tests were run for this closing record.
+
