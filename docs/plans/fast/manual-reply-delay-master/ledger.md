@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit 05342b4be63bbc7d9b30416ae73ada2d44b562df)
-- Amendments: N/A
+- Amendments: A1
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
 - Branch: fast/manual-reply-delay-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
@@ -11,8 +11,8 @@
 - Started: 2026-11-04T08:19:33Z
 - Current child: 02-preparation
 - Waiting role: IMPLEMENTER
-- Agent attempt: 0
-- Last agent error: N/A
+- Agent attempt: 1
+- Last agent error: [opencode-go/deepseek-v4.1-flash] getaddrinfo ENOTFOUND opencode.ai (child 02 IMPLEMENTER attempt 1)
 - Pause reason: N/A
 - Resume from: N/A
 
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 01-storage | docs/plans/2026-11-04/manual-reply-delay-01-storage.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | none | 1 | LIGHT_PASS | 05342b4be63bbc7d9b30416ae73ada2d44b562df | d57026edc072b5469f08e8642c8c771acbd894e9 | 0 | — | d57026edc072b5469f08e8642c8c771acbd894e9 | 322495454e9a62d22c3739a5cfe09750e2941207 | Base is the plan-seed commit on the fast branch. |
-| 02-preparation | docs/plans/2026-11-04/manual-reply-delay-02-preparation.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 01-storage | 1 | PENDING |  | — | 0 | — | — | — | Depends on 01 persisted models/repository. |
+| 02-preparation | docs/plans/2026-11-04/manual-reply-delay-02-preparation.md | commit:ab3ad56713a74664b0f34f66a138206cb14666ea | 01-storage | 1 | PENDING |  | — | 0 | — | — | — | Depends on 01 persisted models/repository. |
 | 03-lifecycle | docs/plans/2026-11-04/manual-reply-delay-03-lifecycle.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 02-preparation | 1 | PENDING |  | — | 0 | — | — | — | Depends on 02 prepare/deliver seam. |
 | 04-worker-api | docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 03-lifecycle | 1 | PENDING |  | — | 0 | — | — | — | Depends on 03 state machine. |
 | 05-query | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 04-worker-api | 1 | PENDING |  | — | 0 | — | — | — | Depends on 04 public projection. |
@@ -30,3 +30,4 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-11-04/manual-reply-delay-02-preparation.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | commit:ab3ad56713a74664b0f34f66a138206cb14666ea | I-5 + 02 T3/T4 | T3 moves RAG persistence into finalizeSuccess, invalidating 3 RagSendBridgeTest assertions on Pending's saveAll; the test file must be updated to the mandated seam. | HUMAN:2026-11-04 授权修订子计划02并继续（新增 RagSendBridgeTest.kt 授权） |
