@@ -23,14 +23,37 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
             r.getTimestamp("created_at").toLocalDateTime(), r.getTimestamp("updated_at").toLocalDateTime(),
             r.getBoolean("contact_exists"), r.getString("expert_name"), r.getString("expert_email"), r.getString("send_attempt_status"))
     }
+    // fast-p 03 (T3/I-6/I-10)：排队的 job 态优先于 attempt 态投影；CANCELLED 释放绑定后
+    // 自动回到原 attempt 投影，不新增草稿表列。
     private val projection = """SELECT d.*, c.id IS NOT NULL AS contact_exists, c.expert_name, c.expert_email,
-        a.status AS send_attempt_status FROM mailbox_reply_draft d
+        CASE WHEN j.status IN ('WAITING','SENDING','UNKNOWN') THEN j.status ELSE a.status END AS send_attempt_status
+        FROM mailbox_reply_draft d
         LEFT JOIN expert_contact c ON c.id=d.expert_contact_id
-        LEFT JOIN mail_send_attempt a ON a.id=d.send_attempt_id"""
+        LEFT JOIN mail_send_attempt a ON a.id=d.send_attempt_id
+        LEFT JOIN delayed_manual_reply j ON j.send_attempt_id=d.send_attempt_id"""
     private fun targetParams(owner: String, target: MailReplyDraftTarget) = mapOf("owner" to owner, "contact" to target.contactId,
         "kind" to target.kind.name, "processing" to target.processingId, "scope" to target.accountScope)
     fun findTarget(owner: String, target: MailReplyDraftTarget): MailReplyDraftRow? = jdbc.query("$projection WHERE d.username=:owner AND d.expert_contact_id=:contact AND d.target_kind=:kind AND d.inbound_processing_id=:processing AND d.account_scope=:scope", targetParams(owner, target), mapper).singleOrNull()
     fun findOwned(owner: String, id: Long): MailReplyDraftRow? = jdbc.query("$projection WHERE d.username=:owner AND d.id=:id", mapOf("owner" to owner, "id" to id), mapper).singleOrNull()
+    /**
+     * fast-p 03：按目标唯一键锁定源行（先锁草稿再锁 attempt/job，保持统一锁序）。
+     * 行不存在时不加锁，随后由唯一键插入竞争决出唯一赢家。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockTargetRow(owner: String, target: MailReplyDraftTarget) {
+        // 生产路径（service REQUIRES_NEW）必然在事务内加行锁；直接构造 service 的测试路径
+        // 没有事务时不加锁，退回原有单条 CAS 语义（不加锁也不会比旧实现更弱）。
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) return
+        jdbc.queryForList("SELECT id FROM mailbox_reply_draft WHERE username=:owner AND expert_contact_id=:contact AND target_kind=:kind AND inbound_processing_id=:processing AND account_scope=:scope FOR UPDATE",
+            targetParams(owner, target))
+    }
+
+    /** fast-p 03：该 attempt 当前的排队任务态（只读；无任务即 null）。 */
+    fun delayedJobStatus(attemptId: Long): String? = jdbc.query(
+        "SELECT status FROM delayed_manual_reply WHERE send_attempt_id=:attempt",
+        mapOf("attempt" to attemptId),
+        RowMapper { r: ResultSet, _: Int -> r.getString("status") }
+    ).singleOrNull()
     fun insert(owner: String, target: MailReplyDraftTarget, content: MailReplyDraftContent, contextJson: String, now: LocalDateTime): Long {
         val params = MapSqlParameterSource(targetParams(owner, target)).addValue("subject", content.subject).addValue("html", content.html).addValue("text", content.text).addValue("context", contextJson).addValue("now", now)
         val key = GeneratedKeyHolder()

@@ -120,7 +120,11 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
 
     fun sendProjection(row: MailReviewDraftRow): MailReviewSendProjection {
         val attempt = row.sendAttemptId ?: return MailReviewSendProjection("NOT_SENT", null)
-        return jdbc.query("""SELECT a.status,m.id AS record_id FROM mail_send_attempt a
+        // fast-p 03 (T3/I-10)：排队任务态优先投影（WAITING/SENDING/UNKNOWN 不可发送）；
+        // CANCELLED 释放发送锁后回落到原 attempt 状态，审核绑定保留用于历史追踪。
+        return jdbc.query("""SELECT CASE WHEN j.status IN ('WAITING','SENDING','UNKNOWN') THEN j.status ELSE a.status END AS status,
+                m.id AS record_id FROM mail_send_attempt a
+            LEFT JOIN delayed_manual_reply j ON j.send_attempt_id=a.id
             LEFT JOIN mail_record m ON m.mail_send_attempt_id=a.id AND m.send_status='SENT'
                 AND m.direction='OUTBOUND' AND m.expert_contact_id=:contact AND m.sender_account_code=:account
                 AND m.subject=:subject AND m.body=:text AND m.message_id=a.message_id
@@ -129,6 +133,56 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
             RowMapper { r, _ -> MailReviewSendProjection(r.getString("status"),
                 if (r.getString("status") == "SENT") (r.getObject("record_id") as? Number)?.toLong() else null) })
             .singleOrNull() ?: MailReviewSendProjection("NOT_SENT", null)
+    }
+
+    /** fast-p 03：审核动作期间读取该 attempt 的排队任务态（只读，不加锁）。 */
+    fun delayedJobStatus(attemptId: Long): String? = jdbc.query(
+        "SELECT status FROM delayed_manual_reply WHERE send_attempt_id=:attempt",
+        mapOf("attempt" to attemptId),
+        RowMapper { r: ResultSet, _: Int -> r.getString("status") }
+    ).singleOrNull()
+
+    /** fast-p 03：当前 admin 针对当前上下文令牌的最新确认事件（重试时重新解析，禁止自建）。 */
+    fun latestContextConfirmation(draftId: Long, draftVersion: Long, actor: String, contextToken: String): Long? = jdbc.query(
+        """SELECT id FROM mailbox_review_draft_event
+            WHERE draft_id=:draft AND draft_version=:version AND event_type='CONTEXT_CONFIRMED' AND actor_username=:actor
+              AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.contextToken'))=:token
+            ORDER BY id DESC LIMIT 1""",
+        mapOf("draft" to draftId, "version" to draftVersion, "actor" to actor, "token" to contextToken),
+        RowMapper { r: ResultSet, _: Int -> r.getLong("id") }
+    ).singleOrNull()
+
+    /**
+     * fast-p 03 (T3)：排队/撤回/重排事件以 jobId+revision 去重，每轮最多一条。
+     * 只在插入成功（受影响行数为 1）时返回事件。
+     */
+    fun appendJobEvent(
+        draftId: Long,
+        draftVersion: Long,
+        eventType: String,
+        actor: String,
+        jobId: Long,
+        revision: Long,
+        createdAt: LocalDateTime
+    ): MailReviewDraftEvent? {
+        transaction()
+        validatePayload(eventType, mapOf("jobId" to jobId, "revision" to revision))
+        val payload = objectMapper.writeValueAsString(linkedMapOf<String, Any?>("jobId" to jobId, "revision" to revision))
+        val inserted = jdbc.update(
+            """INSERT INTO mailbox_review_draft_event (draft_id,draft_version,event_type,actor_username,payload_json,created_at)
+                SELECT :draft,:version,:type,:actor,:payload,:created FROM dual
+                WHERE NOT EXISTS (SELECT 1 FROM mailbox_review_draft_event
+                    WHERE draft_id=:draft AND event_type=:type
+                      AND JSON_EXTRACT(payload_json,'$.jobId')=:job
+                      AND JSON_EXTRACT(payload_json,'$.revision')=:revision)""",
+            MapSqlParameterSource()
+                .addValue("draft", draftId).addValue("version", draftVersion).addValue("type", eventType)
+                .addValue("actor", actor).addValue("payload", payload).addValue("created", createdAt)
+                .addValue("job", jobId).addValue("revision", revision)
+        )
+        if (inserted != 1) return null
+        return jdbc.query("SELECT * FROM mailbox_review_draft_event WHERE id=LAST_INSERT_ID()", emptyMap<String, Any?>(), eventMapper)
+            .singleOrNull()
     }
 
     fun event(id: Long): MailReviewDraftEvent? = jdbc.query(
@@ -207,11 +261,13 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
             type == "COMMENT" -> { required = setOf("text"); optional = emptySet() }
             type == "CONTEXT_CONFIRMED" -> { required = setOf("contextToken"); optional = emptySet() }
             type in setOf("SEND_CLAIMED", "SEND_SUCCEEDED", "SEND_RESULT", "SEND_FAILED", "SEND_UNKNOWN") -> { required = setOf("attemptId", "result"); optional = setOf("mailRecordId") }
+            // fast-p 03 (T3)：延迟任务事件以 job+revision 标识，每轮最多一条（写入方去重）。
+            type in setOf("SEND_QUEUED", "SEND_CANCELLED", "SEND_REQUEUED") -> { required = setOf("jobId", "revision"); optional = emptySet() }
             else -> throw IllegalStateException("Unknown review event type")
         }
         require(payload.keys.containsAll(required) && payload.keys.all { it in required || it in optional }) { "Invalid review event schema" }
         payload.forEach { (key, value) ->
-            if (key == "attemptId" || key == "mailRecordId") require(value is Long && value > 0)
+            if (key in setOf("attemptId", "mailRecordId", "jobId", "revision")) require(value is Long && value > 0)
             else require(value is String) { "Invalid review event string" }
         }
         if (type in snapshots) MailReviewDraftState.valueOf(payload["state"] as String)

@@ -14,6 +14,16 @@ import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 
+/**
+ * fast-p 03：延迟任务源锁结果。`ref` 只在目标与冻结正文逐字一致时非空；
+ * `contentMatches=false` 表示排队/重试期间源已被修改，调用方必须 fail closed。
+ */
+internal data class DelayedDraftSource(
+    val row: MailReplyDraftRow,
+    val ref: ValidatedDraftSendRef?,
+    val contentMatches: Boolean
+)
+
 @Service
 class MailReplyDraftService(
     private val repository: MailReplyDraftRepository,
@@ -34,11 +44,16 @@ class MailReplyDraftService(
     }
     fun get(owner: String, id: Long): MailReplyDraftDetail { identity(owner); return detail(authorizedOwned(owner,id)) }
     // Each write is one atomic CAS statement; conflict rereads must not use an old REPEATABLE READ snapshot.
+    // fast-p 03 (T3/I-2/I-6)：目标行在同一事务内先行加锁并读取绑定任务，排队的回复
+    // （WAITING/SENDING/UNKNOWN）在服务端拒绝自动保存/重开，绝不只靠前端禁用按钮。
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun save(owner: String, target: MailReplyDraftTarget, request: MailReplyDraftSaveRequest): MailReplyDraftDetail {
         identity(owner); targetShape(target)
         authorizeTarget(owner, target)
         if (request.expectedVersion < 0) invalid("非法 expectedVersion")
+        repository.lockTargetRow(owner,target)
         val existing = repository.findTarget(owner,target)
+        requireNotQueued(existing)
         if (existing == null) {
             if (request.expectedVersion != 0L || request.reopen) conflict(null)
         } else {
@@ -69,6 +84,7 @@ class MailReplyDraftService(
         val row = authorizedOwned(owner,id)
         if (expectedVersion <= 0 || row.version != expectedVersion) conflict(row)
         if (row.state != MailReplyDraftState.ACTIVE) return detail(row)
+        requireNotQueued(row)
         if (row.sendAttemptStatus == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
             throw MailReplyDraftException(HttpStatus.CONFLICT,"DRAFT_SEND_IN_PROGRESS","草稿正在发送，不能放弃",row.version,row.state)
         }
@@ -147,6 +163,56 @@ class MailReplyDraftService(
         return row
     }
     internal fun lockForFinalize(ref: ValidatedDraftSendRef) { locked(ref.owner,ref.id) }
+    /**
+     * fast-p 03 (T3/I-2/I-6)：延迟任务源锁。调用方事务（REQUIRES_NEW）内先锁草稿行，
+     * 再做权限与冻结内容核对；[DelayedDraftSource.ref] 只在目标与正文逐字一致时给出，
+     * 保证重排/重试不会把改变后的内容复用旧确认。
+     */
+    internal fun lockDelayedSource(owner: String, restore: DelayedDraftRestore): DelayedDraftSource {
+        identity(owner)
+        val row = locked(owner, restore.draftId)
+        authorizeTarget(owner, row.target)
+        val expected = MailReplyDraftTarget(
+            restore.contactId,
+            MailReplyDraftKind.valueOf(restore.targetKind),
+            restore.processingId,
+            restore.accountScope
+        )
+        if (row.target != expected || row.state != MailReplyDraftState.ACTIVE) {
+            return DelayedDraftSource(row, null, false)
+        }
+        val matches = row.subject.orEmpty() == restore.subject && row.html.orEmpty() == restore.html &&
+            row.text.orEmpty() == restore.text && row.contextJson.orEmpty() == restore.contextJson
+        if (!matches) return DelayedDraftSource(row, null, false)
+        val content = try {
+            content(row)
+        } catch (_: IllegalArgumentException) {
+            return DelayedDraftSource(row, null, false)
+        }
+        return DelayedDraftSource(row, validated(row, content), true)
+    }
+
+    /** fast-p 03：状态迁移只锁源行（不比较内容、不改变版本），保持源→attempt→job 锁序。 */
+    internal fun lockDelayedTransition(owner: String, draftId: Long): MailReplyDraftRow? =
+        repository.lockOwned(owner, draftId)
+
+    /** fast-p 03：把当前草稿版本绑定到已存在的 attempt（重排/重试）。 */
+    internal fun bindDelayed(ref: ValidatedDraftSendRef, attemptId: Long) {
+        if (!repository.bindAttempt(ref.owner, ref.id, ref.version, attemptId)) {
+            throw MailReplyDraftException(HttpStatus.CONFLICT, "DRAFT_SEND_QUEUED", "回复已加入发送队列，暂不可修改", ref.version)
+        }
+    }
+
+    /**
+     * fast-p 03 (I-6)：撤回只释放完全相同的 id/version/attempt 绑定，正文、context 与
+     * 附件引用逐字保留；不匹配时不动任何列。
+     */
+    internal fun releaseDelayedBinding(row: MailReplyDraftRow, attemptId: Long): Boolean {
+        val version = row.sendVersion ?: return false
+        if (row.sendAttemptId != attemptId) return false
+        return repository.releaseCompletedBinding(row.username, row.id, version, attemptId)
+    }
+
     internal fun releaseBinding(row: MailReplyDraftRow) {
         check(repository.releaseCompletedBinding(row.username,row.id,requireNotNull(row.sendVersion),requireNotNull(row.sendAttemptId))) {
             "Draft binding release failed"
@@ -185,6 +251,25 @@ class MailReplyDraftService(
     }
     private fun mismatch(row: MailReplyDraftRow): Nothing = throw MailReplyDraftException(HttpStatus.CONFLICT,
         "DRAFT_CONTENT_MISMATCH","发送内容与已保存草稿不一致",row.version,row.state)
+    /**
+     * fast-p 03 (T3/I-6/I-10)：排队中的草稿在服务端冻结。
+     *
+     * 判据是**绑定 attempt 的延迟任务态**（job 是唯一权威），不是 attempt 自身状态：
+     * 同步发送期间（DELIVERY_IN_PROGRESS、无 job）的编辑语义保持原样。WAITING/UNKNOWN
+     * 拒绝编辑与放弃；SENDING 沿用原 `DRAFT_SEND_IN_PROGRESS`。FAILED/CANCELLED 已释放
+     * 绑定或允许按原规则编辑。
+     */
+    private fun requireNotQueued(row: MailReplyDraftRow?) {
+        val attemptId = row?.sendAttemptId ?: return
+        when (repository.delayedJobStatus(attemptId)) {
+            "WAITING", "UNKNOWN" -> throw MailReplyDraftException(HttpStatus.CONFLICT,"DRAFT_SEND_QUEUED",
+                "回复已加入发送队列，暂不可修改",row.version,row.state)
+            "SENDING" -> throw MailReplyDraftException(HttpStatus.CONFLICT,"DRAFT_SEND_IN_PROGRESS",
+                "草稿正在发送，不能放弃",row.version,row.state)
+            else -> Unit
+        }
+    }
+
     private fun identity(owner: String) { if (owner.isBlank() || owner.length > 64) throw MailReplyDraftException(HttpStatus.UNAUTHORIZED,"UNAUTHORIZED","请先登录") }
     private fun targetShape(target: MailReplyDraftTarget) {
         if (target.contactId <= 0 || target.accountScope.length > 100 || target.accountScope != target.accountScope.trim()) invalid("非法草稿目标")

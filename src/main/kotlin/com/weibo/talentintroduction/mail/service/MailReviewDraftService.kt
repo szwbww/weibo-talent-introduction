@@ -159,6 +159,11 @@ class MailReviewDraftService(
         val username = requireAdmin(actor)
         val row = writable(username, id, expectedVersion)
         state(row, MailReviewDraftState.APPROVED)
+        // fast-p 03 (T3/I-6)：等待投递/正在投递的一轮不能重新确认上下文 —— 已经冻结的
+        // 正文与令牌不因事后确认而改变，必须等任务失败后再确认。
+        if (queuedStatus(row) in CONFIRM_BLOCKING) {
+            throw MailReviewDraftException(409, "REVIEW_SEND_QUEUED", "回复正在等待发送，暂不可重新确认上下文")
+        }
         val token = matchingContext(row, observedContextToken)
         val event = repository.appendEvent(row.id, row.version, "CONTEXT_CONFIRMED", username, mapOf("contextToken" to token), now())
         return MailReviewDraftConfirmation(event.id, token)
@@ -208,6 +213,11 @@ class MailReviewDraftService(
         if (row.deletedAt != null) conflictState()
         version(row, expectedVersion)
         state(row, MailReviewDraftState.APPROVED)
+        // fast-p 03 (T3/I-10)：排队中/结果未知的审核任务不可再走发送入口（同为服务端闸门，
+        // 不只依赖前端按钮）；CANCELLED 释放发送锁后允许重新准备。
+        if (queuedStatus(row) in SEND_BLOCKING) {
+            throw MailReviewDraftException(409, "REVIEW_SEND_QUEUED", "回复已加入发送队列，请先撤回或等待完成")
+        }
         grant(row.ownerUsername, row.contactId, false)
         if (row.sendRequestId == null || !repository.validTarget(row))
             throw MailReviewDraftException(422, "REVIEW_TARGET_NOT_FOUND", "The original reply target is no longer valid")
@@ -233,6 +243,70 @@ class MailReviewDraftService(
         check(row.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
         repository.appendSendResult(row, attemptId, result, mailRecordId, now())
     }
+
+    /**
+     * fast-p 03 (T3/I-2/I-6)：延迟任务源锁。
+     *
+     * 锁序：授权行（access 内先锁 expert_mail_read_access）→ 审核稿行；锁后重新核对
+     * APPROVED 冻结版本与内容，再校验上下文（初始排队使用请求携带的确认事件）。
+     */
+    internal fun lockDelayedReview(actor: String, restore: DelayedReviewRestore, confirmationEventId: Long?): MailReviewDraftRow {
+        val username = requireAdmin(actor)
+        val row = lockDelayedReviewRow(username, restore)
+        validateSendContext(row, MailReviewSendRef(row, username, confirmationEventId))
+        return row
+    }
+
+    /**
+     * fast-p 03 (T3)：重试/重排时的上下文再校验。上下文未变化时无需确认；已变化时
+     * 服务端查找当前 admin 对同一 draftId/version、当前 token 的最新 CONTEXT_CONFIRMED
+     * 事件并把引用交给调用方写入快照 —— 绝不在这里自建确认事件。
+     */
+    internal fun lockDelayedReviewForRetry(actor: String, restore: DelayedReviewRestore): Pair<MailReviewDraftRow, Long?> {
+        val username = requireAdmin(actor)
+        val row = lockDelayedReviewRow(username, restore)
+        val current = contextToken(row.contactId)
+        if (current == row.approvedContextToken) {
+            validateSendContext(row, MailReviewSendRef(row, username, null))
+            return row to null
+        }
+        val eventId = repository.latestContextConfirmation(row.id, row.version, username, current)
+            ?: throw MailReviewDraftException(409, "REVIEW_CONTEXT_CHANGED", "Review and confirm the latest conversation before sending")
+        validateSendContext(row, MailReviewSendRef(row, username, eventId))
+        return row to eventId
+    }
+
+    /**
+     * fast-p 03 (T3/I-3)：排队受理即把审核稿绑定到同一个 attempt（不写 SEND_CLAIMED 事件）。
+     * 绑定是发送锁与历史追踪的唯一来源：详情投影据此显示 WAITING/SENDING/UNKNOWN 并拒绝
+     * 再次准备发送；撤回保留该绑定。
+     */
+    fun bindDelayedAttempt(row: MailReviewDraftRow, attemptId: Long) {
+        repository.bindAttempt(row, attemptId)
+    }
+
+    /** fast-p 03：状态迁移/领取只锁审核稿行，不做权限或内容比较（保持源→attempt→job 锁序）。 */
+    internal fun lockDelayedResult(reviewId: Long): MailReviewDraftRow? = repository.find(reviewId, true)
+
+    /** fast-p 03 (T3)：SEND_QUEUED/SEND_CANCELLED/SEND_REQUEUED 去重事件（job+revision）。 */
+    fun recordQueueEvent(row: MailReviewDraftRow, eventType: String, jobId: Long, revision: Long): MailReviewDraftEvent? =
+        repository.appendJobEvent(row.id, row.version, eventType, MailReadOnlyPolicy.ADMIN_USERNAME, jobId, revision, now())
+
+    private fun lockDelayedReviewRow(actor: String, restore: DelayedReviewRestore): MailReviewDraftRow {
+        val row = access(actor, restore.reviewId, true)
+        if (row.deletedAt != null) conflictState()
+        state(row, MailReviewDraftState.APPROVED)
+        if (row.version != restore.version || row.subject != restore.subject || row.html != restore.html ||
+            row.text != restore.text || row.contactId != restore.contactId || row.accountCode != restore.accountCode ||
+            row.targetKind != restore.targetKind || row.targetId != restore.targetId ||
+            row.sendRequestId != restore.sendRequestId || row.approvedContextToken != restore.approvedContextToken) {
+            throw MailReviewDraftException(409, "REVIEW_CONTENT_CHANGED", "Approved content changed")
+        }
+        return row
+    }
+
+    private fun queuedStatus(row: MailReviewDraftRow): String? =
+        row.sendAttemptId?.let { repository.delayedJobStatus(it) }
 
     private fun access(username: String, id: Long, lock: Boolean): MailReviewDraftRow {
         val observed = repository.find(id) ?: notFound()
@@ -355,6 +429,12 @@ class MailReviewDraftService(
     private fun now(): LocalDateTime = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS)
 
     companion object {
+        /** 排队中/结果未知：不可发送、不可重新准备。 */
+        private val SEND_BLOCKING = setOf("WAITING", "SENDING", "UNKNOWN")
+
+        /** 已冻结的一轮不可重新确认上下文（失败/撤回后才行）。 */
+        private val CONFIRM_BLOCKING = setOf("WAITING", "SENDING")
+
         private val HREF_EXTRACTOR = Regex("""href\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>"']+))""", RegexOption.IGNORE_CASE)
     }
 }

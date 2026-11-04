@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.campaign.service.MeetingCalendarService
@@ -14,6 +15,7 @@ import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRagFactRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.DelayedManualReplyRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -39,7 +41,10 @@ class ManualReplySendAttemptService(
     private val mailReviewDraftService: MailReviewDraftService? = null,
     // fast-p 02 (T3/I-5)：RAG 存证写入必须在 SENT 同一事务内完成。可空默认值保持既有
     // 直接构造的单元测试零改动；RAG payload 入口在事务内 requireNotNull 防御性校验。
-    private val mailRecordRagFactRepository: MailRecordRagFactRepository? = null
+    private val mailRecordRagFactRepository: MailRecordRagFactRepository? = null,
+    // fast-p 03 (I-3)：排队任务与同步入口互斥的唯一读取点。只读仓储（不是 service），
+    // 避免与 DelayedManualReplyService 形成构造环；未接线时同步行为逐字不变。
+    private val delayedManualReplyRepository: DelayedManualReplyRepository? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(ManualReplySendAttemptService::class.java)
@@ -144,6 +149,146 @@ class ManualReplySendAttemptService(
         val messageId: String,
         val result: ClaimResult
     )
+
+    /**
+     * fast-p 03（T1/I-3）：异步排队的 attempt 预留结果。
+     *
+     * 与 [prepareAndClaim] 的区别是**绝不**把状态推进到 DELIVERY_IN_PROGRESS：
+     * 排队阶段只允许 attempt 保持 PREPARED（或既有安全失败态），领取由
+     * [claimDelayed] 在 worker 的短事务里完成。`state` 是锁后重新读取的真实状态，
+     * 调用方必须按它收敛/拒绝，不能把「已有任务」当成可重新 claim。
+     */
+    enum class DelayedReservationState {
+        PREPARED,
+        DELIVERY_IN_PROGRESS,
+        SENT,
+        DELIVERY_UNKNOWN,
+        FAILED,
+        FAILED_SAFE_TO_RETRY
+    }
+
+    data class DelayedReservation(
+        val attemptId: Long,
+        val messageId: String,
+        val state: DelayedReservationState
+    )
+
+    /**
+     * fast-p 03（T1/I-3）：延迟发送的 attempt 预留（MANDATORY）。
+     *
+     * 必须在调用方事务中执行：源行锁 → attempt 插入/锁定 → job 插入/绑定 → 审核事件
+     * 必须一起提交或回滚。复用的身份定义与 [prepareAndClaim] 完全相同
+     * （[computeFingerprint]、唯一键冲突、Message-ID 生成与 payload 比较），因此排队
+     * 任务和同步入口指向同一行 attempt，旧指纹字节保持不变。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun reserveDelayed(payload: SendPayload): DelayedReservation {
+        require(payload.draftSendRef == null || payload.reviewSendRef == null) { "Conflicting draft references" }
+        validateReviewPayload(payload)
+        val fingerprint = computeFingerprint(payload)
+        val now = LocalDateTime.now()
+        attemptRepository.insertIgnore(
+            orcidId = payload.orcidId,
+            mailType = fingerprint.shortKey,
+            accountCode = payload.accountCode,
+            messageId = fingerprint.messageId,
+            status = MailSendAttemptStatus.PREPARED,
+            recipient = payload.normalizedRecipient,
+            subject = payload.subject,
+            body = fingerprint.fullHex,
+            contentType = FINGERPRINT_CONTENT_TYPE,
+            createdAt = now,
+            updatedAt = now
+        )
+        val attempt = attemptRepository.findByOrcidIdAndMailTypeForUpdate(payload.orcidId, fingerprint.shortKey)
+            ?: throw IllegalStateException(
+                "Mail send attempt not found after delayed reservation: orcidId=${payload.orcidId} " +
+                    "mailType=${fingerprint.shortKey}"
+            )
+        requireFingerprintIdentity(attempt, payload, fingerprint)
+        return DelayedReservation(
+            attemptId = requireNotNull(attempt.id),
+            messageId = attempt.messageId,
+            state = when (attempt.status) {
+                MailSendAttemptStatus.PREPARED -> DelayedReservationState.PREPARED
+                MailSendAttemptStatus.DELIVERY_IN_PROGRESS -> DelayedReservationState.DELIVERY_IN_PROGRESS
+                MailSendAttemptStatus.SENT -> DelayedReservationState.SENT
+                MailSendAttemptStatus.DELIVERY_UNKNOWN -> DelayedReservationState.DELIVERY_UNKNOWN
+                MailSendAttemptStatus.FAILED_SAFE_TO_RETRY -> DelayedReservationState.FAILED_SAFE_TO_RETRY
+                MailSendAttemptStatus.FAILED -> DelayedReservationState.FAILED
+                else -> throw IllegalStateException("Unsupported attempt status ${attempt.status}")
+            }
+        )
+    }
+
+    /**
+     * fast-p 03（T2/I-2）：worker 领取前的 attempt 锁（MANDATORY）。
+     *
+     * 必须由调用方先持有源草稿/审核锁：attempt 锁先于 job 锁。返回锁后重新读取的行，
+     * 调用方必须再次核对 id/status，不能信任加锁前的无锁读取。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockDelayedAttempt(attemptId: Long): MailSendAttempt {
+        val observed = attemptRepository.findById(attemptId).orElseThrow {
+            IllegalStateException("Mail send attempt not found: $attemptId")
+        }
+        val locked = attemptRepository.findByOrcidIdAndMailTypeForUpdate(observed.orcidId, observed.mailType)
+            ?: throw IllegalStateException("Mail send attempt not found after locking: $attemptId")
+        check(locked.id == attemptId) { "Mail send attempt identity changed while locking" }
+        return locked
+    }
+
+    /**
+     * fast-p 03（T2/I-2）：WAITING 领取时的 attempt 状态 CAS（MANDATORY）。
+     *
+     * 只有 PREPARED / FAILED_SAFE_TO_RETRY 可以进入 DELIVERY_IN_PROGRESS；与 job 的
+     * `WAITING→SENDING` 在同一事务提交，任一步失败都必须整体回滚。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun claimDelayed(attemptId: Long, now: LocalDateTime = LocalDateTime.now()): Boolean {
+        val attempt = lockDelayedAttempt(attemptId)
+        return when (attempt.status) {
+            MailSendAttemptStatus.PREPARED, MailSendAttemptStatus.FAILED_SAFE_TO_RETRY ->
+                attemptRepository.claimStatus(
+                    attemptId,
+                    attempt.status,
+                    MailSendAttemptStatus.DELIVERY_IN_PROGRESS,
+                    now
+                ) > 0
+            else -> false
+        }
+    }
+
+    /** fast-p 03（T4/I-5）：超时恢复把仍在途的 attempt 收敛为 UNKNOWN（不重发）。 */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun recoverDelayedUnknown(attemptId: Long, now: LocalDateTime = LocalDateTime.now()): Boolean =
+        attemptRepository.claimStatus(
+            attemptId,
+            MailSendAttemptStatus.DELIVERY_IN_PROGRESS,
+            MailSendAttemptStatus.DELIVERY_UNKNOWN,
+            now
+        ) > 0
+
+    /** fast-p 03（T2）：投递前已知失败把 attempt 标为可安全重试（绝不伪造 SENT）。 */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun failDelayedBeforeDelivery(attemptId: Long, errorSummary: String, now: LocalDateTime = LocalDateTime.now()): Boolean {
+        val attempt = lockDelayedAttempt(attemptId)
+        if (attempt.status != MailSendAttemptStatus.PREPARED &&
+            attempt.status != MailSendAttemptStatus.FAILED_SAFE_TO_RETRY
+        ) {
+            return false
+        }
+        return attemptRepository.claimStatus(
+            attemptId,
+            attempt.status,
+            MailSendAttemptStatus.FAILED_SAFE_TO_RETRY,
+            now
+        ) > 0
+    }
+
+    /** 排队任务（只读）：同步入口与恢复路径共用的唯一判断源。 */
+    internal fun delayedJobFor(attemptId: Long): DelayedManualReplyRow? =
+        delayedManualReplyRepository?.findByAttemptId(attemptId)
 
     fun computeFingerprint(payload: SendPayload): Fingerprint {
         val messageId = String.format(MESSAGE_ID_TEMPLATE, UUID.randomUUID().toString().replace("-", ""))
@@ -274,15 +419,7 @@ class ManualReplySendAttemptService(
         val fingerprint = computeFingerprint(payload)
         val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)
             ?: return null
-        require(attempt.contentType == FINGERPRINT_CONTENT_TYPE) {
-            "Mail send attempt fingerprint collision: unexpected contentType=${attempt.contentType}"
-        }
-        require(attempt.body == fingerprint.fullHex) {
-            "Mail send attempt fingerprint collision: full hash mismatch"
-        }
-        require(attempt.recipient == payload.normalizedRecipient) {
-            "Mail send attempt fingerprint collision: recipient mismatch"
-        }
+        requireFingerprintIdentity(attempt, payload, fingerprint)
         if (attempt.status != MailSendAttemptStatus.SENT) return null
         val attemptId = attempt.id ?: return null
         if (review != null) {
@@ -327,6 +464,15 @@ class ManualReplySendAttemptService(
             val bound = attemptRepository.findById(draftRow.sendAttemptId).orElseThrow {
                 IllegalStateException("Draft bound attempt is missing")
             }
+            // fast-p 03 (I-3): a draft already owned by a delayed job must never be
+            // re-claimed synchronously (that would bypass the 60s deadline or double-send).
+            delayedJobFor(requireNotNull(bound.id))?.let { job ->
+                return ClaimedAttempt(
+                    requireNotNull(bound.id),
+                    bound.messageId,
+                    delayedClaimResult(job.status)
+                )
+            }
             val blocked = when (bound.status) {
                 MailSendAttemptStatus.DELIVERY_IN_PROGRESS -> ClaimResult.IN_PROGRESS
                 MailSendAttemptStatus.DELIVERY_UNKNOWN -> ClaimResult.UNKNOWN
@@ -360,20 +506,18 @@ class ManualReplySendAttemptService(
             "Mail send attempt not found after reservation: orcidId=${payload.orcidId} mailType=${fingerprint.shortKey}"
         )
 
-        if (attempt.contentType != FINGERPRINT_CONTENT_TYPE) {
-            throw IllegalArgumentException(
-                "Mail send attempt fingerprint collision: unexpected contentType=${attempt.contentType}"
-            )
-        }
-        if (attempt.body != fingerprint.fullHex) {
-            throw IllegalArgumentException(
-                "Mail send attempt fingerprint collision: full hash mismatch"
-            )
-        }
-        if (attempt.recipient != payload.normalizedRecipient) {
-            throw IllegalArgumentException(
-                "Mail send attempt fingerprint collision: recipient mismatch"
-            )
+        requireFingerprintIdentity(attempt, payload, fingerprint)
+        // fast-p 03 (I-3): an attempt owned by a delayed job is only completed by the job's
+        // claim token. The legacy synchronous entry converges or fails closed here and can
+        // never turn a queued PREPARED attempt straight into DELIVERY_IN_PROGRESS.
+        delayedJobFor(requireNotNull(attempt.id))?.let { job ->
+            val result = delayedClaimResult(job.status)
+            if (review != null && result == ClaimResult.DEDUP_SENT) {
+                check(review.sendAttemptId == attempt.id) { "Unbound review completed attempt" }
+                validateReviewRecord(payload, mailRecordRepository.findByMailSendAttemptId(attempt.id)
+                    ?: error("Completed review record missing"))
+            }
+            return ClaimedAttempt(requireNotNull(attempt.id), attempt.messageId, result)
         }
 
         val claim = when (attempt.status) {
@@ -461,8 +605,32 @@ class ManualReplySendAttemptService(
         return claim
     }
 
+    /** 既有同步入口（fast-p 02 行为逐字保留）；延迟任务走 [finalizeDelayedSuccess]。 */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun finalizeSuccess(payload: SendPayload, attemptId: Long, messageId: String): Long {
+    fun finalizeSuccess(payload: SendPayload, attemptId: Long, messageId: String): Long =
+        finalizeSuccessTx(payload, attemptId, messageId, null)
+
+    /**
+     * fast-p 03 (T4/I-5)：延迟任务的确定性成功完成。
+     *
+     * [delayedRef] 是 claim 成功时才产生的 server-only 令牌：锁后必须核对
+     * job/attempt/dispatchToken/来源，并在同一事务里把 job 收敛为 SENT；同令牌的
+     * UNKNOWN 只允许这一次收敛，绝不重发。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun finalizeDelayedSuccess(
+        payload: SendPayload,
+        attemptId: Long,
+        messageId: String,
+        delayedRef: DelayedDispatch
+    ): Long = finalizeSuccessTx(payload, attemptId, messageId, delayedRef)
+
+    private fun finalizeSuccessTx(
+        payload: SendPayload,
+        attemptId: Long,
+        messageId: String,
+        delayedRef: DelayedDispatch?
+    ): Long {
         // fast-p 02 (T3/I-5)：QA 与 RAG 证据互斥 —— 在任何写入之前 fail closed，
         // 绝不产生同时写入 mail_record_qa_rule 与 mail_record_rag_fact 的记录。
         require(payload.ragEvidence == null || payload.canonicalQaRuleIds.isEmpty()) {
@@ -475,8 +643,19 @@ class ManualReplySendAttemptService(
         val attempt = attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
         }
-        require(attempt.status == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
-            "Cannot finalize success: attempt $attemptId is not DELIVERY_IN_PROGRESS (current: ${attempt.status})"
+        // fast-p 03 (I-2)：延迟任务的完成必须保持 attempt→job 的锁序（恢复路径同序），
+        // 否则与 recoverStale 形成交叉等待。
+        if (delayedRef != null) lockAttemptRow(attempt)
+        val lateSuccessJob = delayedRef?.let { verifyDelayedFinalize(it, payload, attemptId) }
+        if (lateSuccessJob == null) {
+            require(attempt.status == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
+                "Cannot finalize success: attempt $attemptId is not DELIVERY_IN_PROGRESS (current: ${attempt.status})"
+            }
+        } else {
+            require(attempt.status == MailSendAttemptStatus.DELIVERY_IN_PROGRESS ||
+                attempt.status == MailSendAttemptStatus.DELIVERY_UNKNOWN) {
+                "Cannot converge delayed success: attempt $attemptId is ${attempt.status}"
+            }
         }
 
         val now = LocalDateTime.now()
@@ -580,12 +759,16 @@ class ManualReplySendAttemptService(
             errorSummary = null,
             now = now
         )
+        // fast-p 03 (T4/I-5)：job 结果与 SENT 记录/事实/排期/草稿/审核同一事务提交。
+        // 同一令牌的 UNKNOWN 收敛为 SENT，绝不改写其他代次或旧令牌。
+        delayedRef?.let { ref -> completeDelayedSuccess(ref, requireNotNull(lateSuccessJob)) }
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).closeSent(it,attemptId,now) }
         if (review != null) reviewService().recordSendResult(review, attemptId, MailSendAttemptStatus.SENT, mailRecordId)
 
         return mailRecordId
     }
 
+    /** 既有同步入口（fast-p 02 行为逐字保留）；延迟任务走 [finalizeDelayedFailure]。 */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun finalizeFailure(
         payload: SendPayload,
@@ -593,6 +776,29 @@ class ManualReplySendAttemptService(
         messageId: String,
         resultStatus: String,
         errorSummary: String?
+    ): Long = finalizeFailureTx(payload, attemptId, messageId, resultStatus, errorSummary, null)
+
+    /**
+     * fast-p 03 (T4/I-5)：延迟任务的失败收敛 —— 只在 job 仍为 SENDING 且令牌匹配时生效；
+     * 迟到的失败既不能改 SENT，也不能覆盖新代次。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun finalizeDelayedFailure(
+        payload: SendPayload,
+        attemptId: Long,
+        messageId: String,
+        resultStatus: String,
+        errorSummary: String?,
+        delayedRef: DelayedDispatch
+    ): Long = finalizeFailureTx(payload, attemptId, messageId, resultStatus, errorSummary, delayedRef)
+
+    private fun finalizeFailureTx(
+        payload: SendPayload,
+        attemptId: Long,
+        messageId: String,
+        resultStatus: String,
+        errorSummary: String?,
+        delayedRef: DelayedDispatch?
     ): Long {
         val review = payload.reviewSendRef?.let { reviewService().lockForSendResult(it) }
         validateReviewPayload(payload)
@@ -600,6 +806,10 @@ class ManualReplySendAttemptService(
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
         val attempt = attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
+        }
+        if (delayedRef != null) lockAttemptRow(attempt)
+        val delayedJob = delayedRef?.let { ref ->
+            verifyDelayedFinalize(ref, payload, attemptId, allowUnknown = true)
         }
         require(attempt.status == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
             "Cannot finalize failure: attempt $attemptId is not DELIVERY_IN_PROGRESS (current: ${attempt.status})"
@@ -664,6 +874,11 @@ class ManualReplySendAttemptService(
             errorSummary = boundedError,
             now = now
         )
+        // fast-p 03 (T4/I-5)：job 失败态与 FAILED mail_record（sent_at 恒 null）/attempt 同一
+        // 事务提交；迟到的失败不会把已 SENT/已 UNKNOWN 的任务降级（verify 已 fail closed）。
+        if (delayedRef != null) {
+            completeDelayedFailure(delayedRef, requireNotNull(delayedJob), resultStatus)
+        }
         if (review != null) reviewService().recordSendResult(review, attemptId, resultStatus, mailRecordId)
 
         return mailRecordId
@@ -802,6 +1017,110 @@ class ManualReplySendAttemptService(
         } else {
             task()
         }
+    }
+
+    /**
+     * fast-p 03（T4/I-5）：锁后核对延迟任务身份。
+     *
+     * 只接受与本次 attempt 绑定、令牌相同、来源一致且仍处于 SENDING/UNKNOWN 的任务。
+     * 任何其他状态（SENT 已收敛、新代次、旧令牌）都 fail closed，迟到结果不能覆盖。
+     */
+    /** fast-p 03：在 source 之后、job 之前锁定 attempt 行（统一锁序）。 */
+    private fun lockAttemptRow(attempt: MailSendAttempt) {
+        val locked = attemptRepository.findByOrcidIdAndMailTypeForUpdate(attempt.orcidId, attempt.mailType)
+            ?: throw IllegalStateException("Mail send attempt not found: ${attempt.id}")
+        check(locked.id == attempt.id) { "Mail send attempt identity changed while locking" }
+    }
+
+    private fun verifyDelayedFinalize(
+        ref: DelayedDispatch,
+        payload: SendPayload,
+        attemptId: Long,
+        allowUnknown: Boolean = false
+    ): DelayedManualReplyRow {
+        val repository = requireNotNull(delayedManualReplyRepository) { "Delayed replies are not wired" }
+        val locked = repository.lockByAttemptId(attemptId)
+            ?: throw IllegalStateException("Delayed job not found for attempt $attemptId")
+        check(locked.id == ref.jobId) { "Delayed job identity mismatch" }
+        check(locked.dispatchToken == ref.dispatchToken) { "Delayed dispatch token mismatch" }
+        check(locked.expertContactId == payload.contactId && locked.accountCode == payload.accountCode) {
+            "Delayed job source mismatch"
+        }
+        check(locked.revision >= ref.revision) { "Delayed job revision regressed" }
+        val allowed = when {
+            allowUnknown -> setOf(DelayedManualReplyStatus.SENDING)
+            else -> setOf(DelayedManualReplyStatus.SENDING, DelayedManualReplyStatus.UNKNOWN)
+        }
+        check(locked.status in allowed) {
+            "Delayed job $attemptId cannot be completed from ${locked.status}"
+        }
+        if (!allowUnknown) {
+            check(locked.status != DelayedManualReplyStatus.UNKNOWN || locked.dispatchToken == ref.dispatchToken) {
+                "Delayed UNKNOWN convergence requires the original dispatch token"
+            }
+        }
+        return locked
+    }
+
+    private fun completeDelayedSuccess(ref: DelayedDispatch, job: DelayedManualReplyRow) {
+        val repository = requireNotNull(delayedManualReplyRepository) { "Delayed replies are not wired" }
+        val nowMs = repository.currentTimeMs()
+        val completed = if (job.status == DelayedManualReplyStatus.UNKNOWN) {
+            repository.lateSuccess(ref.jobId, ref.dispatchToken, nowMs)
+        } else {
+            repository.completeSending(ref.jobId, ref.dispatchToken, DelayedManualReplyStatus.SENT, null, nowMs)
+        }
+        check(completed) { "Delayed job ${ref.jobId} could not be completed with its claim token" }
+    }
+
+    /**
+     * 失败分类 → 固定公开码（T2/I-10）。永久失败仍然禁用原内容重发；SMTP 未知绝不重发。
+     */
+    private fun completeDelayedFailure(ref: DelayedDispatch, job: DelayedManualReplyRow, resultStatus: String) {
+        val repository = requireNotNull(delayedManualReplyRepository) { "Delayed replies are not wired" }
+        check(job.status == DelayedManualReplyStatus.SENDING) {
+            "Delayed job ${ref.jobId} already completed as ${job.status}"
+        }
+        val (status, code) = when (resultStatus) {
+            MailSendAttemptStatus.DELIVERY_UNKNOWN ->
+                DelayedManualReplyStatus.UNKNOWN to DelayedReplyPublicError.DELIVERY_UNKNOWN
+            MailSendAttemptStatus.FAILED_SAFE_TO_RETRY ->
+                DelayedManualReplyStatus.FAILED to DelayedReplyPublicError.TEMPORARY_DELIVERY_FAILURE
+            else ->
+                DelayedManualReplyStatus.FAILED to DelayedReplyPublicError.PERMANENT_DELIVERY_FAILURE
+        }
+        val completed = repository.completeSending(ref.jobId, ref.dispatchToken, status, code.code, repository.currentTimeMs())
+        check(completed) { "Delayed job ${ref.jobId} could not be completed with its claim token" }
+    }
+
+    private fun requireFingerprintIdentity(attempt: MailSendAttempt, payload: SendPayload, fingerprint: Fingerprint) {
+        if (attempt.contentType != FINGERPRINT_CONTENT_TYPE) {
+            throw IllegalArgumentException(
+                "Mail send attempt fingerprint collision: unexpected contentType=${attempt.contentType}"
+            )
+        }
+        if (attempt.body != fingerprint.fullHex) {
+            throw IllegalArgumentException(
+                "Mail send attempt fingerprint collision: full hash mismatch"
+            )
+        }
+        if (attempt.recipient != payload.normalizedRecipient) {
+            throw IllegalArgumentException(
+                "Mail send attempt fingerprint collision: recipient mismatch"
+            )
+        }
+    }
+
+    /**
+     * fast-p 03 (I-3/I-10)：既有同步入口遇到已排队任务时的唯一收敛映射。
+     * SENT 收敛为幂等完成；WAITING/SENDING 视为进行中；UNKNOWN 绝不可重发；
+     * FAILED/CANCELLED 必须走显式重新发送，不能由旧请求直接抢发。
+     */
+    private fun delayedClaimResult(status: DelayedManualReplyStatus): ClaimResult = when (status) {
+        DelayedManualReplyStatus.SENT -> ClaimResult.DEDUP_SENT
+        DelayedManualReplyStatus.WAITING, DelayedManualReplyStatus.SENDING -> ClaimResult.IN_PROGRESS
+        DelayedManualReplyStatus.UNKNOWN -> ClaimResult.UNKNOWN
+        DelayedManualReplyStatus.FAILED, DelayedManualReplyStatus.CANCELLED -> ClaimResult.PERMANENT_FAILED
     }
 
     private fun reviewService() = requireNotNull(mailReviewDraftService) { "Review sending is not wired" }
