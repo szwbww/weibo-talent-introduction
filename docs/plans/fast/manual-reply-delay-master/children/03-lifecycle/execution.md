@@ -113,3 +113,12 @@ None.
 - Controller action: retain branch/worktree; keep 04–07 PENDING; commit pause evidence only.
 - This closing record supersedes the earlier generic next-action suggestion: the fast-p child loop uses a fresh lightweight verifier, never verify-p. After explicit authority resolution, resume child 03 in a new epoch with a reset per-epoch repair counter; do not replay children 01 or 02.
 - Workflow deviation recorded from the implementation report: temporary baseline worktrees were created and removed by Impl03Lifecycle despite the one-retained-worktree contract. The controller did not authorize that operation and did not repeat it.
+
+## Epoch 2 — Human-approved resume
+
+- Approval: user selected 「在 03 补齐审核请求代次」 and instructed 「批准后续所有子计划 直到可以执行review-fast-p 不要直接执行review-fast-p」.
+- Amended master/03/07 plan commit: ea61d579425e894ee37c600f599beef1fdb46395; ledger records A2/A3/A4.
+- P-1 authority is resolved, not its implementation: the DTO field and preparation validation are now explicitly authorized in 03. F-1–F-11 remain open pending bounded repair.
+- Original product head retained: 798206d5b2c8dafd892f5c5f275e952a99c18fa8. Epoch 1 repair count stays zero; epoch 2 starts at zero before acquiring its repair writer.
+- Later children stay PENDING until each preceding independent light verdict and artifact checkpoint passes. No review-fast-p dispatch is authorized.
+

@@ -50,3 +50,15 @@ Run the concurrency tests against real MySQL; do not simulate due-time with slee
 Write the full execution report to docs/plans/fast/manual-reply-delay-master/children/03-lifecycle/execution.md (append-only; commands with exit codes, files changed, key decisions, skipped items). Do not commit fast-p evidence.
 
 Return only: READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit SHA, command summary, report path.
+
+## Epoch 2 — Approved repair contract (A2/A3)
+
+- Supersedes only the earlier ten-file authorization limit: the approved child plan at commit ea61d579425e894ee37c600f599beef1fdb46395 authorizes the above ten files plus `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt` (11 total).
+- Human approval: 「在 03 补齐审核请求代次」. Add `MailReviewSendRequest.delayExpectedRevision` at the end with nullable default, enforce current CANCELLED revision in prepareSend as the amended child T3 requires, and retain first-send compatibility. Do not defer this requirement to 04/06/07.
+- Original implementation remains 798206d5b2c8dafd892f5c5f275e952a99c18fa8; product base remains 72906c0c5e36393429320817ea0de4f7d6f3ff05. No replay of children 01/02. Preserve epoch 1 evidence.
+- Correct exactly F-1–F-11 in this child's verify-log plus P-1 now resolved by A2/A3 authority. Do not address RECORD_ONLY baseline failures or unrelated hygiene. No new product classes/states/interfaces for repairs; use existing authorized seams and the approved DTO field.
+- Run the four required commands above after edits are complete; compare MailReviewQueryIT:239 with recorded baseline. Do not rerun the optional full suite or baseline reproduction, and do not create/delete any extra worktree.
+- Runtime proof is required for the fixed transaction paths: use isolated MySQL and a throwaway invocation of the real services/transactions if the test suite alone does not supply an actual smoke scenario. Report the result, remove scaffolding, and do not claim SMTP/browser proof that was not exercised.
+- Epoch 2 repair commit format: `fix(fast-p): repair 03-lifecycle round <N>`. Append canonical `## Epoch 2 — Round <N>/3` entry to fix-log.md with findings, Before SHA, actual fix commit SHA, authorized files, commands/results and notes. Preserve all prior log entries; exclude all fast-p evidence from the product commit.
+- Independent fresh lightweight re-verification follows each repair. Do not invoke verify-p/review-p/repair-p or review-fast-p in this loop.
+

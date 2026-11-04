@@ -30,3 +30,8 @@ Run actual isolated 60-second black-box scenarios required by child/master A-1â€
 
 ## Delivery
 Use execute-p. One writer, no push/merge/rebase/amend/reset. Local implementation commit excludes docs/plans/fast/**. Append detailed report at docs/plans/fast/manual-reply-delay-master/children/07-activation/execution.md including agent, base/head, commands, runtime proof, acceptance evidence and blockers. Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit SHA, command summary and report path. Do not claim whole-system PASS or production rollout.
+
+## Approved ownership amendment A4
+
+The approved child 07 plan at commit ea61d579425e894ee37c600f599beef1fdb46395 supersedes the earlier eight-file list: remove `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt` from modification authority (seven files remain). Child 03 owns and implements `MailReviewSendRequest.delayExpectedRevision` plus CANCELLED preparation validation; 07 only consumes/forwards it through MailReviewSendService and proves the integrated behavior. Do not re-add or change a parallel DTO field. User authorizes continuous execution through READY_FOR_HUMAN_REVIEW, explicitly not review-fast-p.
+

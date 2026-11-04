@@ -36,3 +36,8 @@
 - Workflow deviation: the 03 implementation report records creation/removal of temporary baseline worktrees despite the single-worktree contract. The controller recorded this fact and did not repeat the operation.
 
 No whole-system verification was performed.
+
+## Resume correction — 2026-11-05
+
+This is the retained historical pause handoff, not the current terminal outcome. The user approved the recommended P-1 repair authority and continuous later-child execution, explicitly excluding review-fast-p. A2/A3/A4 at ea61d579425e894ee37c600f599beef1fdb46395 move the review request revision to 03 and update 07 ownership. Ledger status is RUNNING, child 03 epoch 2; all findings still require repair and independent re-verification. No completed child is replayed.
+
