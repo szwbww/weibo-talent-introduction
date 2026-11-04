@@ -413,6 +413,8 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
         assertTrue(repository.heartbeat(run.executionId, run.leaseToken!!, run.generation))
         val task = f.tasks.findById(run.executionId).get()
         assertEquals(run.leaseToken, task.ownerToken); assertNotNull(task.heartbeatAt)
+        val scanAt = LocalDateTime.now().plusSeconds(11)
+        assertEquals(0, f.tasks.interruptExpired(scanAt.minusMinutes(5), scanAt))
         assertEquals(repository.find(run.executionId)!!.leaseUntil, repository.item(run.executionId, first.id)!!.leaseUntil)
         assertTrue(repository.completeItem(run.executionId, run.leaseToken!!, run.generation, first.id, first.leaseToken!!, first.generation, ReprocessItemState.COMPLETE, f.result()))
         assertEquals(1, f.tasks.findById(run.executionId).get().successCount)
@@ -420,7 +422,8 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
         val second = repository.claimItem(run.executionId, run.leaseToken!!, run.generation, ReprocessKind.PAPER)!!
         f.jdbc.update("UPDATE discovery_paper_reprocess_run SET lease_until=UTC_TIMESTAMP(3)-INTERVAL 1 SECOND WHERE execution_id=?", run.executionId)
         assertFalse(repository.completeItem(run.executionId, run.leaseToken!!, run.generation, second.id, second.leaseToken!!, second.generation, ReprocessItemState.COMPLETE, f.result()))
-        f.jdbc.update("UPDATE task_execution SET status='INTERRUPTED',finished_at=UTC_TIMESTAMP() WHERE id=?", run.executionId)
+        val expiredAt = scanAt.plusMinutes(5)
+        assertEquals(1, f.tasks.interruptExpired(expiredAt.minusMinutes(5), expiredAt))
         assertNull(f.repository().claimRun("restarted-process"))
         val interrupted = repository.find(run.executionId)!!
         assertEquals(ReprocessState.INTERRUPTED, interrupted.state)
@@ -447,6 +450,7 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
         }.code)
         val retried = f.repository().retry(run.executionId, interrupted.revision, versions)
         assertEquals(created.executionId, retried.executionId)
+        assertEquals(0, f.tasks.interruptExpired(scanAt.minusMinutes(5), scanAt))
         assertEquals(1L, repository.summary(run.executionId).paperComplete)
         assertEquals(2, repository.items(run.executionId, ReprocessKind.PAPER, 0, 20).items.count { it.state == ReprocessItemState.PENDING })
         assertEquals(1, f.tasks.findById(run.executionId).get().successCount)

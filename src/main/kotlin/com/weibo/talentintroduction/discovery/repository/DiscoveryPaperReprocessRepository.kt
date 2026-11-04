@@ -85,8 +85,8 @@ class DiscoveryPaperReprocessRepository(
                 jdbc.update({ connection -> connection.prepareStatement("""INSERT INTO task_execution
                     (task_type,trigger_type,status,request_payload,started_at,created_at,updated_at,owner_token,heartbeat_at)
                     VALUES ('DISCOVERY_PAPER_REPROCESS','MANUAL','RUNNING',?,?,?,?,?,?)""", Statement.RETURN_GENERATED_KEYS).also {
-                    it.setString(1, mapper.writeValueAsString(request)); it.setObject(2, db(time)); it.setObject(3, db(time))
-                    it.setObject(4, db(time)); it.setString(5, owner); it.setObject(6, db(time))
+                    it.setString(1, mapper.writeValueAsString(request)); it.setObject(2, taskTime(time)); it.setObject(3, taskTime(time))
+                    it.setObject(4, taskTime(time)); it.setString(5, owner); it.setObject(6, taskTime(time))
                 } }, key)
                 val id = key.key!!.toLong()
                 jdbc.update("""INSERT INTO discovery_paper_reprocess_run
@@ -283,7 +283,7 @@ class DiscoveryPaperReprocessRepository(
                 revision=revision+1,updated_at=? WHERE execution_id=?""", token, db(time.plusSeconds(60)), db(time), run.executionId)
             jdbc.update("""UPDATE task_execution SET owner_token=?,status=?,heartbeat_at=?,finished_at=NULL,updated_at=?
                 WHERE id=? AND task_type='DISCOVERY_PAPER_REPROCESS'""",
-                token, if (run.cancelRequested) "CANCELLING" else "RUNNING", db(time), db(time), run.executionId)
+                token, if (run.cancelRequested) "CANCELLING" else "RUNNING", taskTime(time), taskTime(time), run.executionId)
             find(run.executionId)
         }
     }
@@ -294,7 +294,7 @@ class DiscoveryPaperReprocessRepository(
         jdbc.update("UPDATE discovery_paper_reprocess_run SET lease_until=?,updated_at=? WHERE execution_id=?", until, db(time), runId)
         jdbc.update("""UPDATE discovery_paper_reprocess_item SET lease_until=?,updated_at=?
             WHERE execution_id=? AND state='RUNNING' AND generation=?""", until, db(time), runId, run.generation)
-        if (tasks.heartbeatExecution(runId, token, db(time)) != 1) throw ReprocessException("TASK_OWNERSHIP_LOST", 409)
+        if (tasks.heartbeatExecution(runId, token, taskTime(time)) != 1) throw ReprocessException("TASK_OWNERSHIP_LOST", 409)
         progress(runId, time)
         true
     }
@@ -399,13 +399,13 @@ class DiscoveryPaperReprocessRepository(
         val processed = (summary.paperComplete + summary.paperErrors).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val errors = summary.paperErrors.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val summaryJson = mapper.writeValueAsString(result)
-        if (tasks.finishOwned(run.executionId, owner, taskState, summaryJson, processed, errors, reason, db(time)) != 1) {
+        if (tasks.finishOwned(run.executionId, owner, taskState, summaryJson, processed, errors, reason, taskTime(time)) != 1) {
             // The shared task reaper may have interrupted this same expired owner first. Reconcile
             // that row without reviving the execution or accepting a different owner's result.
             if (state != ReprocessState.INTERRUPTED || jdbc.update("""UPDATE task_execution
                 SET result_summary=?,success_count=?,failure_count=?,error_message=?,updated_at=?
                 WHERE id=? AND owner_token=? AND status='INTERRUPTED'""",
-                    summaryJson, processed, errors, reason, db(time), run.executionId, owner) != 1)
+                    summaryJson, processed, errors, reason, taskTime(time), run.executionId, owner) != 1)
                 throw ReprocessException("TASK_OWNERSHIP_LOST", 409)
         }
     }
@@ -418,7 +418,7 @@ class DiscoveryPaperReprocessRepository(
         jdbc.update("""UPDATE discovery_paper_reprocess_run SET state='CANCELLING',cancel_requested=1,
             revision=revision+1,updated_at=? WHERE execution_id=?""", db(time), runId)
         terminalizeItems(runId, setOf(ReprocessItemState.PENDING), ReprocessItemState.CANCELLED, "CANCELLED", time)
-        jdbc.update("UPDATE task_execution SET status='CANCELLING',updated_at=? WHERE id=? AND status='RUNNING'", db(time), runId)
+        jdbc.update("UPDATE task_execution SET status='CANCELLING',updated_at=? WHERE id=? AND status='RUNNING'", taskTime(time), runId)
         find(runId)!!
     }
 
@@ -499,7 +499,7 @@ class DiscoveryPaperReprocessRepository(
                     lease_token=NULL,lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,finished_at=NULL WHERE execution_id=?""",
                     state, if (state == "PREPARING") "FREEZE" else "READ", db(time), runId)
                 jdbc.update("""UPDATE task_execution SET status='RUNNING',finished_at=NULL,heartbeat_at=?,updated_at=?,
-                    error_message=NULL,interruption_reason_code=NULL,interruption_reason_detail=NULL,result_summary=NULL WHERE id=?""", db(time), db(time), runId)
+                    error_message=NULL,interruption_reason_code=NULL,interruption_reason_detail=NULL,result_summary=NULL WHERE id=?""", taskTime(time), taskTime(time), runId)
                 progress(runId, time)
                 find(runId)!!
             }
@@ -616,7 +616,7 @@ class DiscoveryPaperReprocessRepository(
     private fun progress(runId: Long, time: Instant) {
         val counts = summary(runId)
         tasks.updateProgressCounts(runId, (counts.paperComplete + counts.paperErrors).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-            counts.paperErrors.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), db(time))
+            counts.paperErrors.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), taskTime(time))
     }
 
     /** Validate before bulk mutation, so future/corrupt evidence remains untouched for diagnosis. */
@@ -736,6 +736,7 @@ class DiscoveryPaperReprocessRepository(
         private val ITEM_TERMINAL = setOf(ReprocessItemState.COMPLETE, ReprocessItemState.ERROR, ReprocessItemState.SKIPPED, ReprocessItemState.CANCELLED)
         private val TRACE_STATES = setOf("NOT_STARTED", "RUNNING", "SUCCESS", "INSUFFICIENT", "SKIPPED", "ERROR", "CANCELLED")
         private fun page(page: Int, size: Int) { require(page >= 0 && size in 1..100) }
+        private fun taskTime(time: Instant): LocalDateTime = LocalDateTime.ofInstant(time, java.time.ZoneId.systemDefault())
         private fun db(time: Instant): LocalDateTime = LocalDateTime.ofInstant(time, ZoneOffset.UTC)
         private fun time(r: ResultSet, column: String): Instant? = r.getObject(column, LocalDateTime::class.java)?.toInstant(ZoneOffset.UTC)
         private fun sha(text: String): String = hex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)))
