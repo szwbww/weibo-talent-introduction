@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-11-05/expert-material-filter-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-11-05/expert-material-filter-master.md (sha256 344158c4a2d30f05e7141544a7d4de64d3b33435752f322651ca861ec0f801fd)
 - Amendments: N/A
 - Master base: 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b
@@ -13,13 +13,13 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Mandatory execute-p worktree_identity.py fails on unrelated stale publish registration; deleting that registration requires human authorization.
+- Resume from: 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 1 | WAITING_FOR_AGENT | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | — | 0 | — | — | — | Preflight complete; acquiring isolated implementer |
+| 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 1 | PAUSED_FOR_HUMAN | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | — | 0 | — | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | b4d10ff50863cba54211d3e064b441df29d6aa05 | Identity prerequisite failed before product changes; child T1–T4 unimplemented |
 | 02 | docs/plans/2026-11-05/expert-material-filter-02-ingress.md | sha256:1d1792fabfafe46b3be0f5bc728d8b24c712eb0690a713d4f75a34140b5460e1 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 | 03 | docs/plans/2026-11-05/expert-material-filter-03-projections.md | sha256:ef85056d991448e846a729ca2fdff8d8ab83869cfc645ee36181d5d72abca2ed | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 
@@ -43,4 +43,10 @@
 - None.
 
 ## Agent Identities
-- No required agent dispatched yet.
+- 01 epoch 1 implementer: MaterialReadImplementer; acquired successfully; agent_attempt=0. Product base 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b; evidence HEAD at dispatch 64a5cb2dd9a650e79879acd2d038a3d59a94d941.
+
+## Pause record
+- Epoch 1 paused before implementation. The helper resolves every registered worktree with strict=True; unrelated absent path `/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b` makes it exit 1.
+- Read-only `git worktree prune --dry-run --verbose` exited 0 and selected exactly that stale publish registration. No existing worktree directory would be removed by the proposed metadata cleanup, but authorization has not been assumed.
+- No product/test/helper/Git-metadata modifications; no implementation commit; all child 02/03 work remains PENDING.
+- Required resolution: authorize removal of only the stale registration, then rerun the mandatory identity helper and resume child 01 in epoch 2 with fix_round=0. Do not replay baseline or perform review-fast-p.
