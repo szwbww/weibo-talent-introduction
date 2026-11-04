@@ -1,0 +1,37 @@
+# Child Brief — 05-query
+
+## Identity and authority
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
+- Branch: fast/manual-reply-delay-master
+- Product base: terminal 04-worker-api Code head provided at dispatch; do not start before its clean child checkpoint.
+- Read exact master docs/plans/2026-11-04/manual-reply-delay-master.md and child docs/plans/2026-11-04/manual-reply-delay-05-query.md. Child T1–T3 and all acceptance clauses are binding. Prior child reports describe lifecycle and public projection APIs; do not infer later interfaces.
+- Commit subject: `feat(fast-p): implement 05-query`.
+
+## Authorized files
+1. src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt
+2. src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt
+3. src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt
+4. src/main/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyRepository.kt
+5. src/test/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyQueryIT.kt (new)
+6. src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt
+7. src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt
+
+No changes outside these product/test paths; no applied migration edits. Tests not listed are run-only. Report PLAN_CONFLICT rather than weakening an invariant or changing unauthorized files.
+
+## Fixed gates and downstream contracts
+- Master/child I-8: DELAYED_MANUAL_REPLY source/id=job.id/rank3/time=first createdAt remains stable through all states; exclude linked mail_record from UI union but preserve it as transactional/statistical fact. SENT success1; FAILED/UNKNOWN failure1; WAITING/SENDING/CANCELLED neither. No fake inbound/pending. Preserve existing all-history summary semantics and membership filters on the same matching message.
+- I-8b: split rawMailUnionSql (reviewContext) from uiMessageUnionSql, no boolean default choice. Preserve original context hash bytes on original data; job queue/cancel/retry cannot invalidate itself. Real inbound/successful outbound still changes context. Real anchors remain processing/mail_record ids, never job ids.
+- I-7/I-10: batch current-page sanitized projections with contact/account restriction. READ never queries private attachment snapshots or returns actions/restoration. Use real sentMailRecordId for sent attachments; job.id must not reach legacy attachment APIs. Pending attachment metadata respects original actor/admin; no disk reads during read-only projection. Historical failed mail has no synthetic job or retry.
+- DTO additions nullable/defaulted at end, delayedPendingCount default0, serverNowMs and delayedReply per approved protocol. Keep original rank1/2 cursors valid, add rank3, prove same-time pagination and UTC/Asia-Shanghai SQL sessions.
+- Update only moved exact line numbers in OperatorStatusWriteSeamGuardTest; do not broaden exclusions or change snippets.
+
+## Required commands and runtime proof
+Java 11: JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home.
+1. `mvn -q -DskipTests test-compile`
+2. `mvn test -Dtest=DelayedManualReplyQueryIT -DmysqlIt=true` (isolated Testcontainers MySQL).
+3. `mvn test -Dtest=MailboxConversationRepositoryIT -DmysqlIt=true` with explicit datasource override to disposable isolated MySQL. Never use default development or production DB.
+4. Run SqlCompatTest (the declared class in MailboxConversationRepositoryIT.kt; determine its exact existing class name), OperatorStatusWriteSeamGuardTest, OutboundAttachmentFlowTest, OutboundAttachmentServiceTest, MailboxReadAccessProjectionTest, MailboxAttachmentServiceTest.
+Record exact commands/counts/skips and isolated connection environment. Exercise the runtime query/API scenario from A-1/A-2 without pretending unit assertions are browser proof; throwaway fixtures/harness must be removed. No production sends/database writes.
+
+## Reporting
+Use execute-p; one writer, no push/merge/rebase/amend/reset. Commit authorized implementation files only, exclude docs/plans/fast/**. Append full execution result with base/head, agent, commands, runtime proof and blockers to docs/plans/fast/manual-reply-delay-master/children/05-query/execution.md. Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit SHA, command summary and report path.
