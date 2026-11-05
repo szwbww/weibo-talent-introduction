@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-11-04/manual-reply-delay-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit 2485d075409fe94098f788e5baf442c7151bedb6)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12
+- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
 - Branch: fast/manual-reply-delay-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-11-04T08:19:33Z
 - Current child: 05-query
-- Waiting role: IMPLEMENTER
+- Waiting role: CONTROLLER_CHECKPOINT
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -23,7 +23,7 @@
 | 02-preparation | docs/plans/2026-11-04/manual-reply-delay-02-preparation.md | commit:ab3ad56713a74664b0f34f66a138206cb14666ea | 01-storage | 1 | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9 | 72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | — | 72906c0c5e36393429320817ea0de4f7d6f3ff05 | bdda233d1a376bc2ea01f61f8540545a833f18c8 | A1 approved extension of RagSendBridgeTest. RECORD_ONLY notes O-1..O-4 in verify-log. |
 | 03-lifecycle | docs/plans/2026-11-04/manual-reply-delay-03-lifecycle.md | commit:0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9 | 02-preparation | 3 | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05 | 798206d5b2c8dafd892f5c5f275e952a99c18fa8 | 2 | 63bf74170d126428dc8a9cab279506cca157bc90,9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 | Reverify03Round2 COMPLETE_CHILD; lifecycle40/40; only known MailReviewQueryIT baseline failure. Prior epoch2 ed041935a500aa4517ca9f880644a2e7110063d5 retained in fix-log (one earlier repair round). |
 | 04-worker-api | docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md | commit:de076f6413b65809ca13610c0455965134056dcb | 03-lifecycle | 2 | LIGHT_PASS_WITH_NOTES | 9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 9cebea6d41cc3b749382deb7691ba704471b131e | 0 | — | 9cebea6d41cc3b749382deb7691ba704471b131e | 9a04e50c645a18c50a10b6f67e083b5397a66117 | Verify04Epoch2 COMPLETE_CHILD; unit43/lifecycle40/JS2038 pass. Component SMTP proof is not full E2E/restart;07 retains integrated acceptance. |
-| 05-query | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:2485d075409fe94098f788e5baf442c7151bedb6 | 04-worker-api | 2 | IMPLEMENTING | 9cebea6d41cc3b749382deb7691ba704471b131e | — | 0 | — | 9cebea6d41cc3b749382deb7691ba704471b131e | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 | A11/A12 resolves exact attachment verifier scope; fresh implementer acquisition pending. |
+| 05-query | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb | 04-worker-api | 2 | LIGHT_PASS | 9cebea6d41cc3b749382deb7691ba704471b131e | 223b8e4aed8852734552ef662c3b732c90e60e42 | 0 | — | 223b8e4aed8852734552ef662c3b732c90e60e42 | 869eeb2be03bc9353fee8defbd538413f7a2069f | Verify05Epoch2 COMPLETE_CHILD; Query8/Repo41/other56 passed, runtime API smoke included; SMTPstubbed and fullE2E/restart remain07. |
 | 06-frontend | docs/plans/2026-11-04/manual-reply-delay-06-frontend.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 05-query | 1 | PENDING |  | — | 0 | — | — | — | Depends on 05 read model. |
 | 07-activation | docs/plans/2026-11-04/manual-reply-delay-07-activation.md | commit:ea61d579425e894ee37c600f599beef1fdb46395 | 06-frontend | 1 | PENDING |  | — | 0 | — | — | — | A4 consumes review request revision implemented in 03; do not re-add the field. |
 
@@ -42,6 +42,8 @@
 | A10 | docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md | commit:d57b856427a83a6ccf23c60e58df9d92db9f266d | commit:de076f6413b65809ca13610c0455965134056dcb | A5 existing-test compatibility and I-6/A8 | Authorize DelayedManualReplySnapshotTest explicit original request/meeting fixture adaptation, retain behavior assertions and add class to required unit run. | HUMAN:2026-11-05「授权必要测试兼容修订并持续执行」 (prior A5 approval applied to Impl04Epoch2 concrete fixture mismatch) |
 | A11 | docs/plans/2026-11-04/manual-reply-delay-master.md | commit:de076f6413b65809ca13610c0455965134056dcb | commit:2485d075409fe94098f788e5baf442c7151bedb6 | I-7/I-10 and05T2 | Authorize exact no-SQL attachment verifier visibility reuse, count05=8, and evidence-backed future necessary internal visibility/pure-batch-read amendments only; no business/compatibility/schema/security weakening. | HUMAN:2026-11-05「授权本次及同类内部接口修订」 |
 | A12 | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | commit:2485d075409fe94098f788e5baf442c7151bedb6 | I-7/I-10 and05T2 | Add OutboundAttachmentService.kt solely readVerifiedFile private→internal, unchanged body; page-loaded server metadata retains per-job owner/limits, READ skips metadata/disk, FULL preserves integrity parity. | HUMAN:2026-11-05「授权本次及同类内部接口修订」 |
+| A13 | docs/plans/2026-11-04/manual-reply-delay-master.md | commit:2485d075409fe94098f788e5baf442c7151bedb6 | commit:baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb | A11 pure-batch-read authority and05I-7/I-10 | Existing draft/review repositories lack canonical page readers; authorize two bounded read-only mapper-reusing interfaces, align05 count10. | HUMAN:2026-11-05「授权本次及同类内部接口修订」 (prior A11 applied to Impl05Epoch2 source-read evidence) |
+| A14 | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:2485d075409fe94098f788e5baf442c7151bedb6 | commit:baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb | A11 pure-batch-read authority and05I-7/I-10 | Add MailReplyDraftRepository.kt and MailReviewDraftRepository.kt solely internal findForDelayedPage by contact/account/server-page max100 jobIds, existing mapper, no locks/writes/lifecycle changes. | HUMAN:2026-11-05「授权本次及同类内部接口修订」 (prior A11 applied to Impl05Epoch2 source-read evidence) |
 
 ## Artifact checkpoint corrections
 
