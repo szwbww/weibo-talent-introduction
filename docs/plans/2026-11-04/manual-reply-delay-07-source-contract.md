@@ -1,6 +1,6 @@
 # 07a 无草稿会话回复的来源与恢复契约
 
-前置06完成；后置仍为07-activation，不提前开启公共入队。依据用户已批准A15「授权本次及同类契约补齐」及「批准后续所有子计划 直到可以执行review-fast-p 不要直接执行review-fast-p」，将实证遗漏的来源契约独立成十文件前置，遵守每计划≤10文件/≤2子系统，不为07发明文件数例外。完整集成与总A-1～A-12不降级。
+前置06完成；后置仍为07-activation，不提前开启公共入队。依据用户已批准A15「授权本次及同类契约补齐」及后续子计划连续执行授权，A23将实证遗漏的来源契约独立成十文件前置，遵守≤2子系统；A25/A26按已批准A5仅增加一个必要既有测试兼容文件，共11文件，原十文件产品/直接回归范围不增。不为07-activation扩大七文件范围，完整集成与总A-1～A-12不降级。
 
 ## 需求描述
 
@@ -61,7 +61,7 @@
 
 ### S-C2 — 统一缓存版本
 - index.html只将全部现有20处版本键（7CSS+13JS）同步改为`20261105-manual-reply-source`，保留资源集合/顺序/DOM。不得只改mailbox-chat引用。
-- 反查旧key的src/test结果为空；mailboxDelayedReply现有动态统一键合同仍执行。后续如出现具体新兼容证据，先记录精确授权，不能猜测测试清单。
+- 初始反查旧key的src/test结果为空，但运行发现mailboxChatStyle通过读取06计划间接钉住旧key；A26仅退休此历史版本绑定，保留资源同版本功能断言、20引用保留和真实dialog DOM断言，禁止重钉新日期/新计划。mailboxDelayedReply现有动态统一键合同仍执行。
 
 ## 现状审计
 
@@ -76,6 +76,7 @@
 - 前端生产者现 `:9745`总带draftRef；旧无稿conversation HTTP仍是支持路径，其取消job会真实出现在公共timeline。故仅修factory不修恢复消费者不满足I-6。
 - 原始scope/anchor与提交actual anchor澄清：`saveDraftFromInputs:7640–7656`按subject/text/HTML/anchor修改使requestId失效，`ensureOutboundRequestId:7713–7732`保留或生成UUID；send `:9730–9738`可填ordinary anchor，`:9760–9772`调用既有transport。app.js `:21835–21838`与`:22095–22111`全量透传requestBody，只追加既有安全确认，不丢弃anchor；无需改app.js。
 - 样式事实来自上述原renderer，不改变其DOM/CSS。grep `\\?v=`读取index返回11–17、2547–2559共20引用；grep字面量`20261104-manual-reply-delay`搜索src/test无命中。具体回执在来源证据中，不靠假定引用数量。
+- A26运行证据：Resume07SourceContract的fullJS为2074项/2073通过/1失败（`/tmp/resume07-source-contract-evidence/command-5.log:2803–2830`）。`mailboxChatStyle.test.js:598/607–610`读取06计划并从其旧缓存键构造expected，与本计划已批准的新key冲突；不是新生产缺陷。新增授权仅解除这条旧计划版本绑定，保留统一性/资源/DOM合同；不重跑旧失败确认，不改已完成06计划或证据。
 
 ## 实现方案
 
@@ -117,6 +118,7 @@ SnapshotTest补历史和新来源roundtrip/type/range/互斥/指纹不变；Cont
 |8|src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt|restore来源/权限直接回归|
 |9|src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyLifecycleIT.kt|真实来源锁和身份回归|
 |10|src/test/js/mailboxDelayedReply.test.js|恢复consumer/编辑/冲突/资源合同|
+|11|src/test/js/mailboxChatStyle.test.js|A26既有兼容：退休06旧cache key绑定，保留统一性/资源/DOM断言|
 
 两个相依子系统：服务端原来源/恢复契约、同契约的前端消费者。所有既有共享表新增列为零；无新永久产品文件。未列文件一律不授权，缺口先记录证据再走既有批准边界。
 
@@ -132,7 +134,7 @@ SnapshotTest补历史和新来源roundtrip/type/range/互斥/指纹不变；Cont
   1. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DskipTests test-compile`
   2. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DelayedManualReplySnapshotTest,DelayedManualReplyControllerTest,DelayedManualReplyWorkerTest,PendingMailOperationServiceTest`
   3. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DelayedManualReplyLifecycleIT -DmysqlIt=true`
-  4. `node --test src/test/js/mailboxDelayedReply.test.js`
+  4. `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxChatStyle.test.js`
   5. `node --test src/test/js/*.test.js`
   6. `node --check src/main/resources/static/mailbox-chat.js`
 
@@ -159,3 +161,5 @@ SnapshotTest补历史和新来源roundtrip/type/range/互斥/指纹不变；Cont
 ## 修正记录
 
 - A23/A24（适用用户A15同类契约补齐及后续子计划连续执行授权）：07实现前发现既有支持的无稿OUTBOUND无法表示；按create-p文件上限拆出本十文件前置，再顺序执行原七文件07-activation，不修改已完成01～06计划/日志，不降低总验收，不直接执行review-fast-p。来源/transport证据由Impl07Activation提供，顶层拆分与约束由controller确定；本计划记录的是待执行合同，不是验证结果。
+
+- A25/A26（适用用户A5「授权必要测试兼容修订并持续执行」）：全JS实跑暴露mailboxChatStyle从06计划动态取得旧cache key，初始字面量搜索不能发现该绑定。仅新增此既有测试文件授权，将过时版本绑定退休而不重钉新值，保留真实资源统一性/20引用/DOM断言及CSS原合同；文件数10→11为单一既有测试兼容例外，不增生产范围或降低验收。focused命令纳入此测试，最后改动后全套必跑与真实runtime证据仍须新鲜完成；本次非独立核验修复轮或人工干预epoch重置。
