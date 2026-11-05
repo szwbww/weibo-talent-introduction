@@ -170,7 +170,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 05 | [会话读模型](manual-reply-delay-05-query.md) | 10（A11–A14） | 04 |
 | 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 20（A15–A22：11特批＋9既有测试兼容） | 05 |
 | 07a | [无稿会话来源与恢复契约](manual-reply-delay-07-source-contract.md) | 11（A23十文件＋A25/A26单个既有测试兼容） | 06 |
-| 07b | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 10（A4/A24/A27/A28） | 07a |
+| 07b | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 11（A27/A28十文件＋A29/A30单个既有测试兼容） | 07a |
 
 技术契约与每步具体任务在子计划正文中。共同门禁为 I-1～I-11，子计划不得用测试 mock 覆盖掉真实事务边界。
 
@@ -314,3 +314,5 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 - A25/A26（适用已批准A5「授权必要测试兼容修订并持续执行」）：07-source-contract运行fullJS2074项/2073通过/1失败，mailboxChatStyle从06计划动态读取旧cache key而非直接含字面量。仅授权该既有测试退休旧版本绑定、保留资源统一性/20引用/真实dialog DOM/CSS合同，不重钉新日期，不改06计划或证据；07-source-contract由十文件主体加一个必要既有测试兼容文件成为11，生产范围和两个子系统不变，07-activation仍七文件。具体运行证据和命令见前置计划A26；不增加新业务或降低最终集成门禁。
 
 - A27/A28（适用已批准A15「授权本次及同类契约补齐」）：07 pre-edit审计证实审核HTTP allowlist漏接03已有代次且局部异常映射丢失delayed409；现SENT-only attempt reader无法提供已排队状态与reserved Message-ID，审核读准备又在进入enqueue前拒绝WAITING/SENDING。仅增三个现有文件：MailReviewDraftController的revision校验/转发/精确delayed handler；ManualReplySendAttemptService的internal纯existing-payload身份读取及既有completed读准备显式模式；MailReviewDraftService的server-only默认false读准备模式。仅两个现有read-preparation调用可显式true放行WAITING/SENDING，UNKNOWN及所有其他校验不变，sync claim默认严格拒绝，最终权限/状态/派发仍由原状态机决定。07文件数7→10，仍两个子系统；这是既有状态/响应合同直接生产者补齐，不是A11任意lookup授权。无新HTTP权限字段、锁写、业务或schema，完整集成/60秒/重启验收不变。精确调用矩阵、LSP不可用回执及必测边界见07 T1a/T2/A28和对应local证据。
+
+- A29/A30（适用已批准A5「授权必要测试兼容修订并持续执行」）：07必跑JVM117/0fail/36error/0skip，其中既有Worker9项的7error由反射fixture对新增final ManualReplyDelayProperties调用Mockito.mock引起。仅增DelayedManualReplyWorkerTest.kt一个既有测试授权，原构造器参数映射仅为该类型使用真实默认false实例、保留override优先级/其余mock/全部行为断言，不改生产配置类或接口。07由十文件主体加一个必要既有测试兼容文件成为11，生产范围不扩。另29个新E2E上下文扫描错误由已授权新IT自行排除其他测试配置解决，不是假冒已运行行为证据。原全部命令和60秒/重启/总A-1～A-12门禁不减；精确命令/错误/源码/grep见07 A30收据。

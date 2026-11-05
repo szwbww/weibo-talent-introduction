@@ -1,6 +1,6 @@
 # 07 人工入口接通与完整集成门禁
 
-前置01～06及07-source-contract逐项通过。发送入口、发布配置两个子系统，10个文件（A4审核请求字段归03；A24来源恢复前置已完成；A27/A28补齐既有审核HTTP代次、队列状态读准备及attempt状态/响应读取生产者）。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
+前置01～06及07-source-contract逐项通过。发送入口、发布配置两个子系统，11个文件（A4审核请求字段归03；A24来源恢复前置已完成；A27/A28十文件状态/响应契约；A29/A30单个必要既有Worker测试兼容）。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
 
 ## 需求描述
 
@@ -48,6 +48,7 @@
 - A24实证补齐：`sendConversationManualRichReply`原有null draftRef/optional anchor请求必须保留支持；旧LEGACY只接受inboundId的缺口由07-source-contract先行解决。原始nullable输入与actual anchor分别存储，恢复使用既有anchor参数明确原冻结线程；本阶段消费其契约，不重新设计来源或强制draft。完整grep与transport证据见`local://07-source-contract-amendment-evidence.md`。
 - A28当前源码证据：MailReviewDraftController:99–110的JsonNode allowlist/构造遗漏已存在的delayExpectedRevision，导致前端当前代次在到达03守卫前被拒；其局部handler不覆盖DelayedManualReplyException，GlobalExceptionHandler:23–25会把既有409生命周期异常降成400。ManualReplySendAttemptService现findCompletedByPayload只返回SENT，delayedJobFor需要attemptId，Queued公开view故意不含reserved Message-ID，无法直接生成07所需的既有任务权威状态/响应。完整源码、生产/src/test grep和查询计数回执：`local://07-activation-contract-amendment-evidence.md`、`local://07-activation-contract-amendment-grep.json`；这些仅为pre-edit审计，不是运行通过证据。
 - A28补充生产者审计：MailReviewDraftService的prepareSend/lockForSend→validateSendRow在读准备阶段拒绝WAITING/SENDING，导致重复审核请求无法到达03权威状态机；原LifecycleIT:879明确要求默认prepareSend仍409。完整src/main+src/test引用及read/dispatch矩阵见同evidence:64–134、`local://07-activation-review-preparation-grep.json`、`local://07-activation-review-all-references.json`；18匹配/5文件包含声明与同名噪音，并非18调用点。实际xd://lsp references返回`No language server found for this action`，已逐调用读补齐，不称LSP通过。仅read-preparation模式可变，同步claim与结果提交不变。
+- A30实际运行兼容证据：指定JDK11的test-compile成功，随后Pending/新E2E/Snapshot/Controller/Worker及mysqlIt命令117项/0fail/36error/0skip。Worker9项的7error均为反射fixture尝试mock final ManualReplyDelayProperties；Pending49、Snapshot14、Controller16通过。新E2E29项均上下文扫描错误，未执行其行为，须在原授权IT内修复。完整命令/源码53–61/拟改唯一参数映射/其他反射消费者边界见`local://07-activation-worker-compatibility-evidence.md`和`local://07-activation-worker-compatibility-grep.json`；原输出artifact://2844（raw2848）。不重跑建立已知失败，不把这些结果记为通过。
 
 ## 实现方案
 
@@ -107,6 +108,7 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 |8|src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReviewDraftController.kt|A28仅revision allowlist/严格校验/转发与精确delayed handler|
 |9|src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt|A28纯internal findExistingByPayload及既有completed读准备显式true，其余不变|
 |10|src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt|A28仅默认false的server-only队列状态读准备模式，保留严格同步claim/UNKNOWN/所有其他校验|
+|11|src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyWorkerTest.kt|A30仅反射构造fixture为ManualReplyDelayProperties使用真实默认false实例，其余mock/override/全部断言不变|
 
 ## 验收标准
 
@@ -118,6 +120,7 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 - A28/I-3/I-5/I-7 — 真实REVIEW首次仍允许空代次；取消后重排当前正代次可入队、缺失/陈旧409，非空非法类型/范围/非正数400；禁止字段仍拒绝，真实actor不丢。既有任务在flag=false仍过原状态机，跨actor/origin不能接管，FAILED只显式retry/UNKNOWN不能重发，Queued回真实reserved Message-ID且SMTP0；读取helper不claim，审核true读准备ref不能绕过默认同步claim guard或作者权限，重复WAITING/SENDING不重置due。原必跑命令不减，这些直接回归纳入新E2EIT及PendingServiceTest。
 - 同时覆盖总I-2/I-4/I-6/I-8/I-9/I-10以及06 S-1～S-4，以总A-1～A-12逐条人工验收收口。
 - 编译JDK11；FlywayMigrationIntegrationTest带migrationIt=true；MailboxConversationRepositoryIT带mysqlIt=true且隔离datasource；新Testcontainers IT与原draft/review测试必须实际执行。普通mvn test绿色不等于这些门禁通过。记录命令/环境/用例数/跳过数/失败日志，不能填预期结果冒充运行记录。
+- A30兼容修订仅限既有Worker Runtime的构造器参数映射：override优先，其后ManualReplyDelayProperties使用真实默认实例，其他类型继续Mockito.mock；不改生产类型/默认开关/mock插件，不删断言。必跑命令保持Worker/Snapshot/Controller/Pending/新E2E与mysqlIt及原所有门禁；该单文件例外不授权其他生产或测试编辑。
 
 ## 人工验收清单
 
@@ -147,3 +150,5 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 - A24（适用用户已批准A15及后续子计划连续执行授权）：无稿OUTBOUND来源/恢复缺口在任何07产品编辑前发现，按文件上限拆出07-source-contract十文件前置；本计划仍仅七文件，前置完成后再按其终态Code head开始新实施，原pre-edit研究保留。所有三入口/60秒/重启/总A-1～A-12验收不降级，不静默要求draftRef，不在enabled=true时回落同步。此修订不重开已完成01～06，不执行review-fast-p。
 
 - A27/A28（适用已批准A15「授权本次及同类契约补齐」）：pre-edit审计发现审核controller漏消费03代次且丢失delayed409；既有SENT-only lookup缺少任务/保留Message-ID响应生产者，审核读准备又提前拦截重复WAITING/SENDING。仅增MailReviewDraftController、ManualReplySendAttemptService、MailReviewDraftService三个现有文件（7→10），分别窄HTTP代次/异常协议、纯身份读取/既有completed读准备模式、默认false的server-only读准备模式。仅两个指定读取调用true，UNKNOWN、严格同步claim、其他权限/来源/context/版本守卫与结果提交不变；读取不授予外发权，不新增HTTP权限flag/公共projection/写路径，不以A11泛授权。原集成/真实60秒/重启/总A-1～A-12全部保留，同epoch实现继续，未发生独立核验修复轮。
+
+- A29/A30（适用已批准A5「授权必要测试兼容修订并持续执行」）：具体必跑失败证明新增Pending构造器依赖与旧Worker反射fixture不兼容，仅授权DelayedManualReplyWorkerTest.kt的真实配置实例兼容，10→11为单个既有测试例外而非生产范围扩张。错误/命令/原文/完整grep见现状审计A30；全部行为断言、原命令与完整集成验收保留。新E2E自身上下文错误在其原授权范围修正，未冒充执行通过；同epoch1/fix0继续，不计独立核验修复轮。
