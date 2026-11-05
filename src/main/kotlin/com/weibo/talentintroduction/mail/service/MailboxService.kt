@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.controller.MailboxDetailResponse
 import com.weibo.talentintroduction.mail.controller.MailboxExpertGroupListResponse
@@ -206,7 +207,8 @@ class MailboxService(
         val recordId = record.id
         val contact = expertContactRepository.findById(record.expertContactId).orElse(null)
         val hasAttachment = recordId != null &&
-            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId).isNotEmpty()
+            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId)
+                .any { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
         return MailboxRow(
             source = "MAIL_RECORD",
             id = recordId ?: 0L,

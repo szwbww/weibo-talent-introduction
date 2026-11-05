@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.repository
 
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
@@ -511,7 +512,7 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                  CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
                  CONVERT(ec.expert_email USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
                  CONVERT(ec.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
-                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+                 CAST(EXISTS(SELECT 1 FROM mail_attachment a WHERE a.mail_record_id = mr.id AND ${ExpertMaterialEligibility.MATERIAL_SQL}) AS SIGNED) AS has_attachment,
                  CAST(NULL AS SIGNED) AS inbound_processing_id
             FROM mail_record mr
             LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
@@ -542,9 +543,10 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                  CONVERT(COALESCE(ec2.expert_email, imp.from_email) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
                  CONVERT(ec2.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
                  CAST(EXISTS(
-                   SELECT 1 FROM mail_attachment ma
-                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+                   SELECT 1 FROM mail_attachment a
+                     JOIN mail_record mr2 ON a.mail_record_id = mr2.id
                     WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+                      AND ${ExpertMaterialEligibility.MATERIAL_SQL}
                  ) AS SIGNED) AS has_attachment,
                  imp.id AS inbound_processing_id
             FROM inbound_mail_processing imp
@@ -779,7 +781,7 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                  CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reason_type,
                  CONVERT(ec1.expert_email USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
                  CONVERT(ec1.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
-                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+                 CAST(EXISTS(SELECT 1 FROM mail_attachment a WHERE a.mail_record_id = mr.id AND ${ExpertMaterialEligibility.MATERIAL_SQL}) AS SIGNED) AS has_attachment,
                  CAST(NULL AS SIGNED) AS inbound_processing_id
             FROM mail_record mr
             JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
@@ -818,9 +820,10 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                  CONVERT(COALESCE(ec2.expert_email, imp.from_email) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_email,
                  CONVERT(ec2.expert_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS expert_name,
                  CAST(EXISTS(
-                   SELECT 1 FROM mail_attachment ma
-                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+                   SELECT 1 FROM mail_attachment a
+                     JOIN mail_record mr2 ON a.mail_record_id = mr2.id
                     WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+                      AND ${ExpertMaterialEligibility.MATERIAL_SQL}
                  ) AS SIGNED) AS has_attachment,
                  imp.id AS inbound_processing_id
             FROM inbound_mail_processing imp

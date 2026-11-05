@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.campaign.service
 
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.audit.repository.OperatorActionLogRepository
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
@@ -67,7 +68,9 @@ class OperatorStatusReconcileService(
 
         val recordsByContact = mailRecords.groupBy { it.expertContactId }
         // 材料附件挂在 INBOUND mail_record 上（MailAttachmentService.saveInboundAttachments 以 mailRecordId 关联）
-        val attachedMailRecordIds = attachments.mapNotNull { it.mailRecordId }.toSet()
+        val attachedMailRecordIds = attachments
+            .filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+            .mapNotNull { it.mailRecordId }.toSet()
         // I-4 EMAIL_INVALID 地址证据（只读重算，与在线 ingest 同一判据）：
         // ① HARD 且 dsn_status 构成明确收件地址证据的退信记录（BounceCollectionService.ingest
         //    的同一白名单；策略/路由/容量类 5xx 与未知码在此不构成证据）；

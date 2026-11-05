@@ -55,6 +55,38 @@ class MailboxServiceTest {
     )
 
     @Test
+    fun `task projection excludes signature metadata and preserves ordinary materials and null ids`() {
+        val record = MailRecord(
+            id = 1L, expertContactId = 9L, direction = "INBOUND", mailType = "REPLY",
+            messageId = "fixture", inReplyTo = null, subject = "Materials", body = "body",
+            matchedQaRuleId = null, sendStatus = null, receivedAt = null, sentAt = null
+        )
+        val signature = com.weibo.talentintroduction.mail.domain.MailAttachment(
+            mailRecordId = 1L, fileName = " SMIME.P7S ", contentType = null
+        )
+        val fixtures = listOf(
+            listOf(signature),
+            listOf(signature, signature.copy(fileName = "cv.pdf", contentType = "application/pdf")),
+            listOf(signature.copy(fileName = "image001.jpg", contentType = "image/jpeg", fileSize = 0)),
+            listOf(signature.copy(fileName = "opaque", contentType = " APPLICATION/X-PKCS7-SIGNATURE ; name=x")),
+            listOf(signature.copy(fileName = "encrypted.p7m", contentType = "application/pkcs7-mime")),
+            emptyList()
+        )
+        Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.empty())
+        Mockito.`when`(mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(77L))
+            .thenReturn(listOf(record, record.copy(id = null)))
+        fixtures.zip(listOf(false, true, true, false, true, false)).forEach { (attachments, expected) ->
+            Mockito.`when`(mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(1L))
+                .thenReturn(attachments)
+            val result = mailboxService.listByTaskExecution(77L)
+            assertEquals(2L, result.totalCount)
+            assertEquals(listOf(expected, false), result.items.map { it.hasAttachment })
+        }
+        Mockito.verify(mailAttachmentRepository, never()).findAllByMailRecordIdOrderByCreatedAtAsc(0L)
+        Mockito.verifyNoInteractions(senderAccountRepository, expertMaterialService)
+    }
+
+    @Test
     fun `returns empty list when no active accounts exist`() {
         Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)).thenReturn(emptyList())
 

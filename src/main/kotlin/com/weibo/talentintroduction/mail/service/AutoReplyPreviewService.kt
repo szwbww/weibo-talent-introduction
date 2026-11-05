@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -55,7 +56,7 @@ class AutoReplyPreviewService(
         val classification = inboundIntentClassifier.classify(cleanedBody, record.subject)
         val attachmentIntentIgnored = mailAttachmentRepository
             .findAllByInboundProcessingIdOrderByCreatedAtAsc(inboundProcessingId)
-            .isNotEmpty()
+            .any { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
 
         val contactId = record.expertContactId
         val wouldBeBlockedBy = buildWouldBeBlockedBy(contactId, record.fromEmail, record.senderAccountCode)

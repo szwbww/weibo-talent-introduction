@@ -154,6 +154,56 @@ class OperatorStatusReconcileServiceTest {
     private fun sampleOf(report: ReconcileReport, category: String): ReconcileSample =
         report.samples.first { it.category == category }
 
+    @Test
+    fun `historical signatures report drift without overriding human invited completed or material milestones`() {
+        val contacts = listOf(
+            contact(1, "ORCID-1", "MATERIALS_RECEIVED"),
+            contact(2, "ORCID-2", "MATERIALS_RECEIVED"),
+            contact(3, "ORCID-3", "INVITED"),
+            contact(4, "ORCID-4", "COMPLETED"),
+            contact(5, "ORCID-5", "MATERIALS_RECEIVED")
+        )
+        stubRepositories(
+            contacts = contacts,
+            records = (1L..5L).map { mail(it * 10, it, "INBOUND", "REPLY") } +
+                mail(31, 3, "OUTBOUND", "MEETING_INVITATION", "SENT"),
+            attachments = (1L..5L).map {
+                attachment(it, it * 10).copy(fileName = " SMIME.P7S ", contentType = null)
+            } + attachment(6, 50) +
+                attachment(7, 10).copy(fileName = "opaque", contentType = " APPLICATION/PKCS7-SIGNATURE ; name=x") +
+                attachment(8, 10).copy(mailRecordId = null, inboundProcessingId = 100, fileName = "cv.pdf"),
+            humanOverrideContactIds = listOf(2)
+        )
+        stubEs(contacts.map { it.orcidId to it.operatorStatus })
+        val report = service.reconcile()
+        assertEquals(1, report.dbVsExpected)
+        assertEquals(1, report.humanOverride)
+        assertEquals(0, report.esVsDb)
+        assertEquals(3, report.consistent)
+        val drift = sampleOf(report, OperatorStatusReconcileService.CATEGORY_DB_VS_EXPECTED)
+        assertEquals(1L, drift.contactId)
+        assertEquals("MATERIALS_RECEIVED", drift.dbStatus)
+        assertEquals("REPLIED", drift.expectedStatus)
+        assertEquals(2L, sampleOf(report, OperatorStatusReconcileService.CATEGORY_HUMAN_OVERRIDE).contactId)
+        // Every dependency interaction is explicitly read-only, including ES HTTP operations.
+        Mockito.verify(expertContactRepository).findAll()
+        Mockito.verify(mailRecordRepository).findAll()
+        Mockito.verify(mailAttachmentRepository).findAll()
+        Mockito.verify(bounceRecordRepository).findAll()
+        Mockito.verify(operatorActionLogRepository).findContactIdsWithChangeOperatorStatusLogs(contacts.map { it.id!! })
+        Mockito.verifyNoMoreInteractions(
+            expertContactRepository, mailRecordRepository, mailAttachmentRepository,
+            bounceRecordRepository, operatorActionLogRepository
+        )
+        val urls = ArgumentCaptor.forClass(String::class.java)
+        Mockito.verify(restTemplate, Mockito.times(3)).exchange(
+            urls.capture(), Mockito.eq(HttpMethod.POST), Mockito.any(HttpEntity::class.java),
+            Mockito.eq(JsonNode::class.java)
+        )
+        assertTrue(urls.allValues.all { it.endsWith("/_search") })
+        Mockito.verifyNoMoreInteractions(restTemplate)
+    }
+
     // ── I-4 期望值映射 ────────────────────────────────────────────────────────
 
     @Test

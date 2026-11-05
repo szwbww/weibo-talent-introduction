@@ -91,6 +91,38 @@ class AutoReplyPreviewServiceTest {
     }
 
     @Test
+    fun `signature only mixed and empty metadata change only attachment ignored hint`() {
+        stubRecord(body = "Can I work remotely part time?", subject = "Remote work")
+        stubReadyDecision()
+        val signature = MailAttachment(
+            inboundProcessingId = processingId, fileName = "smime.p7s", contentType = null
+        )
+        val fixtures = listOf(
+            listOf(signature),
+            listOf(signature, signature.copy(fileName = "cv.pdf", contentType = "application/pdf")),
+            emptyList()
+        )
+        val results = fixtures.map { attachments ->
+            Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(processingId))
+                .thenReturn(attachments)
+            service.preview(processingId)
+        }
+        assertEquals(listOf(false, true, false), results.map { it.attachmentIntentIgnored })
+        assertTrue(results.all { it.copy(attachmentIntentIgnored = false) == results.first().copy(attachmentIntentIgnored = false) })
+        // The preview has no SMTP/transfer dependency; close the attachment repository read surface too.
+        Mockito.verify(mailAttachmentRepository, Mockito.times(3))
+            .findAllByInboundProcessingIdOrderByCreatedAtAsc(processingId)
+        Mockito.verifyNoMoreInteractions(mailAttachmentRepository)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java) ?: InboundMailProcessing(
+                senderAccountCode = "fixture", imapUid = 1, messageId = "fixture",
+                fromEmail = "fixture@example.invalid", subject = "fixture", body = "fixture",
+                receivedAt = LocalDateTime.now(), processStatus = "MANUAL_REVIEW",
+                processReason = "fixture", expertContactId = contactId
+            ))
+    }
+
+    @Test
     fun `QA ready decision returns QA_AUTO_REPLIED with grounded draft`() {
         stubRecord(body = "Can I work remotely part time?", subject = "Remote work")
         stubReadyDecision(

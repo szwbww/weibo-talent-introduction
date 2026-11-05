@@ -68,7 +68,8 @@ class OperatorStatusWriteSeamGuardTest {
         // :1137 平移至 :1148，path/context 不变。
         NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1163, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
-        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
+        // 2026-11-05 材料签名过滤 03：新增共享规则 import，:168 → :169；path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 169, "operatorStatus = summary.operatorStatus"),
         // 邮箱会话列表响应 DTO 构造：读取 findAllById 得到的 expert_contact 行原样透传到出参，
         // 该文件只有 findById/findAllById 读取，无 save（53ea83f 新增本投影时未登记，导致守卫误报）
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxConversationService.kt", 255, "operatorStatus = sharedContacts[row.expertContactId]?.operatorStatus"),
@@ -115,11 +116,13 @@ class OperatorStatusWriteSeamGuardTest {
         //   与 aggregateUndeliveredByDomain 查询，:583 偏移至 :612，本计划授权行号修正）
         // （2026-09-23 共享收件箱计划 02：MailRecordRepository 在 :148 新增
         //   findOutboundCandidatesByMessageId 只读候选查询（+16 行），:612 平移至 :628，path/context 不变）
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 628, "ec.operator_status AS operator_status"),
+        // 2026-11-05 材料签名过滤 03：import 与前方 EXISTS 谓词各 +1，:628 → :630；path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 630, "ec.operator_status AS operator_status"),
         // SELECT GROUP BY 列引用：只读聚合
         // （同上计划：:640 偏移至 :669，本计划授权行号修正）
         // （2026-09-23 共享收件箱计划 02：同一处 +16 行平移，:669 平移至 :685，path/context 不变）
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 685, "ec.operator_status, ec.current_index_level")
+        // 2026-11-05 材料签名过滤 03：同上 +2，:685 → :687；path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 687, "ec.operator_status, ec.current_index_level")
     )
 
     /**
