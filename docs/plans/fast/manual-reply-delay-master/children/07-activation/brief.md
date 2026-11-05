@@ -47,3 +47,11 @@ The approved child 07 plan at commit ea61d579425e894ee37c600f599beef1fdb46395 su
 ## Pre-edit research disposition
 
 Impl07Activation completed source research only; no product edit, implementation commit, build/test or runtime proof. Its PLAN_CONFLICT remains in execution.md. Controller applied existing standing authority and the max10 rule to seed the new prerequisite; this is not a failed repair round or human-intervention epoch reset. The activation implementation will be acquired fresh after that prerequisite's checkpoint. All original60-second/masterA1–A12 acceptance remains mandatory.
+
+## Terminal prerequisite output
+
+07-source-contract terminal product base for this activation is `a9c09c9abf8cf08707d86514b168318341716126`. Verify07SourceContract returned LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD, epoch1/fix0; fresh compile/JVM82/MySQL44/focusedJS86/fullJS2076/syntax all passed with zero skips. The source contract now preserves supported draftless OUTBOUND, original nullable input versus frozen actual anchor, strict source locks/restore, local editor source without fake ordinary draft, and current body/raw boundaries. Read its execution/verify logs and current plan C-1–C-7; its11th file is only the A26 existing cache-test compatibility.
+
+Independent replay infrastructure/evidence: `local://verify07-source-contract-epoch1attempt1fix0-evidence.tar.gz` (SHA256 `7ade55b53a4d13311efed5dfb6aea08f285327b5c033b81557e5649d668beabd`), plus writer `local://resume07-source-contract-epoch1-evidence.tar.gz`. Actual source/permission/race/attachment/inbound/outbound MIME proofs are retained; all owned runtimes stopped. Reuse fixtures, not results as activation acceptance.
+
+O07SC-01 is an explicit activation handoff: before activation, an unchanged cancelled source POST keeps UUID/raw/ordered attachments/blank scope and verified old anchor, but the old synchronous guard produces HTTP500 wrapping422 and SMTP0. Implement original07 authoritative existing-job/flag routing rather than adding an out-of-scope blanket exception suppression. Current-revision requeue and disabled-existing-job cases must receive the approved authority/response behavior through real endpoints. This prior negative is not a public requeue PASS and does not waive the full60-second/restart/masterA1–A12 matrix.
