@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-11-05T00:46:31+08:00
-- Current child: 02
+- Current child: 03
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -21,7 +21,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 2 | LIGHT_PASS | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 0 | — | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 89a56a9ee6d43fb78c9e76440a3d2869c94345b1 | MaterialReadVerifier COMPLETE_CHILD; fresh focused 60 and dual-MySQL 2 passed, zero skipped |
 | 02 | docs/plans/2026-11-05/expert-material-filter-02-ingress.md | sha256:1d1792fabfafe46b3be0f5bc728d8b24c712eb0690a713d4f75a34140b5460e1 | 01 | 1 | LIGHT_PASS | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 00d48c74955626519fcfcc6de859f1fcc63b8c82 | 0 | — | 00d48c74955626519fcfcc6de859f1fcc63b8c82 | ed2a17d8a2fc30dbbd6b5cb54049b18ce6055ac5 | MaterialIngressVerifier COMPLETE_CHILD; fresh focused 197 and socket IMAP16 passed, zero skipped |
-| 03 | docs/plans/2026-11-05/expert-material-filter-03-projections.md | sha256:ef85056d991448e846a729ca2fdff8d8ab83869cfc645ee36181d5d72abca2ed | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
+| 03 | docs/plans/2026-11-05/expert-material-filter-03-projections.md | sha256:ef85056d991448e846a729ca2fdff8d8ab83869cfc645ee36181d5d72abca2ed | 01,02 | 1 | LIGHT_PASS | 00d48c74955626519fcfcc6de859f1fcc63b8c82 | e73f902a06e45f42722e39682e20a8742ba9d388 | 0 | — | e73f902a06e45f42722e39682e20a8742ba9d388 | f3c695c61bfe81f9a1dd6855b87ad961b8664820 | MaterialProjectionVerifier COMPLETE_CHILD; fresh focused 83 and dual-MySQL 2 passed, zero skipped |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -48,6 +48,8 @@
 - 01 epoch 2 verifier attempt 1: MaterialReadVerifier; distinct from both child writers; acquired successfully; agent_attempt=0. Review boundary 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b..51268418bfeb0dd666c1fcc079cbb6f4cb239c4a.
 - 02 epoch 1 implementer: MaterialIngressImplementer; acquired successfully; agent_attempt=0. Product base 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a; evidence HEAD at dispatch bdc921e62065cc0bdbac093d716024134233cff5.
 - 02 epoch 1 verifier attempt 1: MaterialIngressVerifier; distinct from child writer; acquired successfully; agent_attempt=0. Review boundary 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a..00d48c74955626519fcfcc6de859f1fcc63b8c82.
+- 03 epoch 1 implementer: MaterialProjectionImplementer; acquired successfully; agent_attempt=0. Product base 00d48c74955626519fcfcc6de859f1fcc63b8c82; evidence HEAD at dispatch e9ee3aae67ffe4519106dd83d596c8695f708666.
+- 03 epoch 1 verifier attempt 1: MaterialProjectionVerifier; distinct from child writer; acquired successfully; agent_attempt=0. Review boundary 00d48c74955626519fcfcc6de859f1fcc63b8c82..e73f902a06e45f42722e39682e20a8742ba9d388.
 
 ## Pause record
 - Epoch 1 paused before implementation. The helper resolves every registered worktree with strict=True; unrelated absent path `/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b` makes it exit 1.
@@ -63,3 +65,4 @@
 
 ## Child artifact checkpoints
 - Through child 01: complete approved manifest, `--allow-dirty-artifacts` then clean mode, both exit 0 / result VALID / validation_scope CHILD_CHECKPOINT. Clean checkpoint HEAD bdc921e62065cc0bdbac093d716024134233cff5; terminal code 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a; later children remained PENDING.
+- Through child 02: complete approved manifest, `--allow-dirty-artifacts` then clean mode, both exit 0 / result VALID / validation_scope CHILD_CHECKPOINT. Clean checkpoint HEAD e9ee3aae67ffe4519106dd83d596c8695f708666; terminal code 00d48c74955626519fcfcc6de859f1fcc63b8c82; child 03 remained PENDING.
