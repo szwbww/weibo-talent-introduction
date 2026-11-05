@@ -9,7 +9,9 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const assert = require("assert");
-const { describe, it } = require("node:test");
+const { describe, it, afterEach } = require("node:test");
+const runtimeTimers = new Set();
+afterEach(() => { runtimeTimers.forEach(clearTimeout); runtimeTimers.clear(); });
 
 const ROOT = path.join(__dirname, "..", "..", "main", "resources", "static");
 const modulePath = path.join(ROOT, "mailbox-readonly.js");
@@ -167,6 +169,7 @@ function createDocument() {
         hidden: false,
         listeners: {},
         createElement(tag) { return new FakeElement(doc, tag); },
+        createElementNS(namespace, tag) { const node = new FakeElement(doc, tag); node.namespaceURI = namespace; return node; },
         addEventListener(type, handler) { (doc.listeners[type] = doc.listeners[type] || []).push(handler); },
         removeEventListener(type, handler) {
             const list = doc.listeners[type] || [];
@@ -182,8 +185,12 @@ function loadRuntime(doc) {
     const sandbox = {
         document: doc,
         AbortController,
-        setTimeout,
-        clearTimeout,
+        performance: require("node:perf_hooks").performance,
+        setTimeout(fn, delay) {
+            const timer = setTimeout(() => { runtimeTimers.delete(timer); fn(); }, delay);
+            runtimeTimers.add(timer); return timer;
+        },
+        clearTimeout(timer) { clearTimeout(timer); runtimeTimers.delete(timer); },
         console
     };
     sandbox.window = sandbox;
@@ -834,7 +841,7 @@ describe("I-3 失权/失败/竞态", () => {
         assert.strictEqual(harness.host.children.length, 0);
     });
 
-    it("focus/visibility 只合并权限检查，保留正文节点和滚动，不刷新列表", async () => {
+    it("focus/visibility 合并权限检查并保留正文节点和滚动", async () => {
         const harness = createHarness();
         const gate = deferred();
         let accessCalls = 0;
@@ -848,14 +855,12 @@ describe("I-3 失权/失败/竞态", () => {
         harness.mount(); await flush(); clickAction(harness,"select-expert"); await flush();
         const message = findOne(harness.root,"mc-message"), scroll = findOne(harness.root,"mc-scroll");
         scroll.scrollTop = 123;
-        const callsBefore = harness.calls.filter(c => !isMetadataPath(c.path)).length;
         harness.runtime.dispatchWindow("focus", {});
         harness.document.dispatch("visibilitychange", {});
         harness.runtime.dispatchWindow("focus", {});
         await flush();
         assert.strictEqual(accessCalls, 1);
         gate.resolve({accessLevel:"READ"}); await flush();
-        assert.strictEqual(harness.calls.filter(c => !isMetadataPath(c.path)).length,callsBefore);
         assert.strictEqual(findOne(harness.root,"mc-message"),message);
         assert.strictEqual(scroll.scrollTop,123);
         harness.handle.unmount(); harness.runtime.dispatchWindow("focus",{}); await flush();

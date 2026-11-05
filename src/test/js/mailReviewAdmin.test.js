@@ -501,3 +501,24 @@ test("ordinary admin reply hides review toolbar and subject; review entry restor
     assert.ok(h.host.querySelector('[data-action="mc-send-manual"]'));
     finish(h);
 });
+
+test("queued approved reply remains immutable and cancelled resubmit carries server revision", async () => {
+    const approved = draft(11, 1, { state: "APPROVED", approvedContextToken: "initial", sendStatus: "PREPARED" });
+    let delayed = { id: 77, originKind: "REVIEW", originId: 11, status: "CANCELLED", revision: 8 };
+    const h = await setup({ rows: [approved], hook(url, method, body) {
+        if (url.includes("/delayed-replies?")) return Promise.resolve([clone(delayed)]);
+        if (url === BASE + "/11/send") {
+            assert.equal(body.delayExpectedRevision, 8);
+            delayed = { ...delayed, status: "WAITING", revision: 9 };
+            return Promise.resolve({ sendStatus: "WAITING", delayedReply: clone(delayed) });
+        }
+    } });
+    await select(h, "review:11");
+    await click(h, "send");
+    assert.equal(approved.state, "APPROVED");
+    assert.equal(editor(h).getAttribute("contenteditable"), "false");
+    assert.ok(!action(h, "send") || action(h, "send").disabled);
+    assert.match(h.host.textContent, /已加入发送队列/);
+    assert.equal(h.host.querySelector('[data-action="mc-send-manual"]'), null);
+    finish(h);
+});

@@ -737,6 +737,7 @@ function createGrantSandbox(options) {
     const sandbox = {
         console,
         URLSearchParams,
+        performance: require("node:perf_hooks").performance,
         setTimeout: (fn) => { const id = ++timerSeq; timers.push({ id, fn }); return id; },
         clearTimeout: (id) => { const idx = timers.findIndex((item) => item.id === id); if (idx >= 0) timers.splice(idx, 1); },
         escapeHtml: escapeHtmlLike,
@@ -775,7 +776,7 @@ function createGrantSandbox(options) {
         timers,
         frames,
         runFrames: () => { while (frames.length) frames.shift()(); },
-        runTimers: () => { while (timers.length) timers.shift().fn(); }
+        runTimers: () => { const ready = timers.splice(0); ready.forEach((item) => item.fn()); }
     };
 }
 

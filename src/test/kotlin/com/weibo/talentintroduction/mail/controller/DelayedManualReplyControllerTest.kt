@@ -24,6 +24,8 @@ class DelayedManualReplyControllerTest {
     private val jdbc = Mockito.mock(NamedParameterJdbcTemplate::class.java)
     private lateinit var mvc: MockMvc
     private val base = "/api/mail/mailbox/conversations/1/delayed-replies/1"
+    private val restoreSourceSql = "SELECT id FROM inbound_mail_processing WHERE id=:source AND expert_contact_id=:contact AND sender_account_code=:account"
+    private val restoreSourceParams = mapOf("source" to 100L, "contact" to 1L, "account" to "sender")
     private fun session(actor: String = "admin") = MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, actor) }
     private fun row(value: DelayedManualReplyRow) {
         Mockito.`when`(repository.findById(1)).thenReturn(value)
@@ -48,8 +50,10 @@ class DelayedManualReplyControllerTest {
 
     @Test fun `restore returns exact original non UTC input and historical absence returns opaque 422`() {
         row(DelayedWorkerFixture.row(status = DelayedManualReplyStatus.CANCELLED))
+        Mockito.`when`(jdbc.queryForList(restoreSourceSql, restoreSourceParams)).thenReturn(listOf(mapOf("id" to 100L)))
         mvc.perform(get("$base/restore").session(session())).andExpect(status().isOk)
             .andExpect(jsonPath("$.expectedCancelledRevision").value(1))
+            .andExpect(jsonPath("$.inboundProcessingId").value(100))
             .andExpect(jsonPath("$.originalInput.meeting.zoneId").value("Asia/Shanghai"))
             .andExpect(jsonPath("$.originalInput.meeting.startLocal").value("2027-01-01T10:00"))
             .andExpect(jsonPath("$.originalInput.trustReplyAssembly.frameSnapshot.version").value("frame-v"))
@@ -59,6 +63,22 @@ class DelayedManualReplyControllerTest {
             .andExpect(jsonPath("$.code").value("SNAPSHOT_INVALID"))
             .andExpect(jsonPath("$.message").value("发送内容无法恢复，请联系管理员"))
             .andExpect(jsonPath("$.originalInput").doesNotExist())
+    }
+
+    @Test fun `restore rejects missing or reassigned processing source and mismatched snapshot identity`() {
+        row(DelayedWorkerFixture.row(status = DelayedManualReplyStatus.CANCELLED))
+        mvc.perform(get("$base/restore").session(session())).andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("SNAPSHOT_INVALID"))
+        Mockito.verify(jdbc).queryForList(restoreSourceSql, restoreSourceParams)
+        val original = DelayedWorkerFixture.row(status = DelayedManualReplyStatus.CANCELLED)
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        for (sourceId in listOf(0L, 101L)) {
+            val json = mapper.readTree(original.snapshotJson)
+            (json["restore"] as com.fasterxml.jackson.databind.node.ObjectNode).put("inboundProcessingId", sourceId)
+            row(original.copy(snapshotJson = mapper.writeValueAsString(json)))
+            mvc.perform(get("$base/restore").session(session())).andExpect(status().isUnprocessableEntity)
+                .andExpect(jsonPath("$.inboundProcessingId").doesNotExist())
+        }
     }
 
     @Test fun `READ sees status but cannot restore cancel or retry`() {

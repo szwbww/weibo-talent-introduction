@@ -52,9 +52,18 @@ class DelayedManualReplyController(
             throw DelayedManualReplyException(413, "SNAPSHOT_INVALID", DelayedReplyPublicError.SNAPSHOT_INVALID.message)
         val snapshot = DelayedManualReplySnapshotCodec.decodeOrNull(row.snapshotJson) ?: invalid()
         if (snapshot.payload.contactId != row.expertContactId || snapshot.payload.accountCode != row.accountCode) invalid()
+        var inboundProcessingId: Long? = null
         val input: Any = when (val restore = snapshot.restore) {
             is DelayedLegacyRestore -> {
                 if (row.originKind != DelayedManualReplyOriginKind.LEGACY || row.originId != null) invalid()
+                val sourceId = restore.inboundProcessingId
+                if (sourceId <= 0 || snapshot.payload.inboundProcessingId != sourceId ||
+                    snapshot.source.inboundProcessingId != sourceId) invalid()
+                val sources = jdbc.queryForList(
+                    "SELECT id FROM inbound_mail_processing WHERE id=:source AND expert_contact_id=:contact AND sender_account_code=:account",
+                    mapOf("source" to sourceId, "contact" to row.expertContactId, "account" to row.accountCode))
+                if (sources.size != 1) invalid()
+                inboundProcessingId = sourceId
                 restore.originalInput ?: invalid()
             }
             is DelayedDraftRestore -> {
@@ -64,7 +73,7 @@ class DelayedManualReplyController(
             }
             is DelayedReviewRestore -> conflict()
         }
-        DelayedReplyRestoreResponse(row.id, row.revision, row.originKind, row.originId, input)
+        DelayedReplyRestoreResponse(row.id, row.revision, row.originKind, row.originId, input, inboundProcessingId)
     }
 
     @PostMapping("/{jobId}/cancel")
@@ -160,4 +169,5 @@ class DelayedManualReplyController(
 }
 
 data class DelayedReplyRestoreResponse(val id: Long, val expectedCancelledRevision: Long,
-    val originKind: DelayedManualReplyOriginKind, val originId: Long?, val originalInput: Any)
+    val originKind: DelayedManualReplyOriginKind, val originId: Long?, val originalInput: Any,
+    val inboundProcessingId: Long? = null)

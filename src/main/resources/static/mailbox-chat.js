@@ -992,19 +992,232 @@
             accessLocked: false,
             disposed: false
         };
+        const delayReadControllers = new Set();
+
+        // The monotonic clock only renders server deadlines; it never dispatches mail.
+        const delayState = { timer: null, busy: false, lastList: 0, lastDetail: 0, confirm: null, clocks: new Map() };
+        function delayOwner() {
+            return `${instance.user}|${instance.selectedContactId}|${instance.conversation.accountScope || ""}|${instance.convEpoch}`;
+        }
+        function delayPath(id) {
+            return `/api/mail/mailbox/conversations/${Number(instance.selectedContactId)}/delayed-replies/${Number(id)}`;
+        }
+        function delayRemaining(job) {
+            let clock = delayState.clocks.get(job.id);
+            if (!clock || clock.server !== job.serverNowMs || clock.revision !== job.revision) {
+                clock = { server: Number(job.serverNowMs), at: performance.now(), revision: job.revision };
+                delayState.clocks.set(job.id, clock);
+            }
+            return Math.max(0, Math.ceil((Number(job.dueAtMs) - clock.server - (performance.now() - clock.at)) / 1000));
+        }
+        function delayStatus(job) {
+            const remaining = delayRemaining(job);
+            return job.status === "WAITING" ? (remaining ? `将在 ${remaining} 秒后发送` : "等待发送")
+                : ({ SENDING: "正在发送", CANCELLED: "已撤回", SENT: "已发送", FAILED: "发送失败", UNKNOWN: "发送结果待确认，请勿重复发送" }[job.status] || "状态待确认");
+        }
+        function delayWritable() {
+            return instance.auth.ready && !instance.accessLocked && (!delegated || instance.options.accessLevel === "FULL");
+        }
+        function delayLocked(rec) {
+            return !!rec && ["WAITING", "SENDING", "UNKNOWN"].includes(rec.delayedReply && rec.delayedReply.status);
+        }
+        function delayErrorIcon(id, reason, list) {
+            return `<span class="mc-send-error" role="img"${list ? "" : ' tabindex="0"'} aria-label="发送异常：${escapeText(reason)}" aria-describedby="${escapeText(id)}"><svg class="mc-send-error-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 5.5v5M10 14h.01"></path></svg><span class="mc-send-error-tooltip" id="${escapeText(id)}" role="tooltip">${escapeText(reason)}</span></span>`;
+        }
+        function delayActions(message, contentsOnly = false) {
+            const job = message.delayedReply;
+            if (!job) return "";
+            const key = `DELAYED_MANUAL_REPLY:${job.id}`;
+            const c = delayState.confirm;
+            const valid = c && c.owner === delayOwner() && c.id === job.id && c.revision === job.revision
+                && (c.action !== "cancel" || delayRemaining(job) > 0);
+            let actions = "";
+            if (delayWritable() && valid) {
+                const cancel = c.action === "cancel";
+                actions = `<span class="mc-delay-confirm" role="group" aria-label="${cancel ? "撤回发送二次确认" : "重新发送二次确认"}"><span>${cancel ? "确认撤回这封邮件？" : "确认重新发送？确认后将等待 60 秒。"}</span><button class="mailbox-suspend-inline-secondary" type="button" data-action="mc-delay-confirm-dismiss"${c.busy ? " disabled" : ""}>取消</button><button class="mailbox-suspend-inline-primary" type="button" data-action="mc-delay-confirm-submit"${c.busy ? " disabled" : ""}>${c.busy ? "处理中…" : cancel ? "确认撤回" : "确认重发"}</button></span>`;
+            } else if (delayWritable()) {
+                if (job.canCancel && job.status === "WAITING" && delayRemaining(job) > 0) actions += `<button class="mc-text-button" type="button" data-action="mc-delay-cancel-open" data-message-key="${escapeText(key)}">撤回</button>`;
+                if (job.canRetry && job.status === "FAILED") actions += `<button class="mc-text-button" type="button" data-action="mc-delay-retry-open" data-message-key="${escapeText(key)}">重新发送</button>`;
+                if (job.originKind === "LEGACY" && job.status === "CANCELLED") actions += `<button class="mc-text-button" type="button" data-action="mc-delay-restore" data-message-key="${escapeText(key)}">恢复草稿</button>`;
+            }
+            const contents = `<span class="mc-delay-status" data-role="delay-countdown">${escapeText(delayStatus(job))}</span>${actions}`;
+            return contentsOnly ? contents : `<span class="mc-delay-actions" data-delay-id="${Number(job.id)}">${contents}</span>`;
+        }
+        function renderDelayActions() {
+            (instance.conversation.items || []).forEach((message) => {
+                if (!message.delayedReply) return;
+                const node = host.querySelector(`[data-delay-id="${Number(message.id)}"]`);
+                if (node) node.innerHTML = delayActions(message, true);
+            });
+        }
+        async function delayRefreshJob(id, owner) {
+            const job = await hostApi()(delayPath(id));
+            if (instance.disposed || owner !== delayOwner()) return null;
+            const item = instance.conversation.items.find((m) => m.source === "DELAYED_MANUAL_REPLY" && Number(m.id) === Number(id));
+            if (item) { item.delayedReply = job; item.sendStatus = job.status; }
+            if (job.originKind === "REVIEW" && instance.review.detail?.id === job.originId) {
+                instance.review.delayedReply = job;
+                instance.review.message = ["WAITING", "SENDING"].includes(job.status) ? "邮件已加入发送队列，可在邮件底部撤回。" : "";
+                renderAdminReview();
+            }
+            if (delayState.confirm && delayState.confirm.revision !== job.revision) delayState.confirm = null;
+            renderTimeline();
+            return job;
+        }
+        async function delayAction(action, button) {
+            if (!delayWritable() || instance.disposed) return;
+            if (action === "mc-delay-confirm-dismiss") {
+                if (delayState.confirm && !delayState.confirm.busy) { delayState.confirm = null; renderDelayActions(); }
+                return;
+            }
+            if (action === "mc-delay-confirm-submit") {
+                const c = delayState.confirm;
+                if (!c || c.busy || c.owner !== delayOwner()) return;
+                const item = instance.conversation.items.find((m) => m.delayedReply && m.delayedReply.id === c.id);
+                const job = item && item.delayedReply;
+                if (!job || job.revision !== c.revision || !(c.action === "cancel" ? job.canCancel && delayRemaining(job) > 0 : job.canRetry)) {
+                    delayState.confirm = null;
+                    await delayRefreshJob(c.id, c.owner);
+                    return;
+                }
+                c.busy = true; renderDelayActions();
+                try {
+                    await hostApi()(delayPath(c.id) + "/" + c.action, { method: "POST", body: JSON.stringify({ expectedRevision: c.revision }) });
+                    if (instance.disposed || c.owner !== delayOwner()) return;
+                    delayState.confirm = null;
+                    await delayRefreshJob(c.id, c.owner);
+                    await refreshConversationQuiet();
+                    if (!delegated) await fetchList({ page: instance.list.page });
+                    else if (instance.options.onChanged) instance.options.onChanged();
+                } catch (error) {
+                    if (instance.disposed || c.owner !== delayOwner()) return;
+                    delayState.confirm = null;
+                    if (error.status === 401 || error.status === 403) { unmount(); return; }
+                    await delayRefreshJob(c.id, c.owner).catch(() => {});
+                    const card = host.querySelector(`[data-message-key="DELAYED_MANUAL_REPLY:${Number(c.id)}"] .mc-inline-error`);
+                    if (card) { card.textContent = error.message || "状态暂不可确认，请刷新后再操作"; card.hidden = false; }
+                }
+                return;
+            }
+            const message = findMessageByKeyAttr(button), job = message && message.delayedReply;
+            if (!job) return;
+            if (action === "mc-delay-restore") {
+                const restore = hostFn("mcHostRestoreDelayedReply");
+                const owner = delayOwner();
+                if (restore && job.originKind === "LEGACY" && job.status === "CANCELLED") await restore(Number(instance.selectedContactId), job.id, message.accountCode, () => !instance.disposed && delayOwner() === owner, async (source) => {
+                    await flushDrafts();
+                    if (instance.disposed || delayOwner() !== owner) throw new Error("回复目标已变更，无法恢复");
+                    await mountUnmatchedDetail(source);
+                });
+                return;
+            }
+            const verb = action === "mc-delay-cancel-open" ? "cancel" : "retry";
+            if (!(verb === "cancel" ? job.canCancel && delayRemaining(job) > 0 : job.canRetry && job.status === "FAILED")) return;
+            delayState.confirm = { owner: delayOwner(), id: job.id, revision: job.revision, action: verb, busy: false };
+            renderDelayActions();
+            host.querySelector(`[data-delay-id="${Number(job.id)}"] [data-action="mc-delay-confirm-dismiss"]`)?.focus();
+        }
+
+        async function loadDelayForOrigin(kind, id, contactId) {
+            if (!id) return null;
+            const jobs = await hostApi()(`/api/mail/mailbox/conversations/${Number(contactId)}/delayed-replies?originKind=${kind}&originId=${Number(id)}`);
+            return Array.isArray(jobs) ? jobs[0] || null : null;
+        }
+        async function syncDelayedDraft() {
+            const rec = currentDraftRecord();
+            if (!rec || !rec.id || !rec.loaded || rec.loading || rec.sending) return;
+            const seq = rec.seq, owner = delayOwner();
+            const job = await loadDelayForOrigin("DRAFT", rec.id, rec.target.contactId);
+            if (!draftOwnerLive(rec) || instance.disposed || owner !== delayOwner() || rec.seq !== seq) return;
+            rec.delayedReply = job;
+            if (job && ["SENT", "CANCELLED"].includes(job.status)) {
+                const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`);
+                if (!draftOwnerLive(rec) || instance.disposed || owner !== delayOwner() || rec.seq !== seq) return;
+                acceptDraftDetail(rec, detail, false);
+                if (job.status === "SENT" && detail.state === "SENT" && rec.seq === rec.ack) {
+                    rec.map.delete(rec.key);
+                    renderDraftEditor(rec);
+                }
+            }
+            refreshDraftStatus();
+        }
+        function stopDelayPolling() {
+            clearTimeout(delayState.timer);
+            delayState.timer = null;
+            delayState.confirm = null;
+            delayReadControllers.forEach((controller) => controller.abort());
+            delayReadControllers.clear();
+        }
+        async function delayTick() {
+            clearTimeout(delayState.timer);
+            delayState.timer = null;
+            if (instance.disposed || instance.accessLocked || docRoot().hidden) return;
+            (instance.conversation.items || []).forEach((item) => {
+                if (!item.delayedReply) return;
+                const node = host.querySelector(`[data-delay-id="${Number(item.id)}"] [data-role="delay-countdown"]`);
+                if (node) node.textContent = delayStatus(item.delayedReply);
+            });
+            const c = delayState.confirm;
+            if (c && !c.busy) {
+                const item = instance.conversation.items.find((m) => m.delayedReply && m.delayedReply.id === c.id);
+                if (c.owner !== delayOwner() || !item || item.delayedReply.revision !== c.revision
+                    || c.action === "cancel" && delayRemaining(item.delayedReply) === 0) {
+                    delayState.confirm = null;
+                    renderTimeline();
+                }
+            }
+            delayState.timer = setTimeout(delayTick, 1000);
+            if (delayState.busy || !instance.auth.ready) return;
+            delayState.busy = true;
+            try {
+                const now = performance.now();
+                if (!delegated && now - delayState.lastList >= 5000) {
+                    delayState.lastList = now;
+                    await fetchList({ page: instance.list.page, background: true });
+                }
+                if (instance.disposed || docRoot().hidden) return;
+                const active = instance.conversation.items.some((m) => m.delayedReply && ["WAITING", "SENDING"].includes(m.delayedReply.status));
+                if (instance.selectedContactId && !instance.unmatchedDetailHost && now - delayState.lastDetail >= (active ? 2000 : 5000)) {
+                    delayState.lastDetail = now;
+                    await refreshConversationQuiet();
+                    await syncDelayedDraft();
+                    const r = instance.review, ctx = reviewCapture();
+                    if (r.detail && !r.busy) {
+                        const job = await loadDelayForOrigin("REVIEW", r.detail.id, ctx.contact);
+                        if (reviewCurrent(ctx) && JSON.stringify(r.delayedReply, (key, value) => key === "serverNowMs" ? undefined : value)
+                            !== JSON.stringify(job, (key, value) => key === "serverNowMs" ? undefined : value)) {
+                            r.delayedReply = job;
+                            r.message = job && ["WAITING", "SENDING"].includes(job.status) ? "邮件已加入发送队列，可在邮件底部撤回。" : "";
+                            renderAdminReview();
+                        }
+                    }
+                }
+            } catch (error) {
+                if (!instance.disposed && (error.status === 401 || error.status === 403)) unmount();
+            } finally { delayState.busy = false; }
+        }
+        function resumeDelayPolling() {
+            if (docRoot().hidden) { stopDelayPolling(); return; }
+            delayState.lastList = -Infinity;
+            delayState.lastDetail = -Infinity;
+            delayTick();
+        }
 
         function hostApi() {
-            if (!delegated) return defaultHostApi();
             return (path, requestOptions) => {
-                if (instance.disposed) return Promise.reject(new Error("会话已关闭"));
+                if (delegated && instance.disposed) return Promise.reject(new Error("会话已关闭"));
                 if (instance.accessLocked) return Promise.reject(new Error("专家权限已变化，请保留正文后刷新"));
-                return Promise.resolve(defaultHostApi()(path, requestOptions)).catch((error) => {
+                const controller = global.AbortController && (!requestOptions || !requestOptions.method || requestOptions.method === "GET")
+                    ? new global.AbortController() : null;
+                if (controller) delayReadControllers.add(controller);
+                const options = controller ? { ...requestOptions, signal: controller.signal } : requestOptions;
+                return Promise.resolve(defaultHostApi()(path, options)).catch((error) => {
                     if (!instance.disposed && error && (error.status === 401 || error.status === 403)) {
                         unmount();
                         if (instance.options.onAccessChanged) instance.options.onAccessChanged();
                     }
                     throw error;
-                });
+                }).finally(() => { if (controller) delayReadControllers.delete(controller); });
             };
         }
 
@@ -1097,7 +1310,7 @@
         }
 
         function markDraft(rec, draft) {
-            if (!rec || !draftOwnerLive(rec) || !rec.loaded || rec.readOnly || rec.paused) return;
+            if (!rec || !draftOwnerLive(rec) || !rec.loaded || rec.readOnly || rec.paused || delayLocked(rec)) return;
             const previous = rec.map.get(rec.key);
             if (previous && draftContentEqual(previous, draft)) return;
             rec.map.set(rec.key, draft);
@@ -1179,7 +1392,9 @@
                     });
                 }
                 return data;
-            }).then((data) => {
+            }).then(async (data) => {
+                const job = data && data.id ? await loadDelayForOrigin("DRAFT", data.id, rec.target.contactId) : null;
+                if (draftOwnerLive(rec) && seq === rec.seq) rec.delayedReply = job;
                 if (draftOwnerLive(rec) && rec.render) rec.render();
                 return data;
             }).catch((err) => {
@@ -1201,6 +1416,7 @@
                 return persistDraft(rec);
             }
             if (!draftOwnerLive(rec)) throw new Error("登录用户已变化");
+            if (delayLocked(rec)) return;
             if (!rec.loaded || rec.loading || rec.error === "load" || rec.readOnly) throw new Error("草稿加载失败，请重试");
             if (rec.conflict) throw new Error("草稿已在其他窗口更新，请先处理冲突");
             if (rec.closed) throw new Error("邮件已发送，新修改尚未保存");
@@ -1284,24 +1500,32 @@
             if (!rec || !compose) return;
             const status = compose.querySelector('[data-role="draft-save-status"]');
             const loading = !rec.loaded || !!rec.loading || rec.error === "load";
+            const locked = delayLocked(rec);
+            if (locked !== !!rec.delayLockApplied) {
+                rec.delayLockApplied = locked;
+                setManualComposeSending(locked);
+            }
+            const delayNote = compose.querySelector('[data-role="draft-delay-status"]');
+            if (delayNote) delayNote.hidden = !locked;
             let state = rec.conflict ? "conflict" : rec.error ? "error" : rec.inflight ? "saving"
                 : rec.seq !== rec.ack ? "dirty" : rec.id && rec.state === "ACTIVE" ? "saved" : "dirty";
             let text = { conflict: "草稿已在其他窗口更新，请先处理冲突", error: "保存失败，内容尚未同步到服务器",
                 saving: "正在保存…", dirty: "尚未保存", saved: "已保存到服务器" }[state];
             if (rec.closed) text = rec.state === "SENT" ? "邮件已发送，新修改尚未保存" : "草稿已关闭，新修改尚未保存";
+            if (delayLocked(rec)) text = "邮件已加入发送队列，可在邮件底部撤回。";
             if (status) { status.dataset.state = state; if (status.textContent !== text) status.textContent = text; }
             const action = (name) => compose.querySelector(`.mailbox-draft-status-row [data-action="mc-${name}-draft"]`);
             if (action("retry")) action("retry").hidden = rec.error !== "save";
             if (action("reload")) action("reload").hidden = !rec.conflict && !rec.sendUnconfirmed;
             if (action("continue")) action("continue").hidden = !rec.closed;
-            if (action("discard")) action("discard").disabled = rec.sending || !!instance.manual.busy || loading;
+            if (action("discard")) action("discard").disabled = rec.sending || !!instance.manual.busy || loading || delayLocked(rec);
             const inputs = manualInputs(compose);
             if (inputs) {
-                inputs.subjectInput.readOnly = loading || rec.readOnly;
-                inputs.editor.setAttribute("contenteditable", loading || rec.readOnly || rec.sending && instance.meeting.sending ? "false" : "true");
+                inputs.subjectInput.readOnly = loading || rec.readOnly || delayLocked(rec);
+                inputs.editor.setAttribute("contenteditable", loading || rec.readOnly || delayLocked(rec) || rec.sending && instance.meeting.sending ? "false" : "true");
             }
             compose.querySelectorAll(".mc-editor-tools button").forEach((button) => {
-                button.disabled = loading || rec.readOnly || rec.sending && instance.meeting.sending;
+                button.disabled = loading || rec.readOnly || delayLocked(rec) || rec.sending && instance.meeting.sending;
             });
             const error = compose.querySelector('[data-role="draft-load-error"]');
             if (error) error.hidden = !loading;
@@ -1380,7 +1604,7 @@
 
         async function discardDraft() {
             const rec = currentDraftRecord();
-            if (!rec || rec.sending || instance.manual.busy || rec.conflict) return;
+            if (!rec || rec.sending || instance.manual.busy || rec.conflict || delayLocked(rec)) return;
             const unknown = rec.detail && rec.detail.sendAttemptStatus === "DELIVERY_UNKNOWN";
             if (!await openDialog("confirm", { message: "确定放弃这份草稿？放弃后无法恢复。" + (unknown ? "这不会撤回可能已发送的邮件。" : "") })) return;
             if (!draftOwnerLive(rec)) return;
@@ -2225,11 +2449,13 @@
             const ariaLabel = (tagNames !== null && tagNames.length > 0
                 ? `查看${item.name || item.email || ""}往来邮件；专家标签：${tagNames.join("、")}`
                 : `查看${item.name || item.email || ""}往来邮件`)
-                + `；${lastReplyAriaSuffix(lastReplyDisplay(item))}`;
+                + `；${lastReplyAriaSuffix(lastReplyDisplay(item))}` + (Number(item.failedCount) > 0 ? "；存在发送异常" : "");
+            const errorId = `delay-list-${Number(item.contactId)}`;
+            const errorIcon = Number(item.failedCount) > 0 ? delayErrorIcon(errorId, `有 ${Number(item.failedCount)} 封邮件发送异常，打开会话查看`, true) : "";
             return `
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
-                    <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
-                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
+                    <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${errorIcon ? ` aria-describedby="${errorId}"` : ""}${active ? ' aria-current="true"' : ""}>
+                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${errorIcon}${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
                         ${item.accessLevel === "FULL" ? '<span class="mc-badge mc-grant-badge">user1: 写</span>' : ""}
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
@@ -2485,6 +2711,7 @@
             if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page);
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
+            const recoveringList = Boolean(instance.list.error);
             instance.list.loading = true;
             instance.list.error = "";
             // 请求模式在发出时固化；晚到的另一模式响应由 listSeq 拒绝（I-3）。
@@ -2494,6 +2721,7 @@
                 : `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
             return hostApi()(url).then((data) => {
                 if (instance.disposed || mySeq !== instance.listSeq || data == null) return null;
+                const previousItems = JSON.stringify(instance.list.items);
                 if (!unmatched) {
                     instance.filterCounts = data.filterCounts || null;
                     renderExpertScope();
@@ -2506,7 +2734,7 @@
                     : (Number(data && data.total) || 0);
                 instance.list.page = page;
                 instance.list.loading = false;
-                renderList();
+                if (!options.background || recoveringList || previousItems !== JSON.stringify(instance.list.items)) renderList();
                 renderPager();
                 // 02（I-1）：首次 mount 默认 Tab 探测。仅普通（非 focus）新实例、用户尚未
                 // 点击 Tab/筛选、且本次就是暂定的待处理首查时生效；total=0 才切跟进中。
@@ -2540,6 +2768,7 @@
             }).catch((err) => {
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
                 instance.list.loading = false;
+                if (err && err.name === "AbortError" && docRoot().hidden) return null;
                 instance.list.error = err && err.message ? err.message : "加载失败";
                 if (!unmatched) {
                     instance.filterCounts = null;
@@ -3404,6 +3633,7 @@
                     scrollHost.innerHTML = `<div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div>`;
                 });
             }
+            return started;
         }
 
         function syncSearchChrome() {
@@ -3588,8 +3818,13 @@
 
         function selectExpert(item, options) {
             if (delegated && Number(item.contactId) !== fixedContactId) throw new Error("专家上下文不匹配");
+            delayState.confirm = null;
             const opts = options || {};
             if (!opts.skipDraftFlush) return draftNavigation(() => selectExpert(item, Object.assign({}, opts, { skipDraftFlush: true })));
+            if (instance.unmatchedDetailHost) {
+                releaseUnmatchedDetailNode();
+                opts.force = true;
+            }
             const sameOwner = Number(instance.selectedContactId) === Number(item.contactId)
                 && String(instance.conversation.accountScope || "") === accountFilterFromOptions();
             if (sameOwner && !opts.force && !instance.conversation.error) {
@@ -5123,6 +5358,7 @@
             if (canTranslate) {
                 footerButtons.push(`<button class="mc-text-button" type="button" data-action="mc-translate" data-message-key="${escapeText(key)}">${escapeText(translateButtonLabel(translationStateFor))}</button>`);
             }
+            if (message.delayedReply) footerButtons.push(delayActions(message));
             if (isInboundProcessing) {
                 footerButtons.push(`<button class="mc-text-button" type="button" data-action="mc-add-mail-tag" data-message-key="${escapeText(key)}">＋ 添加标签</button>`);
             }
@@ -5143,7 +5379,7 @@
                 footerButtons.push(`<span class="mailbox-suspend-processed-label">已处理${resolvedBy ? ` · ${escapeText(resolvedBy)}` : ""}</span>`);
             }
             const footerHtml = footerButtons.length > 0
-                ? `<footer>${footerButtons.join("")}</footer>`
+                ? `<footer${message.delayedReply ? ' class="mc-delay-footer"' : ""}>${footerButtons.join("")}</footer>`
                 : "";
             const completionHtml = instance.completion.anchorKey === key ? completionLineHtml() : "";
             return `
@@ -5164,6 +5400,14 @@
         }
 
         function renderStatusBadge(message, direction) {
+            const job = message.delayedReply;
+            if (job && ["WAITING", "SENDING", "CANCELLED"].includes(job.status)) {
+                return `<span class="mc-badge"${job.status === "CANCELLED" ? "" : ' data-tone="pending"'}>${escapeText({ WAITING: "等待发送", SENDING: "正在发送", CANCELLED: "已撤回" }[job.status])}</span>`;
+            }
+            if (message.sendStatus === "FAILED" || message.sendStatus === "UNKNOWN") {
+                const reason = job && job.publicErrorMessage || (message.sendStatus === "UNKNOWN" ? "发送结果待确认，请勿重复发送" : "邮件发送失败，请联系管理员");
+                return delayErrorIcon(`delay-error-${message.source}-${Number(message.id)}`, reason, false);
+            }
             if (direction === "INBOUND") {
                 if (message.processStatus === "MANUAL_REVIEW") {
                     return '<span class="mc-badge" data-tone="pending">待处理</span>';
@@ -5172,9 +5416,6 @@
             }
             if (message.sendStatus === "SENT") {
                 return '<span class="mc-badge" data-tone="success">已发送</span>';
-            }
-            if (message.sendStatus === "FAILED") {
-                return '<span class="mc-badge" data-tone="error">发送失败</span>';
             }
             return "";
         }
@@ -5850,7 +6091,7 @@
             return { DRAFT: "未提交", RETURNED: "已退回", SUBMITTED: "已提交", APPROVED: "已审核 · 尚未发送" }[draft.state] || "状态不可用";
         }
         function reviewSendable(draft) {
-            return draft && !draft.deleted && draft.state === "APPROVED" && ["NOT_SENT", "PREPARED", "FAILED_SAFE_TO_RETRY"].includes(draft.sendStatus);
+            return draft && !draft.deleted && draft.state === "APPROVED" && !["WAITING", "SENDING", "UNKNOWN", "FAILED"].includes(instance.review.delayedReply?.status) && ["NOT_SENT", "PREPARED", "FAILED_SAFE_TO_RETRY"].includes(draft.sendStatus);
         }
         function closeReviewConfirmation() {
             const dialog = reviewNode("review-context-confirm");
@@ -5970,6 +6211,9 @@
                     const detail = await hostApi()(`${REVIEW_PATH}/${r.requestedId}`);
                     if (!reviewCurrent(ctx)) return;
                     if (detail.deleted || Number(detail.contactId) !== Number(ctx.contact)) throw new Error("该草稿仅可查看历史");
+                    const job = await loadDelayForOrigin("REVIEW", detail.id, ctx.contact);
+                    if (!reviewCurrent(ctx)) return;
+                    r.delayedReply = job;
                     r.detail = detail; renderAdminReview();
                     if (!delegated && reviewSendable(detail)) await checkReviewContext(true);
                 } catch (error) { if (reviewCurrent(ctx)) reviewError(error.message || "草稿加载失败，请重试"); }
@@ -6101,8 +6345,13 @@
             const r = instance.review, ctx = reviewCapture(); if (!reviewSendable(r.detail) || r.busy) return;
             r.busy = true; renderAdminReview(); reviewError("");
             try {
+                const job = await loadDelayForOrigin("REVIEW", ctx.id, ctx.contact);
+                if (!reviewCurrent(ctx)) return;
+                r.delayedReply = job;
+                if (!reviewSendable(r.detail)) return;
                 if (!await checkReviewContext(true) || !reviewCurrent(ctx)) return;
                 const body = { expectedVersion: ctx.version, confirmationEventId: r.confirmationEventId || null };
+                if (job && job.status === "CANCELLED") body.delayExpectedRevision = job.revision;
                 let result;
                 try { result = await hostApi()(`${REVIEW_PATH}/${ctx.id}/send`, { method: "POST", body: JSON.stringify(body) }); }
                 catch (error) {
@@ -6115,6 +6364,13 @@
                     result = await hostApi()(`${REVIEW_PATH}/${ctx.id}/send`, { method: "POST", body: JSON.stringify({ ...body, ...confirmation }) });
                 }
                 if (!reviewCurrent(ctx) || result === null) return;
+                r.delayedReply = result.delayedReply || null;
+                if (result.sendStatus === "WAITING") {
+                    r.message = "已加入发送队列，60 秒内可撤回";
+                    hostShowStatus(r.message, "ok");
+                    await refreshConversationQuiet();
+                    return;
+                }
                 const detail = await hostApi()(`${REVIEW_PATH}/${ctx.id}`); if (!reviewCurrent(ctx)) return;
                 r.detail = detail; r.epoch += 1; r.confirmationEventId = null; r.confirmedToken = null;
                 r.message = "";
@@ -6332,6 +6588,7 @@
                     <button class="button" type="button" data-action="mc-retarget-draft" hidden>为新来信另建草稿</button>
                     <button class="button" type="button" data-action="mc-open-existing-draft" hidden>打开已有草稿</button>
                     <div class="mc-note" data-role="draft-send-unknown" hidden>发送结果待确认，草稿已保留，请勿重复发送</div>
+                    <div class="mc-note" data-role="draft-delay-status" role="status" hidden>邮件已加入发送队列，可在邮件底部撤回。</div>
                     <div class="mailbox-draft-status-row">
                         <span class="mailbox-draft-status" data-role="draft-save-status" data-state="dirty" role="status" aria-live="polite">尚未保存</span>
                         <button class="mc-text-button" type="button" data-action="mc-retry-draft" hidden>重试保存</button>
@@ -7014,7 +7271,9 @@
                 return item && item.error === "上传未完成，请重新选择文件" ? item.error : OUTBOUND_TEXT_FAILED;
             }
             const size = formatOutboundFileSize(item && item.byteLength);
-            return size + " · " + (state === OUTBOUND_STATE_SENT ? OUTBOUND_TEXT_SENT : OUTBOUND_TEXT_PENDING);
+            return size + " · " + (item && item.delayedStatus
+                ? ({ WAITING: "等待发送", SENDING: "正在发送", CANCELLED: "已撤回", FAILED: "发送失败", UNKNOWN: "发送结果待确认，请勿重复发送", SENT: OUTBOUND_TEXT_SENT }[item.delayedStatus] || "状态待确认")
+                : (state === OUTBOUND_STATE_SENT ? OUTBOUND_TEXT_SENT : OUTBOUND_TEXT_PENDING));
         }
 
         /**
@@ -7028,7 +7287,7 @@
             const download = downloadable
                 ? `<a class="outbound-file-link" data-role="outbound-download" href="${escapeText(href)}" download>下载</a>`
                 : "";
-            const remove = state === OUTBOUND_STATE_SENT
+            const remove = state === OUTBOUND_STATE_SENT || item && item.readOnly
                 ? ""
                 : `<button class="outbound-file-link" type="button" data-action="mc-remove-attachment" aria-label="移除附件">移除</button>`;
             const name = item && item.filename != null ? String(item.filename) : "";
@@ -7059,12 +7318,14 @@
             if (list.length === 0) return "";
             const cards = list.map((item) => outboundFileCardHtml({
                 key: item ? item.id : "",
-                state: OUTBOUND_STATE_SENT,
+                state: message.delayedReply && message.delayedReply.status !== "SENT" ? OUTBOUND_STATE_READY : OUTBOUND_STATE_SENT,
+                readOnly: true,
+                delayedStatus: message.delayedReply && message.delayedReply.status,
                 filename: item ? item.filename : "",
                 byteLength: item ? item.byteLength : 0,
                 downloadUrl: item ? item.downloadUrl : ""
             })).join("");
-            return `<div class="outbound-files" data-role="outbound-sent-files" data-state="sent">${cards}</div>`;
+            return `<div class="outbound-files" data-role="outbound-sent-files" data-state="${message.delayedReply && message.delayedReply.status !== "SENT" ? "ready" : "sent"}">${cards}</div>`;
         }
 
         // ---- 07：草稿写回、捕获与上传队列（I-1..I-3） ----
@@ -7167,7 +7428,7 @@
             const rec = currentDraftRecord();
             const meeting = manualMeetingSnapshot();
             setSendButtonDisabled(!!instance.manual.busy || outboundAttachmentsBlockSend() || !!(meeting && meeting.state !== "ready")
-                || !rec || !rec.loaded || !!rec.loading || rec.readOnly || !!rec.error || rec.conflict || rec.closed || rec.sendUnconfirmed
+                || !rec || !rec.loaded || !!rec.loading || rec.readOnly || !!rec.error || rec.conflict || rec.closed || rec.sendUnconfirmed || delayLocked(rec)
                 || !!(rec.detail && ["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(rec.detail.sendAttemptStatus)));
             refreshReplyIdentityControls();
         }
@@ -7370,7 +7631,7 @@
             const existing = getDraft(key);
             const patch = extra || {};
             const rec = draftRecord(key);
-            if (!rec.loaded || rec.loading || rec.error === "load" || rec.readOnly) return;
+            if (!rec.loaded || rec.loading || rec.error === "load" || rec.readOnly || delayLocked(rec)) return;
             if (Object.keys(patch).every((name) => name === "force") && rec.baseline
                 && values.subject === rec.baseline.subject && values.html === rec.baseline.html && values.text === rec.baseline.text
                 && !existing && !patch.force) return;
@@ -9337,7 +9598,7 @@
         function sendManualReply() {
             if (instance.review.mode !== "manual") return;
             const rec = currentDraftRecord();
-            if (!rec || rec.preparing || rec.sending || rec.conflict || rec.closed || !rec.loaded || rec.error === "load" || rec.readOnly) return;
+            if (!rec || rec.preparing || rec.sending || rec.conflict || rec.closed || !rec.loaded || rec.error === "load" || rec.readOnly || delayLocked(rec)) return;
             if (outboundAttachmentsBlockSend()) {
                 hostShowStatus("附件正在上传或上传失败，请等待上传完成或移除失败附件后再发送", "error");
                 return;
@@ -9482,6 +9743,7 @@
             const contactId = Number(instance.selectedContactId);
             const ownerKey = conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId);
             requestBody.draftRef = { id: rec.id, version: rec.version };
+            if (rec.delayedReply && rec.delayedReply.status === "CANCELLED") requestBody.delayExpectedRevision = rec.delayedReply.revision;
             const inFlightKey = meeting ? `${ownerKey}|${key}` : null;
             if (inFlightKey && meetingInFlight.has(inFlightKey)) {
                 hostShowStatus("该回复目标已有发送中的会议回复，请稍候", "error");
@@ -9498,14 +9760,24 @@
             const adapter = conversationSend
                 ? hostFn("mcHostSendConversationRichReply")
                 : hostFn("mcHostSendRichReply");
+            const onResult = (result) => {
+                if (!draftOwnerLive(rec) || rec.seq !== sentSeq) return;
+                rec.delayedReply = result.delayedReply || null;
+                rec.sentSeq = sentSeq;
+                if (currentTargetKey() === key) refreshDraftStatus();
+            };
             const request = adapter
                 ? (conversationSend
-                    ? adapter(contactId, requestBody)
-                    : adapter(processingId, requestBody))
+                    ? adapter(contactId, requestBody, onResult)
+                    : adapter(processingId, requestBody, onResult))
                 : Promise.reject(new Error("发送能力不可用"));
             return Promise.resolve(request).catch(() => false).then(async () => {
                 // HTTP/host Boolean is not the draft-close authority.
                 try {
+                    if (delayLocked(rec)) {
+                        if (!instance.disposed && currentTargetKey() === key) await refreshConversationQuiet();
+                        return;
+                    }
                     const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`);
                     if (!draftOwnerLive(rec)) return;
                     const stillCurrent = !instance.disposed && currentTargetKey() === key;
@@ -9601,13 +9873,14 @@
             params.set("limit", String(MESSAGE_LIMIT));
             const scopeAccount = instance.conversation.accountScope || "";
             if (scopeAccount) params.set("accountCode", scopeAccount);
-            hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((msgData) => {
+            return hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((msgData) => {
                 if (instance.disposed || myEpoch !== instance.convEpoch) return;
                 if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
                     if (instance.options.onAccessChanged) instance.options.onAccessChanged();
                     return;
                 }
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
+                const previous = JSON.stringify(instance.conversation.items, (key, value) => key === "serverNowMs" ? undefined : value);
                 if (serverItems.length === 0 && (instance.conversation.items || []).length === 0) {
                     instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
                     instance.conversation.hasMore = !!(msgData && msgData.hasMore);
@@ -9616,7 +9889,7 @@
                 instance.conversation.items = mergeServerIntoWindow(instance.conversation.items, serverItems);
                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
                 instance.conversation.hasMore = !!(msgData && msgData.hasMore);
-                renderTimeline();
+                if (previous !== JSON.stringify(instance.conversation.items, (key, value) => key === "serverNowMs" ? undefined : value)) renderTimeline();
                 checkInboundChangeQuiet();
                 saveConversationState();
                 // c3（T-1）：现有刷新成功后按同一 contact 重读推荐（渲染只重绘状态行）。
@@ -9717,6 +9990,7 @@
                 : null;
             const data = button ? (button.dataset || {}) : {};
             const action = button ? data.action : "";
+            if (action.startsWith("mc-delay-")) { delayAction(action, button).catch((error) => hostShowStatus(error.message, "error")); return; }
             if (action === "mc-open-draft") { openServerDraft(data.draftId); return; }
             if (action === "mc-retry-draft") { retryDraft(); return; }
             if (action === "mc-reload-draft") { reloadDraft(); return; }
@@ -10453,6 +10727,9 @@
 
         function unmount() {
             if (instance.disposed) return;
+            stopDelayPolling();
+            if (docRoot() && docRoot().removeEventListener) docRoot().removeEventListener("visibilitychange", resumeDelayPolling);
+            if (global.removeEventListener) global.removeEventListener("focus", resumeDelayPolling);
             if (!delegated) {
                 saveCurrentConversation();
                 flushDrafts().catch(() => {});
@@ -10582,6 +10859,9 @@
         }
 
         attach();
+        if (docRoot() && docRoot().addEventListener) docRoot().addEventListener("visibilitychange", resumeDelayPolling);
+        if (global.addEventListener) global.addEventListener("focus", resumeDelayPolling);
+        delayState.timer = setTimeout(delayTick, 1000);
         if (!delegated && !(options && options.focus && options.focus.contactId != null)) {
             renderConversationEmpty();
         }
@@ -10596,6 +10876,7 @@
             lockAccess: () => {
                 if (instance.accessLocked) return;
                 instance.accessLocked = true;
+                stopDelayPolling();
                 const release = hostFn("mcHostReleaseDelegatedContext");
                 if (release) release(fixedContactId);
                 host.querySelectorAll("button,select,input").forEach((node) => { node.disabled = true; });

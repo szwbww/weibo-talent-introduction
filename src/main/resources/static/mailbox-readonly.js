@@ -170,6 +170,69 @@
         var pendingTotal = null;
         var pendingSeq = 0;
         var draftCountSeq = 0;
+        var delayTimer = null, delayPolling = false, delayLastList = 0, delayLastDetail = 0;
+        var delayClocks = new Map();
+        var delayNodes = new Map();
+        function delayStatus(job) {
+            var clock = delayClocks.get(job.id);
+            if (!clock || clock.server !== job.serverNowMs || clock.revision !== job.revision) {
+                clock = { server: Number(job.serverNowMs), revision: job.revision, at: performance.now() };
+                delayClocks.set(job.id, clock);
+            }
+            var seconds = Math.max(0, Math.ceil((Number(job.dueAtMs) - clock.server - (performance.now() - clock.at)) / 1000));
+            return job.status === "WAITING" ? (seconds ? "将在 " + seconds + " 秒后发送" : "等待发送")
+                : ({ SENDING: "正在发送", SENT: "已发送", CANCELLED: "已撤回", UNKNOWN: "发送结果待确认，请勿重复发送", FAILED: "发送失败" }[job.status] || "状态待确认");
+        }
+        function delayErrorNode(id, reason, list) {
+            var icon = makeNode(doc, "span", "mc-send-error");
+            icon.setAttribute("role", "img");
+            if (!list) icon.setAttribute("tabindex", "0");
+            icon.setAttribute("aria-label", "发送异常：" + reason);
+            icon.setAttribute("aria-describedby", id);
+            var svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("class", "mc-send-error-icon"); svg.setAttribute("viewBox", "0 0 20 20");
+            svg.setAttribute("aria-hidden", "true"); svg.setAttribute("focusable", "false");
+            var circle = doc.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", "10"); circle.setAttribute("cy", "10"); circle.setAttribute("r", "7.5");
+            var path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", "M10 5.5v5M10 14h.01"); svg.appendChild(circle); svg.appendChild(path);
+            var tooltip = makeNode(doc, "span", "mc-send-error-tooltip");
+            tooltip.id = id; tooltip.setAttribute("role", "tooltip"); setText(tooltip, reason);
+            icon.appendChild(svg); icon.appendChild(tooltip); return icon;
+        }
+        async function delayPoll() {
+            clearTimeout(delayTimer); delayTimer = null;
+            if (destroyed || denied || doc.hidden) return;
+            detailItems.forEach(function (message) {
+                if (!message.delayedReply) return;
+                var node = delayNodes.get(Number(message.id));
+                if (node) setText(node, delayStatus(message.delayedReply));
+            });
+            delayTimer = setTimeout(function () { delayPoll().catch(function () {}); }, 1000);
+            if (delayPolling) return;
+            delayPolling = true;
+            try {
+                var now = performance.now();
+                if (now - delayLastList >= 5000) { delayLastList = now; await loadList(true); }
+                if (destroyed || denied || doc.hidden || !selected || delegated) return;
+                var active = detailItems.some(function (m) { return m.delayedReply && ["WAITING", "SENDING"].includes(m.delayedReply.status); });
+                if (now - delayLastDetail < (active ? 2000 : 5000) || detailStatus !== "ready") return;
+                delayLastDetail = now;
+                var ctx = reviewContext(), seq = detailSeq;
+                var data = await requestJson(detailUrl(selected.contactId));
+                if (!sameContext(ctx, false) || seq !== detailSeq) return;
+                if (!data || data.accessLevel !== "READ") { clearSelection(); return; }
+                var old = JSON.stringify(detailItems, function (key, value) { return key === "serverNowMs" ? undefined : value; });
+                detailItems = mergeMessages(data.items || [], detailItems);
+                if (JSON.stringify(detailItems, function (key, value) { return key === "serverNowMs" ? undefined : value; }) !== old) renderConversation();
+            } finally { delayPolling = false; }
+        }
+        function resumeDelayPoll() {
+            clearTimeout(delayTimer); delayTimer = null;
+            if (doc.hidden || destroyed || denied) return;
+            delayLastList = -Infinity; delayLastDetail = -Infinity;
+            delayPoll().catch(function () {});
+        }
 
         function releaseDelegated() {
             if (delegated) delegated.unmount();
@@ -828,6 +891,12 @@
                 var heading = makeNode(doc, "span", "mc-person-heading");
                 var name = makeNode(doc, "strong"); setText(name, (item.name || "").trim() || "未填写姓名");
                 name.setAttribute("title", name.textContent); heading.appendChild(name); main.appendChild(heading);
+                if (Number(item.failedCount) > 0) {
+                    var tooltipId = "reader-delay-list-" + Number(item.contactId);
+                    heading.appendChild(delayErrorNode(tooltipId, "有 " + Number(item.failedCount) + " 封邮件发送异常，打开会话查看", true));
+                    main.setAttribute("aria-describedby", tooltipId);
+                    main.setAttribute("aria-label", name.textContent + "；存在发送异常");
+                }
                 var account = makeNode(doc, "small"); setText(account, (item.accountCodes || []).join("、")); main.appendChild(account);
                 if (item.accessLevel === "FULL" && item.email) appendText(main, item.email);
                 var subject = makeNode(doc, "small");
@@ -904,6 +973,7 @@
         function renderConversation() {
             renderReview();
             messages.replaceChildren();
+            delayNodes.clear();
             renderIdentity();
             if (!selected) {
                 messages.appendChild(statusNode(doc, "mc-empty", COPY.noSelection));
@@ -940,6 +1010,17 @@
                 setText(time, formatTime(message && message.eventAt));
                 head.appendChild(direction);
                 head.appendChild(time);
+                var job = message.delayedReply;
+                if (["FAILED", "UNKNOWN"].includes(message.sendStatus)) {
+                    head.appendChild(delayErrorNode("reader-delay-error-" + message.source + "-" + Number(message.id),
+                        job && job.publicErrorMessage || (message.sendStatus === "UNKNOWN" ? "发送结果待确认，请勿重复发送" : "邮件发送失败，请联系管理员"), false));
+                } else if (job) {
+                    var badge = makeNode(doc, "span", "mc-badge");
+                    if (["WAITING", "SENDING"].includes(job.status)) badge.dataset.tone = "pending";
+                    if (job.status === "SENT") badge.dataset.tone = "success";
+                    setText(badge, { WAITING: "等待发送", SENDING: "正在发送", CANCELLED: "已撤回", SENT: "已发送" }[job.status] || "状态待确认");
+                    head.appendChild(badge);
+                }
                 var subject = makeNode(doc, "h3");
                 setText(subject, message && message.subject ? message.subject : "");
                 var body = makeNode(doc, "div", "mc-body");
@@ -948,6 +1029,15 @@
                 article.appendChild(subject);
                 article.appendChild(body);
                 appendMailTags(doc, article, message);
+                if (job) {
+                    var footer = makeNode(doc, "footer", "mc-delay-footer");
+                    var actions = makeNode(doc, "span", "mc-delay-actions");
+                    actions.dataset.delayId = String(job.id);
+                    var countdown = makeNode(doc, "span", "mc-delay-status");
+                    countdown.dataset.role = "delay-countdown"; setText(countdown, delayStatus(job));
+                    delayNodes.set(Number(job.id), countdown);
+                    actions.appendChild(countdown); footer.appendChild(actions); article.appendChild(footer);
+                }
                 timeline.appendChild(article);
             });
             messages.appendChild(timeline);
@@ -1043,6 +1133,7 @@
                     delegated = global.MailboxChat.mount(delegatedHost, {
                         mode: "delegated-conversation", contactId: Number(contactId),
                         sessionUser: sessionUser.username,
+                        accessLevel: "FULL",
                         summary: Object.assign({}, selected),
                         draftId: openDraft && openDraft.kind === "MANUAL" ? openDraft.id : null,
                         onAccessChanged: function () {
@@ -1232,8 +1323,8 @@
             }).catch(function () { /* requestJson already handles session expiry and revoked access */ })
                 .finally(function () { accessCheck = null; });
         }
-        function onFocus() { checkCurrentAccess(); }
-        function onVisibilityChange() { checkCurrentAccess(); }
+        function onFocus() { checkCurrentAccess(); resumeDelayPoll(); }
+        function onVisibilityChange() { checkCurrentAccess(); resumeDelayPoll(); }
 
         function start() {
             root.addEventListener("click", onClick);
@@ -1254,10 +1345,12 @@
             renderConversation();
             loadList();
             loadPendingCount(); loadDraftCount();
+            delayTimer = setTimeout(function () { delayPoll().catch(function () {}); }, 1000);
         }
 
         function destroy() {
             if (destroyed) return;
+            clearTimeout(delayTimer); delayTimer = null; delayClocks.clear();
             restoreReadDetail();
             destroyed = true;
             generation += 1;
