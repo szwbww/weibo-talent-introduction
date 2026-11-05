@@ -4688,7 +4688,8 @@ async function toggleRunDetail(taskType, executionId) {
 
 async function fetchRunList(taskType, generation) {
     try {
-        const url = `${contextPath}/api/task-progress/${taskType}/executions?limit=10`;
+        const limit = taskType === "EXPERT_DISCOVERY" ? 50 : 10;
+        const url = `${contextPath}/api/task-progress/${taskType}/executions?limit=${limit}`;
         const runs = await fetchJsonForCurrentTaskModal(taskType, generation, url);
         if (!runs) return;
         const selectedRun = selectExecutionForCurrentModal(runs, currentTaskModal);
