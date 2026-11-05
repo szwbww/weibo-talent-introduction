@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-11-05T00:46:31+08:00
 - Current child: 01
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 2 | WAITING_FOR_AGENT | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | — | 0 | — | — | — | Epoch 1 prerequisite pause preserved; authorized stale-registration cleanup resolved identity gate |
+| 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 2 | LIGHT_PASS | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 0 | — | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 89a56a9ee6d43fb78c9e76440a3d2869c94345b1 | MaterialReadVerifier COMPLETE_CHILD; fresh focused 60 and dual-MySQL 2 passed, zero skipped |
 | 02 | docs/plans/2026-11-05/expert-material-filter-02-ingress.md | sha256:1d1792fabfafe46b3be0f5bc728d8b24c712eb0690a713d4f75a34140b5460e1 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 | 03 | docs/plans/2026-11-05/expert-material-filter-03-projections.md | sha256:ef85056d991448e846a729ca2fdff8d8ab83869cfc645ee36181d5d72abca2ed | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 
@@ -44,6 +44,8 @@
 
 ## Agent Identities
 - 01 epoch 1 implementer: MaterialReadImplementer; acquired successfully; agent_attempt=0. Product base 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b; evidence HEAD at dispatch 64a5cb2dd9a650e79879acd2d038a3d59a94d941.
+- 01 epoch 2 implementer: MaterialReadEpoch2; acquired successfully; agent_attempt=0. Product base 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b; evidence HEAD at dispatch e6237f9e2339f496b1bd7495b2ac2a980f6147e3.
+- 01 epoch 2 verifier attempt 1: MaterialReadVerifier; distinct from both child writers; acquired successfully; agent_attempt=0. Review boundary 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b..51268418bfeb0dd666c1fcc079cbb6f4cb239c4a.
 
 ## Pause record
 - Epoch 1 paused before implementation. The helper resolves every registered worktree with strict=True; unrelated absent path `/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b` makes it exit 1.
