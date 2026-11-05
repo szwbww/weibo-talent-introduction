@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.llm.service.TrustReplySourceType
 import com.weibo.talentintroduction.llm.service.VerifiedTrustReplyAssembly
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.controller.ConversationManualRichReplyRequest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -234,7 +235,7 @@ class DelayedManualReplySnapshotTest {
     }
 
     @Test
-    fun `legacy conversation reply without a saved draft fails closed`() {
+    fun `legacy conversation without original input fails closed`() {
         val conversation = prepared(
             source = ManualRichSendSource(
                 contact = contact(),
@@ -259,6 +260,81 @@ class DelayedManualReplySnapshotTest {
         assertThrows(DelayedManualReplySnapshotException::class.java) {
             DelayedManualReplySnapshotFactory.fromPrepared(conversation)
         }
+    }
+
+    private fun conversationPrepared(scope: String? = null, anchor: Long? = null): PreparedManualReply {
+        val requestId = "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
+        val base = prepared(payload = sendPayload(null, "MAIL_RECORD:900", requestId))
+        return base.copy(
+            source = inboundSource().copy(inboundProcessingId = null, inboundRecord = null,
+                anchorMailRecordId = 900, requestId = requestId),
+            originalInput = null,
+            originalConversationInput = ConversationManualRichReplyRequest(
+                requestId, scope, anchor, " $unicodeSubject ", unicodeHtml, unicodeText)
+        )
+    }
+
+    @Test fun `optional conversation source roundtrips separately from frozen authority and fingerprint`() {
+        val service = org.mockito.Mockito.mock(ManualReplySendAttemptService::class.java, org.mockito.Mockito.CALLS_REAL_METHODS)
+        val original = conversationPrepared()
+        val fingerprint = service.computeFingerprint(original.payload)
+        for (scope in listOf(null, "", " ", "sender-1")) for (anchor in listOf(null, 900L)) {
+            val prepared = conversationPrepared(scope, anchor)
+            val snapshot = DelayedManualReplySnapshotFactory.fromPrepared(prepared)
+            val decoded = DelayedManualReplySnapshotCodec.decode(DelayedManualReplySnapshotCodec.encode(snapshot))
+            val restore = decoded.restore as DelayedLegacyRestore
+            assertEquals(prepared.originalConversationInput, restore.originalConversationInput)
+            assertEquals(900L, decoded.source.anchorMailRecordId)
+            assertEquals(original.payload.sourceAnchor, decoded.payload.sourceAnchor)
+            assertEquals(fingerprint.fullHex, service.computeFingerprint(prepared.payload).fullHex)
+            assertEquals(fingerprint.shortKey, service.computeFingerprint(prepared.payload).shortKey)
+            assertNull(decoded.payload.inboundProcessingId)
+            assertNull(restore.originalInput)
+        }
+    }
+
+    @Test fun `conversation restore rejects mixed mismatched and coerced source input`() {
+        val original = conversationPrepared()
+        val snapshot = DelayedManualReplySnapshotFactory.fromPrepared(original)
+        val restore = snapshot.restore as DelayedLegacyRestore
+        val input = requireNotNull(restore.originalConversationInput)
+        val invalid = listOf(
+            restore.copy(originalInput = prepared().originalInput),
+            restore.copy(inboundProcessingId = 100),
+            restore.copy(originalConversationInput = null),
+            restore.copy(originalConversationInput = input.copy(accountScope = "foreign")),
+            restore.copy(originalConversationInput = input.copy(anchorMailRecordId = 901)),
+            restore.copy(originalConversationInput = input.copy(anchorMailRecordId = 0)),
+            restore.copy(originalConversationInput = input.copy(requestId = UUID.randomUUID().toString())),
+            restore.copy(originalConversationInput = input.copy(draftRef = MailReplyDraftRef(1, 1))),
+            restore.copy(originalConversationInput = input.copy(htmlBody = "<b>changed</b>")),
+            restore.copy(originalConversationInput = input.copy(textBody = "changed")),
+            restore.copy(originalConversationInput = input.copy(attachmentIds = listOf(UUID.randomUUID().toString())))
+        )
+        invalid.forEach { bad -> assertThrows(DelayedManualReplySnapshotException::class.java) {
+            DelayedManualReplySnapshotCodec.encode(snapshot.copy(restore = bad))
+        } }
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        for (value in listOf("1.5", "9223372036854775808", "\"900\"", "true")) {
+            val tree = mapper.readTree(DelayedManualReplySnapshotCodec.encode(snapshot))
+            (tree["restore"]["originalConversationInput"] as com.fasterxml.jackson.databind.node.ObjectNode)
+                .set<com.fasterxml.jackson.databind.JsonNode>("anchorMailRecordId", mapper.readTree(value))
+            assertThrows(DelayedManualReplySnapshotException::class.java) { DelayedManualReplySnapshotCodec.decode(tree.toString()) }
+        }
+        val inbound = DelayedManualReplySnapshotFactory.fromPrepared(prepared())
+        assertThrows(DelayedManualReplySnapshotException::class.java) {
+            DelayedManualReplySnapshotCodec.encode(inbound.copy(restore =
+                (inbound.restore as DelayedLegacyRestore).copy(originalConversationInput = input)))
+        }
+    }
+
+    @Test fun `historical inbound missing restore request remains delivery compatible`() {
+        val snapshot = DelayedManualReplySnapshotFactory.fromPrepared(prepared())
+        val tree = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readTree(DelayedManualReplySnapshotCodec.encode(snapshot))
+        (tree["restore"] as com.fasterxml.jackson.databind.node.ObjectNode).remove(listOf("originalInput", "originalConversationInput"))
+        val decoded = DelayedManualReplySnapshotCodec.decode(tree.toString())
+        assertEquals(snapshot.payload, decoded.payload)
+        assertNull((decoded.restore as DelayedLegacyRestore).originalInput)
     }
 
     // ------------------------------------------------------------------

@@ -18,6 +18,7 @@ async function boot(extra={}, selected=true) {
     const h=await H.bootChat({ clock:time, performance:{now:time.now}, conversations:{items:[H.expertA({failedCount:2}),H.expertB()],total:2}, contact:H.contactA(), route(url,method,raw,entry,next) {
         if (url.includes("/delayed-replies?")) return Promise.resolve([]);
         if (/\/delayed-replies\/77/.test(url)) {
+            if (url.endsWith("/restore") && state.restore) return typeof state.restore === "function" ? state.restore() : Promise.resolve(state.restore);
             if (method === "POST") { state.posts.push(JSON.parse(raw)); if (state.conflict) return Promise.reject(Object.assign(Error("代次已变化"),{status:409})); state.job={...state.job,status:"CANCELLED",revision:2,canCancel:false}; }
             return Promise.resolve({...state.job,serverNowMs:100000+time.now()});
         }
@@ -250,3 +251,115 @@ test("missing persisted draft remains editable when the real target API returns 
     assert.doesNotMatch(h.host.textContent, /Cannot read properties of null/);
     finish(h);
 });
+
+function outboundRestore() {
+    const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+    return { id: 77, expectedCancelledRevision: 2, originKind: "LEGACY", sourceKind: "OUTBOUND", anchorMailRecordId: 900,
+        originalConversationInput: { requestId: "1b4e28ba-2fa1-11d2-883f-0016d3cca427", accountScope: " ",
+            anchorMailRecordId: null, subject: "Original subject", textBody: "Raw ${expertName}", htmlBody: "<p>Raw ${expertName}</p>",
+            attachmentIds: ids, draftRef: null },
+        outboundAttachments: ids.map((id, i) => ({ id, filename: `${i + 1}.txt`, contentType: "text/plain", byteLength: 3,
+            sha256: String(i).repeat(64) })),
+        attachmentDownloads: Object.fromEntries(ids.map(id => [id, `/api/mail/conversations/1/outbound-attachments/${id}/download`])) };
+}
+function editorOf(h) { return h.host.querySelector('[data-role="mc-editor"]'); }
+function inputEvent(h) { editorOf(h).dispatchEvent(new H.MiniEvent("input", { bubbles: true })); }
+for (const edit of ["unchanged", "text", "format", "attachment"]) {
+    test(`outbound cancelled source restores existing renderer and sends ${edit} without draft rebinding`, async () => {
+        const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+        h.state.restore = outboundRestore();
+        // Exercise the real conversation adapter as well as the mailbox builder.
+        const sent = [];
+        h.sandbox.submitManualRichReply = async (url, body) => { sent.push({ url, body: JSON.parse(JSON.stringify(body)) }); return false; };
+        vm.runInContext(H.extractFn("mcHostSendConversationRichReply", app), h.sandbox);
+        H.click(button(h, "mc-delay-restore")); await H.flush();
+        assert.match(editorOf(h).textContent, /Raw \$\{expertName\}/);
+        assert.deepEqual(Array.from(h.host.querySelectorAll('[data-role="outbound-draft-files"] .outbound-file-name'), n => n.textContent), ["1.txt", "2.txt"]);
+        const draftRequests = h.calls.api.filter(x => x.url.includes("/drafts") && x.method !== "GET").length;
+        if (edit === "text") editorOf(h).innerHTML = "<p>Current edited text</p>";
+        if (edit === "format") editorOf(h).innerHTML = "<p><b>Raw ${expertName}</b></p>";
+        if (edit === "text" || edit === "format") inputEvent(h);
+        if (edit === "attachment") H.click(h.host.querySelector('[data-role="outbound-draft-files"] [data-action="mc-remove-attachment"]'));
+        await h.time.advance(1000);
+        const beforeSend = h.calls.api.length;
+        H.click(button(h, "mc-send-manual")); await H.flush();
+        assert.equal(sent.length, 1, JSON.stringify(h.calls.status));
+        const body = sent[0].body;
+        assert.match(sent[0].url, /conversations\/1\/manual-rich-reply$/);
+        assert.equal(body.draftRef, undefined);
+        assert.equal(body.anchorMailRecordId, 900, "newer timeline anchors do not replace frozen actual source");
+        assert.equal(body.accountScope, " ");
+        assert.equal(body.delayExpectedRevision, 2);
+        if (edit === "unchanged") {
+            assert.equal(body.requestId, h.state.restore.originalConversationInput.requestId);
+            assert.equal(body.htmlBody, h.state.restore.originalConversationInput.htmlBody);
+            assert.equal(body.textBody, h.state.restore.originalConversationInput.textBody);
+        } else {
+            assert.notEqual(body.requestId, h.state.restore.originalConversationInput.requestId);
+            assert.equal(body.htmlBody, editorOf(h).innerHTML);
+        }
+        assert.deepEqual(body.attachmentIds, h.state.restore.originalConversationInput.attachmentIds.slice(edit === "attachment" ? 1 : 0));
+        assert.equal(h.calls.api.filter(x => x.url.includes("/drafts") && x.method !== "GET").length, draftRequests);
+        assert.equal(h.calls.api.slice(beforeSend).filter(x => /\/drafts\/\d+/.test(x.url)).length, 0);
+        assert.equal(h.state.restore.originalConversationInput.anchorMailRecordId, null);
+        finish(h);
+    });
+}
+test("restored local source never overwrites ordinary draft or unsaved input", async () => {
+    const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+    h.state.restore = outboundRestore();
+    editorOf(h).innerHTML = "<p>New operator input</p>"; inputEvent(h);
+    await h.time.advance(1000);
+    H.click(button(h, "mc-delay-restore")); await H.flush();
+    assert.match(editorOf(h).textContent, /New operator input/);
+    assert.ok(h.calls.status.some(x => /未覆盖/.test(x.message)));
+    assert.equal(h.state.job.status, "CANCELLED");
+    assert.equal(h.state.restore.originalConversationInput.textBody, "Raw ${expertName}");
+    finish(h);
+});
+for (const change of ["expert", "unmount", "editor", "revision"]) {
+    test(`late outbound restore cannot overwrite after ${change}`, async () => {
+        const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+        let resolve;
+        h.state.restore = () => new Promise(r => { resolve = r; });
+        H.click(button(h, "mc-delay-restore")); await H.flush();
+        assert.ok(resolve);
+        if (change === "expert") H.click(h.host.querySelector('[data-action="mc-select-expert"][data-contact-id="2"]'));
+        if (change === "unmount") finish(h);
+        if (change === "editor") { editorOf(h).innerHTML = "<p>Late local input</p>"; inputEvent(h); }
+        if (change === "revision") { h.state.job = { ...h.state.job, revision: 3, status: "WAITING" }; await h.time.advance(5000); }
+        resolve(outboundRestore()); await H.flush();
+        assert.doesNotMatch(h.host.textContent, /Raw \$\{expertName\}/);
+        if (change === "editor") assert.match(editorOf(h).textContent, /Late local input/);
+        if (change !== "unmount") finish(h);
+    });
+}
+
+for (const editedDuringMount of [false, true]) {
+    test(`inbound restore accepts its own editor mount but rejects intervening input: ${editedDuringMount}`, async () => {
+        const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+        h.state.restore = { id: 77, originKind: "LEGACY", sourceKind: "INBOUND",
+            inboundProcessingId: 101, expectedCancelledRevision: 2, originalInput: { htmlBody: "<p>Original</p>" } };
+        let finishMount, accepted;
+        h.sandbox.mcHostMountUnmatchedDetail = (host) => {
+            host.innerHTML = '<div id="unmatchedDetailPanel"><div id="manualRichReplyEditor" contenteditable="true"></div></div>';
+            return new Promise(resolve => { finishMount = resolve; });
+        };
+        h.sandbox.mcHostRestoreDelayedReply = async (contact, id, account, current, openEditor) => {
+            assert.equal(current(), true);
+            await openEditor(101);
+            accepted = current();
+        };
+        H.click(button(h, "mc-delay-restore")); await H.flush();
+        assert.ok(finishMount, "real mailbox mount invoked the existing inbound host");
+        if (editedDuringMount) {
+            const editor = h.host.querySelector("#manualRichReplyEditor");
+            editor.innerHTML = "<p>New legacy input</p>";
+            editor.dispatchEvent(new H.MiniEvent("input", { bubbles: true }));
+        }
+        finishMount(); await H.flush();
+        assert.equal(accepted, !editedDuringMount);
+        if (editedDuringMount) assert.match(h.host.textContent, /New legacy input/);
+        finish(h);
+    });
+}

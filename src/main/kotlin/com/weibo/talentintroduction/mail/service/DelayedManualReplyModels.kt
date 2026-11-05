@@ -12,13 +12,14 @@ import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
 import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
 import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
+import com.weibo.talentintroduction.mail.controller.ConversationManualRichReplyRequest
 import java.util.UUID
 
 /**
  * fast-p 01（总 I-1/I-3/I-4/I-10）：人工回复延迟任务的持久模型。
  *
- * 本文件只声明服务端内部构造的值对象与快照编解码。不引用后续阶段的 service/controller，
- * 也不接受客户端传入的 verified 字段。任务时间一律为 epoch 毫秒；本文件不做时钟读取。
+ * 仅持久化显式白名单字段；原请求仅用于恢复，不接受客户端传入的 verified 字段。
+ * 任务时间一律为 epoch 毫秒；本文件不做时钟读取。
  */
 
 /** 固定业务常量：首次受理到可投递的等待时间。不可通过配置修改。 */
@@ -189,7 +190,7 @@ data class DelayedReplyAssemblySnapshot(
 
 /** 旧入口恢复：保留原始输入供原详情页显式恢复，不强塞进普通草稿 context。 */
 data class DelayedLegacyRestore(
-    val inboundProcessingId: Long,
+    val inboundProcessingId: Long?,
     val subject: String,
     val html: String,
     val text: String,
@@ -201,7 +202,8 @@ data class DelayedLegacyRestore(
     val meetingEvent: DelayedMeetingEventSnapshot?,
     val outboundAttachments: List<OutboundAttachmentSnapshot>,
     /** Restore-only request; historical v1 snapshots omit it. Never used as delivery evidence. */
-    val originalInput: PendingManualRichReplyRequest? = null
+    val originalInput: PendingManualRichReplyRequest? = null,
+    val originalConversationInput: ConversationManualRichReplyRequest? = null
 ) : DelayedReplyRestore
 
 /** restore 判别联合；未知 kind 由 Jackson 解码失败，即 fail closed。 */
@@ -285,13 +287,15 @@ object DelayedManualReplySnapshotCodec {
         .configure(DeserializationFeature.ACCEPT_FLOAT_AS_INT, false)
 
     // Tighten only the newly added restore request; historical frozen-payload decoding stays unchanged.
-    private val originalInputReader = mapper.copy().apply {
+    private val originalInputMapper = mapper.copy().apply {
         disable(com.fasterxml.jackson.databind.MapperFeature.ALLOW_COERCION_OF_SCALARS)
         coercionConfigFor(com.fasterxml.jackson.databind.type.LogicalType.Textual)
             .setCoercion(com.fasterxml.jackson.databind.cfg.CoercionInputShape.Integer, com.fasterxml.jackson.databind.cfg.CoercionAction.Fail)
             .setCoercion(com.fasterxml.jackson.databind.cfg.CoercionInputShape.Float, com.fasterxml.jackson.databind.cfg.CoercionAction.Fail)
             .setCoercion(com.fasterxml.jackson.databind.cfg.CoercionInputShape.Boolean, com.fasterxml.jackson.databind.cfg.CoercionAction.Fail)
-    }.readerFor(PendingManualRichReplyRequest::class.java)
+    }
+    private val originalInputReader = originalInputMapper.readerFor(PendingManualRichReplyRequest::class.java)
+    private val originalConversationInputReader = originalInputMapper.readerFor(ConversationManualRichReplyRequest::class.java)
 
     fun encode(snapshot: DelayedManualReplySnapshot): String {
         validate(snapshot)
@@ -311,6 +315,9 @@ object DelayedManualReplySnapshotCodec {
             val root = mapper.readTree(json)
             root.path("restore").get("originalInput")?.takeUnless { it.isNull }?.let {
                 originalInputReader.readValue<PendingManualRichReplyRequest>(it.traverse())
+            }
+            root.path("restore").get("originalConversationInput")?.takeUnless { it.isNull }?.let {
+                originalConversationInputReader.readValue<ConversationManualRichReplyRequest>(it.traverse())
             }
             mapper.treeToValue(root, DelayedManualReplySnapshot::class.java)
         } catch (ex: Exception) {
@@ -473,9 +480,37 @@ object DelayedManualReplySnapshotCodec {
                 requireHex64(restore.approvedContextToken, "restore.approvedContextToken")
             }
             is DelayedLegacyRestore -> {
-                requirePositive(restore.inboundProcessingId, "restore.inboundProcessingId")
                 if (restore.inboundProcessingId != payload.inboundProcessingId) {
                     fail("restore.inboundProcessingId must match payload.inboundProcessingId")
+                }
+                if (payload.inboundProcessingId != null) {
+                    requirePositive(payload.inboundProcessingId, "restore.inboundProcessingId")
+                    if (restore.originalConversationInput != null) fail("Inbound restore cannot carry conversation input")
+                } else {
+                    if (restore.originalInput != null) fail("Conversation restore cannot carry inbound input")
+                    val input = restore.originalConversationInput ?: fail("Original conversation request is required")
+                    if (input.draftRef != null) fail("Legacy conversation cannot carry a draft reference")
+                    requireUuid(input.requestId.trim(), "restore.originalConversationInput.requestId")
+                    if (UUID.fromString(input.requestId.trim()).toString() != payload.idempotencyRequestId)
+                        fail("Conversation request identity does not match frozen payload")
+                    if ((input.accountScope?.length ?: 0) > MAX_ACCOUNT_CODE_LENGTH ||
+                        (!input.accountScope.isNullOrBlank() && input.accountScope != payload.accountCode))
+                        fail("Conversation account scope does not match frozen account")
+                    input.anchorMailRecordId?.let {
+                        requirePositive(it, "restore.originalConversationInput.anchorMailRecordId")
+                        if (payload.sourceAnchor != "MAIL_RECORD:$it") fail("Conversation anchor does not match frozen source")
+                    }
+                    requireText(input.subject.trim(), "restore.originalConversationInput.subject", MAX_SUBJECT_LENGTH)
+                    requireNonEmpty(input.htmlBody, "restore.originalConversationInput.htmlBody")
+                    if (input.subject.trim() != restore.subject || input.htmlBody != restore.html ||
+                        input.textBody.orEmpty() != restore.text) fail("Conversation raw content does not match restore")
+                    if (input.attachmentIds != payload.outboundAttachments.map { it.id } ||
+                        restore.outboundAttachments != payload.outboundAttachments)
+                        fail("Conversation attachment order does not match frozen payload")
+                    if (restore.qaRuleIds.isNotEmpty() || restore.ragFactCodes.isNotEmpty() ||
+                        restore.assembly != null || restore.templateTextBody != null ||
+                        restore.calendarAttachment != null || restore.meetingEvent != null)
+                        fail("Conversation restore cannot carry inbound evidence")
                 }
                 requireText(restore.subject, "restore.subject", MAX_SUBJECT_LENGTH)
                 requireNonEmpty(restore.html, "restore.html")
@@ -631,8 +666,7 @@ object DelayedManualReplySnapshotCodec {
  * 人 id 重新读取实体，信封内容只来自冻结正文与 ICS。
  *
  * 该工厂不做时钟、数据库或网络访问；输出仍需经 [DelayedManualReplySnapshotCodec.encode]
- * 的严格校验。LEGACY 恢复仅适用于来信路径（01 的 `DelayedLegacyRestore` 以真实来信 id 为
- * 键）；无草稿引用的会话回信无法在不丢失原请求上下文的前提下被恢复，直接 fail closed。
+ * 的严格校验。LEGACY 分别保存来信或会话原输入，实际投递来源始终来自冻结 payload/source。
  */
 internal object DelayedManualReplySnapshotFactory {
 
@@ -750,9 +784,9 @@ internal object DelayedManualReplySnapshotFactory {
             )
         }
         val inboundId = prepared.payload.inboundProcessingId
-            ?: throw DelayedManualReplySnapshotException(
-                "Legacy conversation replies require a saved draft before delayed delivery"
-            )
+        if (inboundId != null && prepared.originalInput == null ||
+            inboundId == null && prepared.originalConversationInput == null)
+            throw DelayedManualReplySnapshotException("Original legacy request is required")
         return DelayedLegacyRestore(
             inboundProcessingId = inboundId,
             subject = prepared.rawSubject,
@@ -765,8 +799,8 @@ internal object DelayedManualReplySnapshotFactory {
             calendarAttachment = prepared.payload.calendarAttachment,
             meetingEvent = meetingEventOf(prepared.payload.meetingEvent),
             outboundAttachments = prepared.payload.outboundAttachments,
-            originalInput = prepared.originalInput
-                ?: throw DelayedManualReplySnapshotException("Original legacy request is required")
+            originalInput = prepared.originalInput,
+            originalConversationInput = prepared.originalConversationInput
         )
     }
 

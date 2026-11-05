@@ -39,6 +39,66 @@ class DelayedManualReplyControllerTest {
         row(DelayedWorkerFixture.row())
     }
 
+    private fun outboundRow(): DelayedManualReplyRow {
+        val original = DelayedWorkerFixture.snapshot()
+        val request = ConversationManualRichReplyRequest("1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+            accountScope = " ", subject = "Original", htmlBody = "<p>Original</p>", textBody = "Original")
+        val snapshot = original.copy(
+            payload = original.payload.copy(inboundProcessingId = null, sourceAnchor = "MAIL_RECORD:900",
+                idempotencyRequestId = request.requestId),
+            source = original.source.copy(inboundProcessingId = null, anchorMailRecordId = 900,
+                sourceMessageId = "<anchor@test>", smtpInReplyTo = "<anchor@test>"),
+            restore = DelayedLegacyRestore(null, request.subject, request.htmlBody, request.textBody!!,
+                emptyList(), emptyList(), null, null, null, null, emptyList(), null, request))
+        return DelayedWorkerFixture.row(snapshot, DelayedManualReplyStatus.CANCELLED)
+    }
+
+    private val outboundSql = """SELECT message_id FROM mail_record WHERE id=:source AND expert_contact_id=:contact
+                           AND sender_account_code=:account AND direction='OUTBOUND' AND send_status='SENT'
+                           AND sender_account_code <> 'SIMULATOR_NOOP'"""
+    private val outboundParams = mapOf("source" to 900L, "contact" to 1L, "account" to "sender")
+
+    @Test fun `outbound restore returns optional original input and separately validated actual anchor`() {
+        row(outboundRow())
+        Mockito.`when`(jdbc.queryForList(outboundSql, outboundParams)).thenReturn(listOf(mapOf("message_id" to "<anchor@test>")))
+        val json = mvc.perform(get("$base/restore").session(session())).andExpect(status().isOk)
+            .andExpect(jsonPath("$.sourceKind").value("OUTBOUND"))
+            .andExpect(jsonPath("$.anchorMailRecordId").value(900))
+            .andExpect(jsonPath("$.inboundProcessingId").doesNotExist())
+            .andExpect(jsonPath("$.originalConversationInput.anchorMailRecordId").doesNotExist())
+            .andExpect(jsonPath("$.originalConversationInput.accountScope").value(" "))
+            .andExpect(jsonPath("$.originalConversationInput.draftRef").doesNotExist())
+            .andReturn().response.contentAsString
+        for (privateField in listOf("snapshotJson", "dispatchToken", "smtpPassword", "trusted", "/private/"))
+            assertFalse(json.contains(privateField))
+        Mockito.verify(jdbc).queryForList(outboundSql, outboundParams)
+    }
+
+    @Test fun `outbound restore rejects absent reassigned non sent simulator and changed message source`() {
+        row(outboundRow())
+        // All membership/direction/status/account predicates are part of the actual current-source SQL.
+        Mockito.`when`(jdbc.queryForList(outboundSql, outboundParams)).thenReturn(emptyList())
+        mvc.perform(get("$base/restore").session(session())).andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.originalConversationInput").doesNotExist())
+        Mockito.`when`(jdbc.queryForList(outboundSql, outboundParams)).thenReturn(listOf(mapOf("message_id" to "<new@test>")))
+        mvc.perform(get("$base/restore").session(session())).andExpect(status().isUnprocessableEntity)
+        Mockito.verify(jdbc, Mockito.times(2)).queryForList(outboundSql, outboundParams)
+    }
+
+    @Test fun `outbound restore requires original owner FULL or administrator`() {
+        row(outboundRow())
+        mvc.perform(get("$base/restore").session(session("user1"))).andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.outboundAttachments").doesNotExist())
+        row(outboundRow().copy(actorUsername = "user1"))
+        Mockito.`when`(jdbc.queryForList(outboundSql, outboundParams)).thenReturn(listOf(mapOf("message_id" to "<anchor@test>")))
+        mvc.perform(get("$base/restore").session(session("user1"))).andExpect(status().isOk)
+        Mockito.doThrow(MailReadAccessDeniedException("MAIL_WRITE_FORBIDDEN", "无权操作"))
+            .`when`(guard).requireFull("user1", 1)
+        mvc.perform(get("$base/restore").session(session("user1"))).andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.originalConversationInput").doesNotExist())
+        mvc.perform(get("$base/restore").session(session())).andExpect(status().isOk)
+    }
+
     @Test fun `public projection has exact fields and no original input credentials or snapshot`() {
         val json = mvc.perform(get(base).session(session())).andExpect(status().isOk)
             .andExpect(jsonPath("$.canCancel").value(true)).andReturn().response.contentAsString
@@ -54,6 +114,7 @@ class DelayedManualReplyControllerTest {
         mvc.perform(get("$base/restore").session(session())).andExpect(status().isOk)
             .andExpect(jsonPath("$.expectedCancelledRevision").value(1))
             .andExpect(jsonPath("$.inboundProcessingId").value(100))
+            .andExpect(jsonPath("$.sourceKind").value("INBOUND"))
             .andExpect(jsonPath("$.originalInput.meeting.zoneId").value("Asia/Shanghai"))
             .andExpect(jsonPath("$.originalInput.meeting.startLocal").value("2027-01-01T10:00"))
             .andExpect(jsonPath("$.originalInput.trustReplyAssembly.frameSnapshot.version").value("frame-v"))

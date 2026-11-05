@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.mail.controller.ConversationManualRichReplyRequest
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -523,7 +524,11 @@ class PendingMailOperationService(
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft,
-            reviewSendRef = reviewSendRef
+            reviewSendRef = reviewSendRef,
+            originalConversationInput = ConversationManualRichReplyRequest(
+                requestId, accountScope, anchorMailRecordId, subject, htmlBody, textBody,
+                operatorName, safetyWarningConfirmed, strongConfirmationText, attachmentIds, draftRef
+            )
         )
     }
 
@@ -634,7 +639,8 @@ class PendingMailOperationService(
         authenticatedUsername: String? = null,
         draftSendRef: ValidatedDraftSendRef? = null,
         reviewSendRef: MailReviewSendRef? = null,
-        originalInput: PendingManualRichReplyRequest? = null
+        originalInput: PendingManualRichReplyRequest? = null,
+        originalConversationInput: ConversationManualRichReplyRequest? = null
     ): PreparedManualReplyOutcome {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
@@ -890,7 +896,8 @@ class PendingMailOperationService(
                 rawTextBody = textBody,
                 draftSendRef = draftSendRef,
                 reviewSendRef = reviewSendRef,
-                originalInput = originalInput
+                originalInput = originalInput,
+                originalConversationInput = originalConversationInput
             )
         )
     }
@@ -916,7 +923,8 @@ class PendingMailOperationService(
         authenticatedUsername: String? = null,
         draftSendRef: ValidatedDraftSendRef? = null,
         reviewSendRef: MailReviewSendRef? = null,
-        originalInput: PendingManualRichReplyRequest? = null
+        originalInput: PendingManualRichReplyRequest? = null,
+        originalConversationInput: ConversationManualRichReplyRequest? = null
     ): PendingMailSendResult {
         val outcome = prepareManualRichSend(
             source = source,
@@ -933,7 +941,8 @@ class PendingMailOperationService(
             authenticatedUsername = authenticatedUsername,
             draftSendRef = draftSendRef,
             reviewSendRef = reviewSendRef,
-            originalInput = originalInput
+            originalInput = originalInput,
+            originalConversationInput = originalConversationInput
         )
         val prepared = when (outcome) {
             is PreparedManualReplyOutcome.Completed -> return outcome.result
@@ -2184,7 +2193,8 @@ internal data class PreparedManualReply(
     val rawTextBody: String?,
     val draftSendRef: ValidatedDraftSendRef?,
     val reviewSendRef: MailReviewSendRef?,
-    val originalInput: PendingManualRichReplyRequest? = null
+    val originalInput: PendingManualRichReplyRequest? = null,
+    val originalConversationInput: ConversationManualRichReplyRequest? = null
 )
 
 /**

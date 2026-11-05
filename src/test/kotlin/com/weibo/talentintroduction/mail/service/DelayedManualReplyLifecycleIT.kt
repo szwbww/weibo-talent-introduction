@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
+import com.weibo.talentintroduction.mail.controller.ConversationManualRichReplyRequest
 import com.weibo.talentintroduction.mail.repository.DelayedManualReplyRepository
 import com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository
 import com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository
@@ -130,6 +131,62 @@ class DelayedManualReplyLifecycleIT {
             qaRuleIds = emptyList(), ragFactCodes = emptyList(), assembly = null, templateTextBody = null,
             calendarAttachment = null, meetingEvent = null, outboundAttachments = emptyList()
         ))
+
+    private fun outboundSnapshot(anchor: Long = 10, account: String = ACCOUNT,
+        requestId: String = UUID.randomUUID().toString()): DelayedManualReplySnapshot {
+        val base = legacySnapshot("Original")
+        val input = ConversationManualRichReplyRequest(requestId, null, null, "Re: Test", "<p>Original</p>", "Original")
+        return base.copy(
+            payload = base.payload.copy(inboundProcessingId = null, sourceAnchor = "MAIL_RECORD:$anchor",
+                accountCode = account, idempotencyRequestId = requestId),
+            source = base.source.copy(inboundProcessingId = null, anchorMailRecordId = anchor, accountCode = account,
+                sourceMessageId = "<anchor@test>"),
+            restore = (base.restore as DelayedLegacyRestore).copy(inboundProcessingId = null, originalConversationInput = input))
+    }
+
+    @Test fun `outbound new UUID cannot bypass waiting sending or unknown source lock`() {
+        val original = outboundSnapshot()
+        val queued = queued(delays.enqueue(original, OWNER))
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") { delays.enqueue(outboundSnapshot(), OWNER) }
+        makeDuePast(queued.id)
+        val claim = requireNotNull(delays.claim(queued.id))
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") { delays.enqueue(outboundSnapshot(), OWNER) }
+        val claimedAt = requireNotNull(claim.job.claimedAtMs)
+        delays.recoverStale(claimedAt, claimedAt)
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") { delays.enqueue(outboundSnapshot(), OWNER) }
+        assertEquals(1L, count("delayed_manual_reply"))
+        assertEquals(1L, count("mail_send_attempt"))
+    }
+
+    @Test fun `distinct outbound anchors and accounts never merge nullable inbound sources`() {
+        jdbc.update("""INSERT INTO mail_record(id,expert_contact_id,direction,mail_type,sender_account_code,triggered_by,message_id,subject,body,send_status,sent_at,created_at)
+            VALUES(11,1,'OUTBOUND','INTRODUCTION','delayed','SYSTEM','<later@test>','Later','Later','SENT',NOW(3),NOW(3))""")
+        jdbc.update("""INSERT INTO mail_sender_account(account_code,sender_email,sender_name,smtp_host,smtp_port,smtp_username,smtp_password,imap_host,imap_port,imap_username,imap_password)
+            VALUES('other','other@example.test','Other','smtp.fixture',465,'other','pw','imap.fixture',993,'other','pw')""")
+        jdbc.update("""INSERT INTO mail_record(id,expert_contact_id,direction,mail_type,sender_account_code,triggered_by,message_id,subject,body,send_status,sent_at,created_at)
+            VALUES(12,1,'OUTBOUND','INTRODUCTION','other','SYSTEM','<other@test>','Other','Other','SENT',NOW(3),NOW(3))""")
+        val first = queued(delays.enqueue(outboundSnapshot(), OWNER))
+        val second = queued(delays.enqueue(outboundSnapshot(11), OWNER))
+        val third = queued(delays.enqueue(outboundSnapshot(12, "other"), OWNER))
+        assertEquals(3, setOf(first.id, second.id, third.id).size)
+        assertEquals(3L, count("delayed_manual_reply"))
+    }
+
+    @Test fun `outbound existing attempt cannot be adopted by another actor`() {
+        val original = outboundSnapshot()
+        val first = queued(delays.enqueue(original, OWNER))
+        failure(409, "DELAYED_REPLY_SOURCE_CONFLICT") { delays.enqueue(original, ADMIN) }
+        assertEquals("WAITING", job(first.id)["status"])
+        assertEquals(1L, count("delayed_manual_reply"))
+    }
+
+    @Test fun `corrupt unresolved outbound snapshot fails closed instead of becoming unrelated`() {
+        val first = queued(delays.enqueue(outboundSnapshot(), OWNER))
+        jdbc.update("UPDATE delayed_manual_reply SET snapshot_json='{}' WHERE id=?", first.id)
+        failure(422, "SNAPSHOT_INVALID") { delays.enqueue(outboundSnapshot(11), OWNER) }
+        assertEquals(1L, count("delayed_manual_reply"))
+        assertEquals(1L, count("mail_send_attempt"))
+    }
 
     private fun snapshot(
         subject: String,

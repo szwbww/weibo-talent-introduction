@@ -1102,13 +1102,7 @@
             const message = findMessageByKeyAttr(button), job = message && message.delayedReply;
             if (!job) return;
             if (action === "mc-delay-restore") {
-                const restore = hostFn("mcHostRestoreDelayedReply");
-                const owner = delayOwner();
-                if (restore && job.originKind === "LEGACY" && job.status === "CANCELLED") await restore(Number(instance.selectedContactId), job.id, message.accountCode, () => !instance.disposed && delayOwner() === owner, async (source) => {
-                    await flushDrafts();
-                    if (instance.disposed || delayOwner() !== owner) throw new Error("回复目标已变更，无法恢复");
-                    await mountUnmatchedDetail(source);
-                });
+                await restoreDelayedLegacy(message, job);
                 return;
             }
             const verb = action === "mc-delay-cancel-open" ? "cancel" : "retry";
@@ -1116,6 +1110,88 @@
             delayState.confirm = { owner: delayOwner(), id: job.id, revision: job.revision, action: verb, busy: false };
             renderDelayActions();
             host.querySelector(`[data-delay-id="${Number(job.id)}"] [data-action="mc-delay-confirm-dismiss"]`)?.focus();
+        }
+
+        function activeLegacyRestore(key) {
+            const rec = instance.manual.legacyRestore;
+            if (!rec || rec.key !== key || rec.sourceOwner !== delayOwner() ||
+                rec.epoch !== draftSessionEpoch || rec.user !== draftSessionUser ||
+                instance.disposed || !delayWritable()) return null;
+            return rec;
+        }
+
+        async function restoreDelayedLegacy(message, job) {
+            if (job.originKind !== "LEGACY" || job.status !== "CANCELLED") return;
+            const owner = delayOwner(), epoch = draftSessionEpoch, key = currentTargetKey();
+            const rec = currentDraftRecord(), seq = rec && rec.seq;
+            const before = JSON.stringify(readManualValues());
+            const revision = job.revision;
+            let mountedHost = null, mountedEdited = false;
+            const markMountedEdit = () => { mountedEdited = true; };
+            const current = () => {
+                const latest = instance.conversation.items.find((item) =>
+                    item.source === "DELAYED_MANUAL_REPLY" && Number(item.id) === Number(job.id))?.delayedReply;
+                return !instance.disposed && delayWritable() && owner === delayOwner() &&
+                    epoch === draftSessionEpoch && key === currentTargetKey() &&
+                    (!rec || rec.seq === seq) &&
+                    (mountedHost ? instance.unmatchedDetailHost === mountedHost && !mountedEdited
+                        : JSON.stringify(readManualValues()) === before) &&
+                    latest?.revision === revision && latest?.status === "CANCELLED";
+            };
+            try {
+                if (rec && rec.loading) await rec.loading;
+                if (!current()) return;
+                await flushDrafts();
+                if (!current()) return;
+                const data = await hostApi()(delayPath(job.id) + "/restore");
+                if (!current() || Number(data.id) !== Number(job.id) ||
+                    Number(data.expectedCancelledRevision) !== Number(job.revision)) return;
+                if (data.sourceKind === "INBOUND") {
+                    const adapter = hostFn("mcHostRestoreDelayedReply");
+                    try {
+                        if (adapter) await adapter(Number(instance.selectedContactId), job.id, message.accountCode, current, async (source) => {
+                            if (!current()) throw new Error("回复目标已变更，无法恢复");
+                            const mounting = mountUnmatchedDetail(source);
+                            mountedHost = instance.unmatchedDetailHost;
+                            mountedHost?.addEventListener("input", markMountedEdit);
+                            await mounting;
+                        });
+                    } finally {
+                        mountedHost?.removeEventListener("input", markMountedEdit);
+                    }
+                    return;
+                }
+                const input = data.originalConversationInput;
+                const anchor = Number(data.anchorMailRecordId);
+                if (data.sourceKind !== "OUTBOUND" || !input || !Number.isSafeInteger(anchor) || anchor <= 0 || !key || !rec)
+                    throw new Error("发送内容无法恢复，请联系管理员");
+                if ((data.outboundAttachments || []).some((item) => !data.attachmentDownloads?.[item.id]))
+                    throw new Error("附件恢复信息不完整，请重新读取");
+                const ordinary = await hostApi()(draftTargetUrl(rec.target));
+                if (!current()) return;
+                if (getDraft(key) || ordinary?.state === "ACTIVE" && ordinary.content ||
+                    rec.conflict || rec.closed || rec.seq !== rec.ack) {
+                    hostShowStatus("当前已有新草稿或未保存输入，未覆盖；撤回内容仍保留在原任务中。", "error");
+                    return;
+                }
+                const restored = { ...rec, map: new Map(), id: null, version: 0, state: null,
+                    seq: 0, ack: 0, timer: null, inflight: null, loading: null, loaded: true,
+                    uploads: new Set(), detail: null, error: "", conflict: false, closed: false,
+                    sourceOwner: owner, legacySource: data, rawEligible: true, delayedReply: { ...job } };
+                restored.map.set(key, { subject: input.subject, html: input.htmlBody, text: input.textBody || "",
+                    requestId: input.requestId, followUpAnchorMailRecordId: anchor, qa: null,
+                    outboundAttachmentDraft: { revision: 0, items: (data.outboundAttachments || []).map((item) => ({
+                        ...item, key: nextOutboundFileKey(), state: OUTBOUND_STATE_READY,
+                        downloadUrl: data.attachmentDownloads[item.id]
+                    })) } });
+                instance.manual.legacyRestore = restored;
+                renderDraftEditor(restored);
+                const baseline = readManualValues();
+                restored.rawBaseline = baseline;
+                restored.map.set(key, { ...restored.map.get(key), ...baseline });
+            } catch (error) {
+                if (current()) hostShowStatus(error.message || "恢复失败，请重新读取", "error");
+            }
         }
 
         async function loadDelayForOrigin(kind, id, contactId) {
@@ -1278,11 +1354,15 @@
         }
 
         function getDraft(targetKey) {
+            const restored = activeLegacyRestore(targetKey);
+            if (restored) return restored.map.get(targetKey) || null;
             return targetKey ? currentDraftsMap().get(targetKey) || null : null;
         }
 
         function draftRecord(key) {
             if (!key) return null;
+            const restored = activeLegacyRestore(key);
+            if (restored) return restored;
             const ownerKey = `${instance.user}|${key}`;
             let rec = draftSaves.get(ownerKey);
             if (!rec) {
@@ -1302,6 +1382,7 @@
 
         function draftOwnerLive(rec) {
             return rec.user === draftSessionUser && rec.epoch === draftSessionEpoch &&
+                (!rec.legacySource || activeLegacyRestore(rec.key) === rec) &&
                 (!delegated || (!instance.disposed && Number(rec.target.contactId) === fixedContactId));
         }
 
@@ -1317,6 +1398,13 @@
             rec.seq += 1;
             rec.error = "";
             if (rec.state && rec.state !== "ACTIVE") rec.closed = true;
+            if (rec.legacySource) {
+                const baseline = rec.rawBaseline;
+                if (!baseline || draft.subject !== baseline.subject || draft.text !== baseline.text || draft.html !== baseline.html)
+                    rec.rawEligible = false;
+                refreshDraftStatus();
+                return;
+            }
             clearTimeout(rec.timer);
             if (!rec.conflict && !rec.closed) rec.timer = setTimeout(() => {
                 rec.timer = null;
@@ -1374,6 +1462,7 @@
         }
 
         function loadDraftRecord(rec, detail) {
+            if (rec.legacySource) return Promise.resolve(rec.legacySource);
             if (rec.loading) return rec.loading;
             if (!instance.auth.ready || !draftOwnerLive(rec)) return Promise.reject(new Error("草稿加载失败，请重试"));
             const seq = rec.seq;
@@ -1409,6 +1498,7 @@
         }
 
         async function persistDraft(rec) {
+            if (rec.legacySource) return;
             clearTimeout(rec.timer);
             rec.timer = null;
             if (rec.inflight) {
@@ -1551,6 +1641,7 @@
 
         async function retryDraft() {
             const rec = currentDraftRecord();
+            if (rec && rec.legacySource) return;
             if (!rec || rec.conflict || rec.closed) return;
             try {
                 // A lost ACK may already have committed. Claim it, never blindly overwrite.
@@ -1574,6 +1665,7 @@
 
         async function reloadDraft() {
             const rec = currentDraftRecord();
+            if (rec && rec.legacySource) return;
             if (!rec) return;
             if (rec.conflict || rec.seq !== rec.ack) {
                 if (!await openDialog("confirm", { message: "重新加载将丢弃本窗口尚未保存的修改，是否继续？" })) return;
@@ -1588,6 +1680,7 @@
 
         async function continueDraft() {
             const rec = currentDraftRecord();
+            if (rec && rec.legacySource) return;
             if (!rec || !rec.closed || rec.conflict) return;
             if (rec.inflight) await rec.inflight.catch(() => {});
             const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`).catch(() => null);
@@ -1608,6 +1701,11 @@
             const unknown = rec.detail && rec.detail.sendAttemptStatus === "DELIVERY_UNKNOWN";
             if (!await openDialog("confirm", { message: "确定放弃这份草稿？放弃后无法恢复。" + (unknown ? "这不会撤回可能已发送的邮件。" : "") })) return;
             if (!draftOwnerLive(rec)) return;
+            if (rec.legacySource) {
+                instance.manual.legacyRestore = null;
+                renderDraftEditor(draftRecord(rec.key));
+                return;
+            }
             rec.paused = true;
             clearTimeout(rec.timer);
             try {
@@ -7397,7 +7495,7 @@
                 saveDraftFromInputs({ force: true });
                 if (!getDraft(targetKey)) return null;
             }
-            const draftsMap = ensureDraftsMap();
+            const draftsMap = activeLegacyRestore(targetKey)?.map || ensureDraftsMap();
             if (!draftsMap || !draftsMap.get(targetKey)) return null;
             const accountScope = instance.conversation.accountScope || "";
             return {
@@ -7416,7 +7514,7 @@
             const contactId = Number(instance.selectedContactId);
             const scope = instance.conversation.accountScope || "";
             if (captured.ownerKey !== conversationCacheKey(instance.user, scope, contactId)) return false;
-            return captured.draftsMap === currentDraftsMap();
+            return captured.draftsMap === (activeLegacyRestore(captured.targetKey)?.map || currentDraftsMap());
         }
 
         function outboundAttachmentsBlockSend() {
@@ -9603,6 +9701,11 @@
                 hostShowStatus("附件正在上传或上传失败，请等待上传完成或移除失败附件后再发送", "error");
                 return;
             }
+            if (rec.legacySource) {
+                saveDraftFromInputs({ force: true });
+                ensureOutboundRequestId();
+                return sendSavedManualReply(rec, rec.seq);
+            }
             rec.preparing = true;
             const key = rec.key;
             return (async () => {
@@ -9739,10 +9842,22 @@
                 // 07（I-3）：空数组省略字段，兼容未带附件的旧请求形态。
                 if (attachmentIds.length > 0) requestBody.attachmentIds = attachmentIds.slice();
             }
+            if (rec.legacySource) {
+                const original = rec.legacySource.originalConversationInput;
+                if (rec.rawEligible && rec.rawBaseline &&
+                    draftSnapshot.text === rec.rawBaseline.text && draftSnapshot.html === rec.rawBaseline.html &&
+                    draftSnapshot.subject === rec.rawBaseline.subject) {
+                    requestBody.subject = original.subject;
+                    requestBody.textBody = original.textBody;
+                    requestBody.htmlBody = original.htmlBody;
+                }
+                requestBody.accountScope = original.accountScope;
+                requestBody.anchorMailRecordId = rec.legacySource.anchorMailRecordId;
+            }
             // I-2：异步前捕获 draftsMap/owner/key/revision/requestBody；不回调里再取。
             const contactId = Number(instance.selectedContactId);
             const ownerKey = conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId);
-            requestBody.draftRef = { id: rec.id, version: rec.version };
+            if (!rec.legacySource) requestBody.draftRef = { id: rec.id, version: rec.version };
             if (rec.delayedReply && rec.delayedReply.status === "CANCELLED") requestBody.delayExpectedRevision = rec.delayedReply.revision;
             const inFlightKey = meeting ? `${ownerKey}|${key}` : null;
             if (inFlightKey && meetingInFlight.has(inFlightKey)) {
@@ -9764,6 +9879,7 @@
                 if (!draftOwnerLive(rec) || rec.seq !== sentSeq) return;
                 rec.delayedReply = result.delayedReply || null;
                 rec.sentSeq = sentSeq;
+                if (rec.legacySource) rec.sentStatus = result.sendStatus;
                 if (currentTargetKey() === key) refreshDraftStatus();
             };
             const request = adapter
@@ -9774,6 +9890,17 @@
             return Promise.resolve(request).catch(() => false).then(async () => {
                 // HTTP/host Boolean is not the draft-close authority.
                 try {
+                    if (rec.legacySource) {
+                        if (!draftOwnerLive(rec)) return;
+                        if (rec.sentStatus === "SENT" && rec.seq === sentSeq) {
+                            instance.manual.busy = false;
+                            if (lockedCompose) setManualComposeSending(false);
+                            instance.manual.legacyRestore = null;
+                            renderDraftEditor(draftRecord(key));
+                            afterSuccessfulSend(key);
+                        }
+                        return;
+                    }
                     if (delayLocked(rec)) {
                         if (!instance.disposed && currentTargetKey() === key) await refreshConversationQuiet();
                         return;
@@ -10734,6 +10861,7 @@
                 saveCurrentConversation();
                 flushDrafts().catch(() => {});
             }
+            instance.manual.legacyRestore = null;
             resetAdminReview();
             if (instance.mobileMedia) {
                 if (typeof instance.mobileMedia.removeEventListener === "function") instance.mobileMedia.removeEventListener("change", onMobileViewportChange);

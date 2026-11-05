@@ -53,18 +53,40 @@ class DelayedManualReplyController(
         val snapshot = DelayedManualReplySnapshotCodec.decodeOrNull(row.snapshotJson) ?: invalid()
         if (snapshot.payload.contactId != row.expertContactId || snapshot.payload.accountCode != row.accountCode) invalid()
         var inboundProcessingId: Long? = null
+        var anchorMailRecordId: Long? = null
+        var sourceKind: String? = null
+        var conversationInput: ConversationManualRichReplyRequest? = null
         val input: Any = when (val restore = snapshot.restore) {
             is DelayedLegacyRestore -> {
-                if (row.originKind != DelayedManualReplyOriginKind.LEGACY || row.originId != null) invalid()
+                if (row.originKind != DelayedManualReplyOriginKind.LEGACY || row.originId != null || row.originVersion != null) invalid()
                 val sourceId = restore.inboundProcessingId
-                if (sourceId <= 0 || snapshot.payload.inboundProcessingId != sourceId ||
-                    snapshot.source.inboundProcessingId != sourceId) invalid()
-                val sources = jdbc.queryForList(
-                    "SELECT id FROM inbound_mail_processing WHERE id=:source AND expert_contact_id=:contact AND sender_account_code=:account",
-                    mapOf("source" to sourceId, "contact" to row.expertContactId, "account" to row.accountCode))
-                if (sources.size != 1) invalid()
-                inboundProcessingId = sourceId
-                restore.originalInput ?: invalid()
+                if (sourceId != null) {
+                    if (sourceId <= 0 || snapshot.payload.inboundProcessingId != sourceId ||
+                        snapshot.source.inboundProcessingId != sourceId) invalid()
+                    val sources = jdbc.queryForList(
+                        "SELECT id FROM inbound_mail_processing WHERE id=:source AND expert_contact_id=:contact AND sender_account_code=:account",
+                        mapOf("source" to sourceId, "contact" to row.expertContactId, "account" to row.accountCode))
+                    if (sources.size != 1) invalid()
+                    inboundProcessingId = sourceId
+                    sourceKind = "INBOUND"
+                    restore.originalInput ?: invalid()
+                } else {
+                    val anchor = snapshot.source.anchorMailRecordId ?: invalid()
+                    val sources = jdbc.queryForList(
+                        """SELECT message_id FROM mail_record WHERE id=:source AND expert_contact_id=:contact
+                           AND sender_account_code=:account AND direction='OUTBOUND' AND send_status='SENT'
+                           AND sender_account_code <> 'SIMULATOR_NOOP'""",
+                        mapOf("source" to anchor, "contact" to row.expertContactId, "account" to row.accountCode))
+                    if (sources.size != 1) invalid()
+                    val rawMessageId = (sources.single()["message_id"] as? String)?.takeIf { it.isNotBlank() }
+                    val messageId = rawMessageId?.trim()?.takeIf { it.isNotBlank() && it.length <= 255 }
+                    if (rawMessageId != snapshot.source.sourceMessageId ||
+                        messageId != snapshot.source.smtpInReplyTo) invalid()
+                    anchorMailRecordId = anchor
+                    sourceKind = "OUTBOUND"
+                    conversationInput = restore.originalConversationInput ?: invalid()
+                    conversationInput
+                }
             }
             is DelayedDraftRestore -> {
                 if (row.originKind != DelayedManualReplyOriginKind.DRAFT || row.originId != restore.draftId ||
@@ -73,7 +95,12 @@ class DelayedManualReplyController(
             }
             is DelayedReviewRestore -> conflict()
         }
-        DelayedReplyRestoreResponse(row.id, row.revision, row.originKind, row.originId, input, inboundProcessingId)
+        DelayedReplyRestoreResponse(row.id, row.revision, row.originKind, row.originId, input,
+            inboundProcessingId, sourceKind, anchorMailRecordId, conversationInput,
+            if (sourceKind == "OUTBOUND") snapshot.payload.outboundAttachments else emptyList(),
+            if (sourceKind == "OUTBOUND") snapshot.payload.outboundAttachments.associate {
+                it.id to "/api/mail/conversations/${row.expertContactId}/outbound-attachments/${it.id}/download"
+            } else emptyMap())
     }
 
     @PostMapping("/{jobId}/cancel")
@@ -170,4 +197,8 @@ class DelayedManualReplyController(
 
 data class DelayedReplyRestoreResponse(val id: Long, val expectedCancelledRevision: Long,
     val originKind: DelayedManualReplyOriginKind, val originId: Long?, val originalInput: Any,
-    val inboundProcessingId: Long? = null)
+    val inboundProcessingId: Long? = null, val sourceKind: String? = null,
+    val anchorMailRecordId: Long? = null,
+    val originalConversationInput: ConversationManualRichReplyRequest? = null,
+    val outboundAttachments: List<OutboundAttachmentSnapshot> = emptyList(),
+    val attachmentDownloads: Map<String, String> = emptyMap())

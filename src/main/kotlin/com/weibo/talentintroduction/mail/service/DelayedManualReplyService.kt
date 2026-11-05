@@ -615,14 +615,19 @@ class DelayedManualReplyService(
 
     // ---------------------------------------------------------------- 内部：租约与身份
 
-    /** 未决任务：同源（DRAFT/REVIEW 按 origin，LEGACY 按真实来信 id）只能存在一个。 */
+    /** 未决任务：LEGACY 按真实来信或冻结账号/出站锚点，而不是请求 UUID。 */
     private fun unresolvedJobFor(snapshot: DelayedManualReplySnapshot, attemptId: Long, actor: String): DelayedManualReplyRow? {
         val kind = snapshot.restore.originKind()
         val originId = snapshot.restore.originId()
         val candidates = if (kind == DelayedManualReplyOriginKind.LEGACY) {
             repository.findUnresolvedByContact(snapshot.payload.contactId).filter {
                 it.sendAttemptId != attemptId && it.actorUsername == actor &&
-                    decodeLegacyInboundId(it) == snapshot.payload.inboundProcessingId
+                    it.originKind == DelayedManualReplyOriginKind.LEGACY &&
+                    sameLegacySource(decodeSnapshot(it).also { original ->
+                        if (original.restore !is DelayedLegacyRestore || original.payload.contactId != it.expertContactId ||
+                            original.payload.accountCode != it.accountCode || it.originId != null || it.originVersion != null)
+                            throw DelayedManualReplyException(422, "SNAPSHOT_INVALID", DelayedReplyPublicError.SNAPSHOT_INVALID.message)
+                    }, snapshot)
             }
         } else {
             repository.findByOrigin(kind, requireNotNull(originId)).filter { it.sendAttemptId != attemptId }
@@ -630,9 +635,15 @@ class DelayedManualReplyService(
         return candidates.firstOrNull { it.status in UNRESOLVED }
     }
 
-    private fun decodeLegacyInboundId(row: DelayedManualReplyRow): Long? =
-        (DelayedManualReplySnapshotCodec.decodeOrNull(row.snapshotJson)?.restore as? DelayedLegacyRestore)
-            ?.inboundProcessingId
+    private fun sameLegacySource(first: DelayedManualReplySnapshot, second: DelayedManualReplySnapshot): Boolean {
+        if (first.restore !is DelayedLegacyRestore || second.restore !is DelayedLegacyRestore ||
+            first.payload.contactId != second.payload.contactId) return false
+        val inbound = first.payload.inboundProcessingId
+        return if (inbound != null) inbound == second.payload.inboundProcessingId
+        else second.payload.inboundProcessingId == null &&
+            first.payload.accountCode == second.payload.accountCode &&
+            first.payload.sourceAnchor == second.payload.sourceAnchor
+    }
 
     private fun requireSameIdentity(job: DelayedManualReplyRow, snapshot: DelayedManualReplySnapshot, actor: String) {
         val original = decodeSnapshot(job)
@@ -640,7 +651,7 @@ class DelayedManualReplyService(
             is DelayedDraftRestore -> (snapshot.restore as? DelayedDraftRestore)?.owner == restore.owner
             is DelayedReviewRestore -> snapshot.restore is DelayedReviewRestore &&
                 snapshot.restore.version == restore.version
-            is DelayedLegacyRestore -> snapshot.restore is DelayedLegacyRestore
+            is DelayedLegacyRestore -> sameLegacySource(original, snapshot)
         }
         if (job.actorUsername != actor || job.originKind != snapshot.restore.originKind() ||
             job.originId != snapshot.restore.originId() || !sameOwner) {

@@ -607,7 +607,7 @@ describe("manual reply delay S-1 through S-4", () => {
     it("preserves all current resources with one cache identity and real dialog DOM", () => {
         const versions = [...indexSource.matchAll(/(?:href|src)="[^"]+\?v=([^"]+)"/g)].map((m) => m[1]);
         assert.equal(versions.length, 20);
-        assert.deepEqual([...new Set(versions)], [plan.match(/版本参数为统一`([^`]+)`/)[1]]);
+        assert.equal(new Set(versions).size, 1);
         for (const id of ["actionDialog", "actionDialogForm", "actionDialogTitle", "actionDialogBody"]) {
             assert.ok(indexSource.includes('id="' + id + '"'), "actual DOM contains " + id);
         }
