@@ -1,8 +1,8 @@
 # Fast-P Human Review Handoff
 
-- Outcome: RUNNING
+- Outcome: PAUSED_FOR_HUMAN
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
-- Current/final code head: 9cebea6d41cc3b749382deb7691ba704471b131e
+- Current/final code head: 223b8e4aed8852734552ef662c3b732c90e60e42
 - Branch/worktree: fast/manual-reply-delay-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
 
 ## Child Status
@@ -12,8 +12,8 @@
 | 02-preparation | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9..72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | bdda233d1a376bc2ea01f61f8540545a833f18c8 |
 | 03-lifecycle | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 2 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 |
 | 04-worker-api | LIGHT_PASS_WITH_NOTES | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 9a04e50c645a18c50a10b6f67e083b5397a66117 |
-| 05-query | IMPLEMENTING | 9cebea6d41cc3b749382deb7691ba704471b131e..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 |
-| 06-frontend | PENDING | N/A | 0 | — |
+| 05-query | LIGHT_PASS | 9cebea6d41cc3b749382deb7691ba704471b131e..223b8e4aed8852734552ef662c3b732c90e60e42 | 0 | 869eeb2be03bc9353fee8defbd538413f7a2069f |
+| 06-frontend | PAUSED_FOR_HUMAN | 223b8e4aed8852734552ef662c3b732c90e60e42..223b8e4aed8852734552ef662c3b732c90e60e42 | 0 | fe9f3646ff4b42496e1444645cae9caa15ae9ae7 |
 | 07-activation | PENDING | N/A | 0 | — |
 
 03 current epoch3 has two repair rounds; prior epoch2 has one repair at ed041935a500aa4517ca9f880644a2e7110063d5. All historical epochs remain in its logs. 04 has no product implementation or repair commit.
@@ -57,4 +57,13 @@ The preceding pause is historical. User selected 「补齐原输入并继续」.
 ## Current resume — A11/A12
 
 The05 pause above is resolved by user selection 「授权本次及同类内部接口修订」 and plan-only commit2485d075409fe94098f788e5baf442c7151bedb6. Ledger RUNNING,05 epoch2 counter0; prior product base unchanged, fresh implementer/verification required. Future internal-interface amendments remain limited by A11 and must be recorded before use. Not a terminal review handoff; no review-fast-p.
+
+
+## Current pause — 06 refreshed LEGACY source identity
+
+-05 scope pause is historical/resolved; Verify05Epoch2 LIGHT_PASS / COMPLETE_CHILD, requiredcompile/Query8/Repository41/other56 passed with0skips andruntimeAPIsmoke (SMTPstubbed). Clean05 full-manifest checkpoint passed atea8b6400982c6fdb2c24a47800987623602bfe30 before06 dispatch.
+-06 prerequisite:04 restore unwraps originalInput but discards persisted LEGACY inboundProcessingId; originId is null and request/body/publicjob projection cannot identify original editor afterreload. No body/Message-ID/job-ID inference permitted.
+- Minimal authority requested: DelayedManualReplyController.kt restore-only inboundProcessingId plus current source/contact/account/snapshot validation; corresponding DelayedManualReplyControllerTest.kt assertions. No public READ projection field or new send authority.06 authorization9→11 needs explicit exception; A11 internal visibility/batch-read approval does not cover public restore contract addition.
+- Exact source/plan evidence in children/06-frontend/execution.md:17-35. No06product/test edits, requiredcommands/browser/runtime orindependentverifier result. Pause evidencefe9f3646ff4b42496e1444645cae9caa15ae9ae7; prior01–05logs unchanged.
+- Resume06 after exact plan/ledger amendment in newepoch counter0 at223b8e4aed8852734552ef662c3b732c90e60e42. Neverreview-fast-p.
 
