@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-11-05T00:46:31+08:00
-- Current child: 01
+- Current child: 02
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 2 | LIGHT_PASS | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 0 | — | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 89a56a9ee6d43fb78c9e76440a3d2869c94345b1 | MaterialReadVerifier COMPLETE_CHILD; fresh focused 60 and dual-MySQL 2 passed, zero skipped |
-| 02 | docs/plans/2026-11-05/expert-material-filter-02-ingress.md | sha256:1d1792fabfafe46b3be0f5bc728d8b24c712eb0690a713d4f75a34140b5460e1 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
+| 02 | docs/plans/2026-11-05/expert-material-filter-02-ingress.md | sha256:1d1792fabfafe46b3be0f5bc728d8b24c712eb0690a713d4f75a34140b5460e1 | 01 | 1 | LIGHT_PASS | 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a | 00d48c74955626519fcfcc6de859f1fcc63b8c82 | 0 | — | 00d48c74955626519fcfcc6de859f1fcc63b8c82 | ed2a17d8a2fc30dbbd6b5cb54049b18ce6055ac5 | MaterialIngressVerifier COMPLETE_CHILD; fresh focused 197 and socket IMAP16 passed, zero skipped |
 | 03 | docs/plans/2026-11-05/expert-material-filter-03-projections.md | sha256:ef85056d991448e846a729ca2fdff8d8ab83869cfc645ee36181d5d72abca2ed | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 
 ## Amendments
@@ -46,6 +46,8 @@
 - 01 epoch 1 implementer: MaterialReadImplementer; acquired successfully; agent_attempt=0. Product base 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b; evidence HEAD at dispatch 64a5cb2dd9a650e79879acd2d038a3d59a94d941.
 - 01 epoch 2 implementer: MaterialReadEpoch2; acquired successfully; agent_attempt=0. Product base 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b; evidence HEAD at dispatch e6237f9e2339f496b1bd7495b2ac2a980f6147e3.
 - 01 epoch 2 verifier attempt 1: MaterialReadVerifier; distinct from both child writers; acquired successfully; agent_attempt=0. Review boundary 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b..51268418bfeb0dd666c1fcc079cbb6f4cb239c4a.
+- 02 epoch 1 implementer: MaterialIngressImplementer; acquired successfully; agent_attempt=0. Product base 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a; evidence HEAD at dispatch bdc921e62065cc0bdbac093d716024134233cff5.
+- 02 epoch 1 verifier attempt 1: MaterialIngressVerifier; distinct from child writer; acquired successfully; agent_attempt=0. Review boundary 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a..00d48c74955626519fcfcc6de859f1fcc63b8c82.
 
 ## Pause record
 - Epoch 1 paused before implementation. The helper resolves every registered worktree with strict=True; unrelated absent path `/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b` makes it exit 1.
@@ -58,3 +60,6 @@
 - Fresh `git worktree prune --dry-run --verbose` selected exactly the disclosed stale publish registration. Authorized `git worktree prune --verbose` removed only that registration, exit 0.
 - Unmodified execute-p `worktree_identity.py` with expected root, branch, and git-dir then exited 0 at HEAD 7ea167a377943e2e347db208dcba770592bf3128.
 - Resumed child 01 in epoch 2, product base unchanged, fix_round=0; preceding pause evidence remains b4d10ff50863cba54211d3e064b441df29d6aa05 and recovery state 7ea167a377943e2e347db208dcba770592bf3128.
+
+## Child artifact checkpoints
+- Through child 01: complete approved manifest, `--allow-dirty-artifacts` then clean mode, both exit 0 / result VALID / validation_scope CHILD_CHECKPOINT. Clean checkpoint HEAD bdc921e62065cc0bdbac093d716024134233cff5; terminal code 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a; later children remained PENDING.
