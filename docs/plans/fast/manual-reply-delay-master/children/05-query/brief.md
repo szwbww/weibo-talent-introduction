@@ -16,6 +16,8 @@
 6. src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt
 7. src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt
 8. src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt (A12: readVerifiedFile private→internal only; unchanged body/public APIs)
+9. src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt (A14: internal bounded canonical source page read only)
+10. src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt (A14: internal bounded canonical source page read only)
 
 No changes outside these product/test paths; no applied migration edits. Tests not listed are run-only. Report PLAN_CONFLICT rather than weakening an invariant or changing unauthorized files.
 
@@ -49,4 +51,11 @@ Use execute-p; one writer, no push/merge/rebase/amend/reset. Commit authorized i
 - Preserve full04-equivalent capability rules, source/actor/attachment ownership and per-job limits. Existing file-security implementation is reused unchanged, never copied. READ does not fetch private attachment data or read disk.
 - Future necessary existing internal visibility or side-effect-free batch-read scope amendments are now preapproved within A11's strict boundary, but MUST be reported with exact evidence/files/interface first so controller records plan+ledger amendments before edits. No new business, compatibility, schema or safety changes are covered.
 - Same required commands and runtime smoke. Append epoch2 execution report; preserve epoch1. Fresh independent verifier follows; no completed child replay or review-fast-p.
+
+
+## Epoch 2 — A13/A14 canonical source page interfaces
+
+- Latest master/05 identity `commit:baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb`. Applies prior A11 human approval, not a new business decision or repair epoch.
+- Authorize exact two repository paths for internal `findForDelayedPage(contactId: Long, accountCodes: List<String>, jobIds: Collection<Long>)` returning existing canonical rows. Server-page job join/contact/account scope, max100ids, emptyreturnsEmpty, existingmapper, no locks/writes or altered lifecycle methods. Do not fabricate trusted refs from partial projections.
+- Authorized set10files. QueryIT covers scope/current-source parity/fixedqueries; required commands unchanged. Append concrete evidence and newest identity to execution report.
 
