@@ -117,3 +117,8 @@ Required compilation, MySQL integration tests, compatibility/attachment/guard te
 - Required runtime commands freshly run: NO.
 - Blocker: explicit additional production-path authority for the single internal verifier visibility seam above.
 - Controller instructed bounded PLAN_CONFLICT reporting and pause; do not implement the unlisted edit. After exact authority is recorded, resume child05 under its newly bound plan identity/epoch and implement/run all mandatory acceptance commands.
+
+## Epoch 2 — Controller authority resume
+
+- User selected 「授权本次及同类内部接口修订」. A11/A12 plan-only commit2485d075409fe94098f788e5baf442c7151bedb6 authorizes the exact existing attachment verifier visibility seam and future narrowly bounded evidenced internal-interface amendments.
+- Product base remains9cebea6d41cc3b749382deb7691ba704471b131e; epoch1 made no product edits. New epoch counter0; fresh implementation and required checks remain. This authority record claims no runtime/test execution.

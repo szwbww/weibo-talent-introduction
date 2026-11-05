@@ -15,6 +15,7 @@
 5. src/test/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyQueryIT.kt (new)
 6. src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt
 7. src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt
+8. src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt (A12: readVerifiedFile private→internal only; unchanged body/public APIs)
 
 No changes outside these product/test paths; no applied migration edits. Tests not listed are run-only. Report PLAN_CONFLICT rather than weakening an invariant or changing unauthorized files.
 
@@ -40,4 +41,12 @@ Use execute-p; one writer, no push/merge/rebase/amend/reset. Commit authorized i
 
 - Product base9cebea6d41cc3b749382deb7691ba704471b131e; clean04 checkpoint3c681a44f6911e28c637451e3ee7610c9b9fea9d. Approved05 identity is `commit:05342b4be63bbc7d9b30416ae73ada2d44b562df` plus exact plan path, not a blob hash. Implementer confirmed current plan bytes match that commit.
 - Child05T2:61 says `READ两者均隐藏，磁盘不读取`; I-7 acceptance says `READ不查询附件快照`. READ is the permission level, not a ban on every GET reading files. FULL/admin may perform required file-integrity verification; their canRetry must retain03/04 semantics. This literal clarification does not authorize metadata-only weakening, per-job SQL, or extra production paths. Implementer reported authorized repository/service can implement batched current-source metadata with full-access integrity checks.
+
+
+## Epoch 2 — Approved bounded internal interface resume
+
+- Master/05 identity `commit:2485d075409fe94098f788e5baf442c7151bedb6`; exact path remains above. User selected 「授权本次及同类内部接口修订」. A11/A12 authorizes the eighth file only for the existing no-SQL verifier's visibility; implement T2a/A3 and associated QueryIT acceptance. Original base9cebea6d41cc3b749382deb7691ba704471b131e unchanged, epoch1 had no product edits.
+- Preserve full04-equivalent capability rules, source/actor/attachment ownership and per-job limits. Existing file-security implementation is reused unchanged, never copied. READ does not fetch private attachment data or read disk.
+- Future necessary existing internal visibility or side-effect-free batch-read scope amendments are now preapproved within A11's strict boundary, but MUST be reported with exact evidence/files/interface first so controller records plan+ledger amendments before edits. No new business, compatibility, schema or safety changes are covered.
+- Same required commands and runtime smoke. Append epoch2 execution report; preserve epoch1. Fresh independent verifier follows; no completed child replay or review-fast-p.
 

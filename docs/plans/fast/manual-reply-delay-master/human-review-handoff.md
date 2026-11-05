@@ -1,6 +1,6 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: RUNNING
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
 - Current/final code head: 9cebea6d41cc3b749382deb7691ba704471b131e
 - Branch/worktree: fast/manual-reply-delay-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
@@ -12,7 +12,7 @@
 | 02-preparation | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9..72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | bdda233d1a376bc2ea01f61f8540545a833f18c8 |
 | 03-lifecycle | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 2 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 |
 | 04-worker-api | LIGHT_PASS_WITH_NOTES | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 9a04e50c645a18c50a10b6f67e083b5397a66117 |
-| 05-query | PAUSED_FOR_HUMAN | 9cebea6d41cc3b749382deb7691ba704471b131e..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 |
+| 05-query | IMPLEMENTING | 9cebea6d41cc3b749382deb7691ba704471b131e..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 |
 | 06-frontend | PENDING | N/A | 0 | — |
 | 07-activation | PENDING | N/A | 0 | — |
 
@@ -52,4 +52,9 @@ The preceding pause is historical. User selected 「补齐原输入并继续」.
 - Exact audit and proposed coverage: children/05-query/execution.md:33-85. READ skips private metadata/disk/actions; FULL/admin may verify disk. This interpretation is resolved and no metadata-only capability weakening is authorized.
 - No05 product/test changes or required commands; no independent verdict. Evidence commit1fb2914e2038ccb6a139b45f9013bc82bdce92a4. Resume05 under approved amendment/new epoch0repairs, not replay01–04.
 - Existing A5 blanket approval is for necessary existing-test compatibility only, not this new production path. Exact authority remains pending. No review-fast-p invoked.
+
+
+## Current resume — A11/A12
+
+The05 pause above is resolved by user selection 「授权本次及同类内部接口修订」 and plan-only commit2485d075409fe94098f788e5baf442c7151bedb6. Ledger RUNNING,05 epoch2 counter0; prior product base unchanged, fresh implementer/verification required. Future internal-interface amendments remain limited by A11 and must be recorded before use. Not a terminal review handoff; no review-fast-p.
 

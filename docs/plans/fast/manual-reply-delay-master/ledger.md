@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-11-04/manual-reply-delay-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit de076f6413b65809ca13610c0455965134056dcb)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10
+- Status: RUNNING
+- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit 2485d075409fe94098f788e5baf442c7151bedb6)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
 - Branch: fast/manual-reply-delay-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
@@ -10,10 +10,10 @@
 - Finalization repair parent: N/A
 - Started: 2026-11-04T08:19:33Z
 - Current child: 05-query
-- Waiting role: HUMAN_AUTHORITY
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child05 fixed-page SQL plus04-equivalent file integrity needs existing OutboundAttachmentService.readVerifiedFile private→internal reuse seam in an unlisted production path. No product edits; READ/FULL semantics resolved.
+- Pause reason: N/A
 - Resume from: 9cebea6d41cc3b749382deb7691ba704471b131e
 
 ## Children
@@ -23,7 +23,7 @@
 | 02-preparation | docs/plans/2026-11-04/manual-reply-delay-02-preparation.md | commit:ab3ad56713a74664b0f34f66a138206cb14666ea | 01-storage | 1 | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9 | 72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | — | 72906c0c5e36393429320817ea0de4f7d6f3ff05 | bdda233d1a376bc2ea01f61f8540545a833f18c8 | A1 approved extension of RagSendBridgeTest. RECORD_ONLY notes O-1..O-4 in verify-log. |
 | 03-lifecycle | docs/plans/2026-11-04/manual-reply-delay-03-lifecycle.md | commit:0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9 | 02-preparation | 3 | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05 | 798206d5b2c8dafd892f5c5f275e952a99c18fa8 | 2 | 63bf74170d126428dc8a9cab279506cca157bc90,9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 | Reverify03Round2 COMPLETE_CHILD; lifecycle40/40; only known MailReviewQueryIT baseline failure. Prior epoch2 ed041935a500aa4517ca9f880644a2e7110063d5 retained in fix-log (one earlier repair round). |
 | 04-worker-api | docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md | commit:de076f6413b65809ca13610c0455965134056dcb | 03-lifecycle | 2 | LIGHT_PASS_WITH_NOTES | 9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 9cebea6d41cc3b749382deb7691ba704471b131e | 0 | — | 9cebea6d41cc3b749382deb7691ba704471b131e | 9a04e50c645a18c50a10b6f67e083b5397a66117 | Verify04Epoch2 COMPLETE_CHILD; unit43/lifecycle40/JS2038 pass. Component SMTP proof is not full E2E/restart;07 retains integrated acceptance. |
-| 05-query | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 04-worker-api | 1 | PAUSED_FOR_HUMAN | 9cebea6d41cc3b749382deb7691ba704471b131e | — | 0 | — | 9cebea6d41cc3b749382deb7691ba704471b131e | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 | Impl05Query PLAN_CONFLICT before edits; exact internal attachment verifier visibility authority needed, not capability-policy downgrade. |
+| 05-query | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:2485d075409fe94098f788e5baf442c7151bedb6 | 04-worker-api | 2 | IMPLEMENTING | 9cebea6d41cc3b749382deb7691ba704471b131e | — | 0 | — | 9cebea6d41cc3b749382deb7691ba704471b131e | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 | A11/A12 resolves exact attachment verifier scope; fresh implementer acquisition pending. |
 | 06-frontend | docs/plans/2026-11-04/manual-reply-delay-06-frontend.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | 05-query | 1 | PENDING |  | — | 0 | — | — | — | Depends on 05 read model. |
 | 07-activation | docs/plans/2026-11-04/manual-reply-delay-07-activation.md | commit:ea61d579425e894ee37c600f599beef1fdb46395 | 06-frontend | 1 | PENDING |  | — | 0 | — | — | — | A4 consumes review request revision implemented in 03; do not re-add the field. |
 
@@ -40,6 +40,8 @@
 | A8 | docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | commit:d57b856427a83a6ccf23c60e58df9d92db9f266d | I-4/I-6/I-7 and 04T3/06T1 | Add DelayedManualReplyModels.kt and bounded restore-only input; unchanged schemaVersion, legacy delivery compatibility, absent historical input restore422 SNAPSHOT_INVALID; authorized tests cover round-trip and compatibility. | HUMAN:2026-11-05「补齐原输入并继续」 |
 | A9 | docs/plans/2026-11-04/manual-reply-delay-master.md | commit:d57b856427a83a6ccf23c60e58df9d92db9f266d | commit:de076f6413b65809ca13610c0455965134056dcb | A5 existing-test compatibility and I-6/A8 | SnapshotTest Prepared fixture omits newly required original input; align04 count9 and required test command without weakening assertions. | HUMAN:2026-11-05「授权必要测试兼容修订并持续执行」 (prior A5 approval applied to Impl04Epoch2 concrete fixture mismatch) |
 | A10 | docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md | commit:d57b856427a83a6ccf23c60e58df9d92db9f266d | commit:de076f6413b65809ca13610c0455965134056dcb | A5 existing-test compatibility and I-6/A8 | Authorize DelayedManualReplySnapshotTest explicit original request/meeting fixture adaptation, retain behavior assertions and add class to required unit run. | HUMAN:2026-11-05「授权必要测试兼容修订并持续执行」 (prior A5 approval applied to Impl04Epoch2 concrete fixture mismatch) |
+| A11 | docs/plans/2026-11-04/manual-reply-delay-master.md | commit:de076f6413b65809ca13610c0455965134056dcb | commit:2485d075409fe94098f788e5baf442c7151bedb6 | I-7/I-10 and05T2 | Authorize exact no-SQL attachment verifier visibility reuse, count05=8, and evidence-backed future necessary internal visibility/pure-batch-read amendments only; no business/compatibility/schema/security weakening. | HUMAN:2026-11-05「授权本次及同类内部接口修订」 |
+| A12 | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:05342b4be63bbc7d9b30416ae73ada2d44b562df | commit:2485d075409fe94098f788e5baf442c7151bedb6 | I-7/I-10 and05T2 | Add OutboundAttachmentService.kt solely readVerifiedFile private→internal, unchanged body; page-loaded server metadata retains per-job owner/limits, READ skips metadata/disk, FULL preserves integrity parity. | HUMAN:2026-11-05「授权本次及同类内部接口修订」 |
 
 ## Artifact checkpoint corrections
 
