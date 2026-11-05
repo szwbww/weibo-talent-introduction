@@ -166,7 +166,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 01 | [持久模型与迁移](manual-reply-delay-01-storage.md) | 7 | 无 |
 | 02 | [冻结与投递分离](manual-reply-delay-02-preparation.md) | 8（A1） | 01 |
 | 03 | [事务状态机与草稿](manual-reply-delay-03-lifecycle.md) | 12（A2/A3/A5/A6） | 02 |
-| 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 7 | 03 |
+| 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 8（A7/A8） | 03 |
 | 05 | [会话读模型](manual-reply-delay-05-query.md) | 7 | 04 |
 | 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 9 | 05 |
 | 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4） | 06 |
@@ -288,4 +288,6 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 - 用户追加执行边界：「批准后续所有子计划 直到可以执行review-fast-p 不要直接执行review-fast-p」。继续顺序执行、独立轻量核验和证据检查点；终态为 READY_FOR_HUMAN_REVIEW，不启动 review-fast-p，不声明全系统 PASS。
 
 - A5/A6（2026-11-05 用户选择「授权必要测试兼容修订并持续执行」）：03 的真实事务守卫使 `MailReplyDraftRepositoryIT.kt` 既有直接构造服务调用在无事务时被拒绝；仅授权该测试以真实 READ_COMMITTED 事务执行原保存/放弃调用，保持业务断言。03文件数增至12。后续同类必要既有测试兼容修订可基于具体证据记录后连续执行，不逐项确认；不得扩围生产功能或降低不变量。仍只执行到 READY_FOR_HUMAN_REVIEW，不执行 review-fast-p。
+
+- A7/A8（2026-11-05 用户选择「补齐原输入并继续」）：04 增加 `DelayedManualReplyModels.kt` 授权，修复 I-6 / 04T3 / 06T1 原输入恢复所需的持久化缺口。原始 assembly 请求和 MeetingInput 以有界、显式白名单的恢复数据保存，不作为投递 authority；既有 schemaVersion 保持兼容，旧快照的冻结投递、指纹与最终结果语义不变，旧 LEGACY 缺完整原输入时 restore 返回422 SNAPSHOT_INVALID，不反推或伪造。新增数据只在有编辑权限的原actor/admin恢复接口返回；不扩展公共任务投影。04 文件数增至8，其他子计划业务范围不变。具体审计与验证见04修正记录及 fast-p/children/04-worker-api/execution.md，批准与 Before/After 身份见 ledger A7/A8。
 

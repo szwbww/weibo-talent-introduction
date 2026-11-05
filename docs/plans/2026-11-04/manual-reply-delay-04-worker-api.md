@@ -1,6 +1,6 @@
 # 04 后台投递与操作API
 
-前置03通过。后台执行、HTTP权限两个子系统，7个文件。不开启生产入队入口。
+前置03通过。后台执行、HTTP权限两个子系统，8个文件（A7/A8）。不开启生产入队入口。
 
 ## 需求描述
 
@@ -44,6 +44,12 @@
 - Violation consequence — 占用共享调度线程或恢复重复发。
 - 来源 — original；ExpertAcademicEnrichmentWorker:19–46先例。
 
+### Invariant I-6 — 原输入恢复与旧快照兼容（A8）
+- Rule — 新 LEGACY 快照必须保存原始组装请求和 MeetingInput，含 frame/按请求事实选择与原始时区/本地时间，不得用已核验结果、UTC事件或ICS反推。新增恢复数据只供有权限的编辑器恢复，不参与冻结投递、事实认定或指纹计算。保持既有 schemaVersion 及旧快照解码/投递兼容；未知版本仍fail closed。旧 LEGACY 缺完整原输入时恢复接口返回422 SNAPSHOT_INVALID，不制造部分/猜测副本；该缺失不能单独阻断其既有冻结投递。
+- Applies to — Pending准备输入、snapshot factory/codec、worker rehydrate、restore DTO。
+- Violation consequence — 撤回后丢失组装语义/时区，或升级使旧在途任务失效。
+- 来源 — master I-6；04 epoch1 prerequisite audit；用户「补齐原输入并继续」。
+
 ## 现状审计
 
 - `TalentIntroductionApplication.kt:9`启用调度；`ExpertAcademicEnrichmentWorker.kt:46`独立executor避免共享调度阻塞。现项目Rabbit为配置启用，不能假设生产必备。
@@ -51,6 +57,7 @@
 - 权限`ExpertMailPermissionGuard.kt:34–78`固定handler/verb映射，`:114–137`解析contact及附件owner；`MailReadOnlyPolicy.kt`接受isResourceHandler，由新handler注册即可进入资源闸，不增加泛路径白名单。
 - 附件完整读写见总计划X-5：OutboundAttachmentService.resolveForSend重读文件及SHA。review来源与上下文见总X-3/X-9；新来信期间可能变化。
 - 新API写路径只调用03状态机，读取新表/源草稿/当前授权。原发送存储写集合不变。交互为X-5原件→worker，X-6路由→service，X-8任务→重启，X-9真实来信→审核再校验。
+- A8审计：`children/04-worker-api/execution.md:20-44,68-73`记录了实际源码/消费端与grep回执。Models的LEGACY restore仅保存组装结果摘要和UTC会议结果，Pending Prepared也未保留原MeetingInput/组装请求；app.js现有发送序列化需要原frameSnapshot/requestFactSelections，mailbox-chat会议输入需要原zoneId/startLocal/endLocal/generatedAt。codec拒绝未知字段，不能把原输入塞入诊断/事实/审计字段。写链为Pending准备→Models工厂→codec→既有job snapshot列，读链为codec→worker冻结投递 / controller恢复→06旧编辑器。新增数据只走恢复读链，不修改job表schema、迁移或投递写链。
 
 ## 实现方案
 
@@ -59,6 +66,12 @@
 在PendingMailOperationService新增internal rehydrateDelayed(snapshot,actor)及preflight，只依赖01模型和既有服务，禁止Pending→worker依赖。依次核验schema、来源/contact、accountCode启用、当前收件人与快照一致、来源真实线程锚点、权限、抑制、草稿/审核冻结身份、最新审核context、原件size/SHA。当前时间敏感校验（例如会议时段）仍执行原规则；不重新生成ICS/模板/QA。
 
 恢复原ValidatedDraftSendRef/ValidatedReviewSendRef时通过各自服务锁定/验证，不能从未经校验的HTTP JSON制造trusted ref。preflight返回准备结果或固定失败码。等待期间失败使用03 preflightFailure，不写成功记录。retry在重新排WAITING前做同样验证；最终claim短事务还核验source version/context/权限，避免读取到claim之间已变更。
+
+### T1a 原输入持久化补全（I-4/I-6/I-7，A8）
+
+仅在本次授权的Pending和Models中补齐：Pending保留原始普通LEGACY输入；Models工厂保存一个显式、有界、恢复专用的原输入结构，覆盖现有发送请求需要的QA/assembly/RAG/adopt/附件上下文，以及原始MeetingInput全部输入字段。组装请求须保留原source/evidence版本、原factIds、requestFactSelections、frameSnapshot/版本、finalParagraphs和operatorFacts，不以核验结果摘要替代。复用现有请求类型或等价白名单DTO，不保存运行时对象/凭据/文件字节/绝对路径，不序列化任意map逃避codec。沿用既有总大小、数量、字段类型/范围和未知字段约束。
+
+兼容方式固定：保留既有schemaVersion；新增恢复结构允许旧JSON缺省为空，旧快照继续以原冻结payload/evidence完成验证、投递和结算。新工厂生成的LEGACY快照必须有完整原输入；restore发现历史缺省则422 SNAPSHOT_INVALID并使用既有固定公开文案。不得重新渲染、重新签名、猜测时区，或更改旧请求指纹。DRAFT/REVIEW现有恢复/禁止编辑边界不变。原输入只在restore授权通过后输出，不能泄露至list/get公共投影或成为trusted send ref。
 
 ### T2 worker（I-1/I-4/I-5/I-11）
 
@@ -112,6 +125,7 @@ ExpertMailPermissionGuard注册controller.get/list为READ_CONTACT、restore/canc
 |5|src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyWorkerTest.kt|新增时钟/投递/恢复测试|
 |6|src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt|新增HTTP矩阵|
 |7|src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt|新增路由授权矩阵|
+|8|src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt|A8：原输入恢复白名单、工厂和向后兼容codec|
 
 ## 验收标准
 
@@ -121,6 +135,7 @@ ExpertMailPermissionGuard注册controller.get/list为READ_CONTACT、restore/canc
 - I-7 — HTTP路由真HandlerMethod测试，跨contact/actor、READ/FULL/NONE、审核admin矩阵；等待期间撤权/退订/账号停用/新来信测试。
 - I-10 — 所有码只输出固定文案；堆栈、认证原文、内部路径不出响应；UNKNOWN与永久失败retry409。
 - I-11 — worker容量1、无60秒sleep、共享调度不执行SMTP、disabled仍处理旧任务；两个worker对同job只一个SMTP。03真实MySQL并发IT一并运行。
+- I-6/A8 — 在已授权Worker/Controller测试中验证完整LEGACY原输入往返（包含非UTC zone、原本地时间、frameSnapshot/requestFactSelections、QA/RAG/adopt和有序附件），验证旧JSON无新增结构仍能解码并保持冻结投递与指纹不变、但restore422且无伪造副本；未知schema/非法白名单/超限仍拒绝。READ不可取原输入，公共投影不得出现恢复结构。不得为了兼容削弱现有投递/权限断言。
 
 ## 人工验收清单
 
@@ -141,3 +156,14 @@ ExpertMailPermissionGuard注册controller.get/list为READ_CONTACT、restore/canc
 - 操作步骤 — 1. 投递断链任务后调用retry。2. 给审核目标新增真实来信，再等到期。3. 查看公开状态。
 - 预期结果 — 断链UNKNOWN、retry409、SMTP不重复；审核任务FAILED，显示「来信内容已更新，请先重新确认审核上下文」，SMTP0封。
 - 覆盖 — I-5/I-7/I-10，X-9。
+
+### A-4 原输入恢复与历史兼容（A8）
+- 前置条件 — 隔离环境创建一条带非UTC会议、组装frame和按问题事实选择的LEGACY任务并撤回；另准备一条旧格式且缺恢复结构的CANCELLED任务及可到期投递任务。
+- 操作步骤 — 1. 原操作者调用restore核对原提交字段。2. READ用户调用restore。3. 原操作者恢复旧缺结构任务。4. 运行旧可投递任务并检查测试SMTP。
+- 预期结果 — 新任务返回原时区/本地时间/组装选择，顺序和值不变；READ为403；旧缺结构restore为422 SNAPSHOT_INVALID固定文案，响应无猜测原输入；旧投递仍使用原冻结正文/ICS且仅发一次。
+- 覆盖 — I-4/I-6/I-7，X-5/X-8及restore→06消费链。
+
+## 修正记录
+
+- A8（2026-11-05 用户选择「补齐原输入并继续」）：由04 epoch1实现前审计确认原输入持久化缺口，新增Models授权使文件数7→8；在T1a固定向后兼容和恢复失败语义，保持投递authority不变。审计证据见 `../fast/manual-reply-delay-master/children/04-worker-api/execution.md`。本次是范围补全而非放宽I-4/I-6/I-7；无新迁移，无后续子计划提前实施。Master A7同步文件数与兼容决定。
+
