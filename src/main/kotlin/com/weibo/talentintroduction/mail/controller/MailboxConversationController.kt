@@ -101,7 +101,8 @@ data class ConversationItemResponse(
     val displayPendingCount: Long = 0,
     val displayPendingOwner: String? = null,
     val displaySuspended: Boolean = false,
-    val displaySuspendReason: String? = null
+    val displaySuspendReason: String? = null,
+    val delayedPendingCount: Long = 0
 )
 
 /** Owner-scoped navigation only; bodies are loaded through the existing guarded draft endpoints. */
@@ -152,7 +153,8 @@ data class ConversationListResponse(
     val size: Int,
     val reviewPendingTotal: Long = 0,
     @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-    val filterCounts: ConversationFilterCounts? = null
+    val filterCounts: ConversationFilterCounts? = null,
+    val serverNowMs: Long = System.currentTimeMillis()
 )
 
 data class ConversationFilterCounts(
@@ -190,14 +192,16 @@ data class ConversationMessageItemResponse(
      * 与 03 的 calendarAttachment、入站材料口径的 attachmentCount/firstAttachmentNames
      * 三者互相独立，绝不混用。
      */
-    val outboundAttachments: List<ConversationOutboundAttachment> = emptyList()
+    val outboundAttachments: List<ConversationOutboundAttachment> = emptyList(),
+    val delayedReply: com.weibo.talentintroduction.mail.service.DelayedManualReplyView? = null
 )
 
 data class ConversationMessageListResponse(
     val items: List<ConversationMessageItemResponse>,
     val nextBefore: String?,
     val hasMore: Boolean,
-    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE,
+    val serverNowMs: Long = System.currentTimeMillis()
 )
 
 /**

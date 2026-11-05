@@ -73,6 +73,97 @@ class DelayedManualReplyRepository(private val jdbc: NamedParameterJdbcTemplate)
         )
     }
 
+    /** Only server-selected timeline ids are admitted; READ never selects snapshot_json. */
+    internal fun pageRows(contactId: Long, accountCodes: List<String>, ids: Collection<Long>,
+                          privateData: Boolean): List<DelayedManualReplyRow> {
+        require(ids.size <= 100 && ids.all { it > 0 } && contactId > 0)
+        if (ids.isEmpty() || accountCodes.isEmpty()) return emptyList()
+        val columns = COLUMNS.split(',').joinToString(",") {
+            if (it == "snapshot_json" && !privateData) "'' AS snapshot_json" else "j.$it"
+        }
+        return jdbc.query("SELECT $columns FROM delayed_manual_reply j WHERE j.id IN (:ids) " +
+            "AND j.expert_contact_id=:contact AND j.account_code IN (:accounts)",
+            mapOf("ids" to ids, "contact" to contactId, "accounts" to accountCodes), mapper)
+    }
+
+    internal fun pageEvidence(contactId: Long, accountCodes: List<String>, ids: Collection<Long>,
+                              contextToken: String?): Map<Long, Map<String, Any?>> {
+        require(ids.size <= 100 && ids.all { it > 0 } && contactId > 0)
+        if (ids.isEmpty() || accountCodes.isEmpty()) return emptyMap()
+        return jdbc.queryForList("""
+            SELECT j.id, a.status AS attempt_status, a.body AS fingerprint,
+                   a.recipient AS recipient, a.account_code AS attempt_account,
+                   a.message_id AS attempt_message_id,
+                   mr.id AS sent_record_id,
+                   c.orcid_id AS contact_orcid, c.expert_email AS contact_email,
+                   acc.enabled AS account_enabled,
+                   EXISTS(SELECT 1 FROM admin_user au WHERE au.username=j.actor_username) AS actor_exists,
+                   EXISTS(SELECT 1 FROM expert_mail_read_access g WHERE g.username=j.actor_username
+                     AND g.expert_contact_id=j.expert_contact_id AND g.access_level='FULL') AS actor_full,
+                   EXISTS(SELECT 1 FROM email_suppression es WHERE es.email=LOWER(TRIM(c.expert_email))) AS suppressed,
+                   p.id AS inbound_id, p.expert_contact_id AS inbound_contact,
+                   p.sender_account_code AS inbound_account, p.message_id AS inbound_message,
+                   anchor.id AS anchor_id, anchor.expert_contact_id AS anchor_contact,
+                   anchor.sender_account_code AS anchor_account, anchor.direction AS anchor_direction,
+                   anchor.send_status AS anchor_status, anchor.message_id AS anchor_message,
+                   anchor.in_reply_to AS anchor_reply,
+                   EXISTS(SELECT 1 FROM expert_mail_read_access g
+                     WHERE g.username=review.owner_username AND g.expert_contact_id=j.expert_contact_id
+                       AND g.access_level IN ('READ','FULL')) AS review_owner_read,
+                   confirmation.payload_json AS confirmation_payload
+              FROM delayed_manual_reply j
+              LEFT JOIN mail_send_attempt a ON a.id=j.send_attempt_id
+              LEFT JOIN mail_record mr ON mr.mail_send_attempt_id=j.send_attempt_id AND mr.send_status='SENT'
+              LEFT JOIN expert_contact c ON c.id=j.expert_contact_id
+              LEFT JOIN mail_sender_account acc ON acc.account_code=j.account_code
+              LEFT JOIN mailbox_review_draft review ON j.origin_kind='REVIEW' AND review.id=j.origin_id
+              LEFT JOIN mailbox_review_draft_event confirmation ON confirmation.id=(
+                  SELECT MAX(e.id) FROM mailbox_review_draft_event e
+                   WHERE e.draft_id=review.id AND e.draft_version=review.version
+                     AND e.event_type='CONTEXT_CONFIRMED' AND e.actor_username=j.actor_username
+                     AND JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.contextToken'))=:contextToken)
+              LEFT JOIN inbound_mail_processing p ON p.id=JSON_UNQUOTE(JSON_EXTRACT(
+                IF(JSON_VALID(j.snapshot_json),j.snapshot_json,'{}'),'$.payload.inboundProcessingId'))
+              LEFT JOIN mail_record anchor ON anchor.id=JSON_UNQUOTE(JSON_EXTRACT(
+                IF(JSON_VALID(j.snapshot_json),j.snapshot_json,'{}'),'$.source.anchorMailRecordId'))
+             WHERE j.id IN (:ids) AND j.expert_contact_id=:contact AND j.account_code IN (:accounts)
+        """.trimIndent(), mapOf("ids" to ids, "contact" to contactId, "accounts" to accountCodes,
+            "contextToken" to contextToken))
+            .associateBy { (it.getValue("id") as Number).toLong() }
+    }
+
+    /** Public result linkage does not fetch any private snapshot or attachment data. */
+    internal fun pageSentRecordIds(contactId: Long, accountCodes: List<String>, ids: Collection<Long>): Map<Long, Long> {
+        require(ids.size <= 100 && ids.all { it > 0 } && contactId > 0)
+        if (ids.isEmpty() || accountCodes.isEmpty()) return emptyMap()
+        return jdbc.query("""SELECT j.id,mr.id AS record_id FROM delayed_manual_reply j
+            JOIN mail_record mr ON mr.mail_send_attempt_id=j.send_attempt_id
+              AND mr.expert_contact_id=j.expert_contact_id AND mr.sender_account_code=j.account_code
+              AND mr.direction='OUTBOUND' AND mr.send_status='SENT'
+            WHERE j.id IN (:ids) AND j.expert_contact_id=:contact AND j.account_code IN (:accounts)
+              AND j.status='SENT'""",
+            mapOf("ids" to ids, "contact" to contactId, "accounts" to accountCodes)) { r, _ ->
+            r.getLong("id") to r.getLong("record_id")
+        }.toMap()
+    }
+
+    internal fun pageAttachments(contactId: Long, accountCodes: List<String>, ids: Collection<Long>):
+        Map<String, com.weibo.talentintroduction.mail.domain.OutboundMailAttachment> {
+        require(ids.size <= 100 && ids.all { it > 0 } && contactId > 0)
+        if (ids.isEmpty() || accountCodes.isEmpty()) return emptyMap()
+        return jdbc.query("""SELECT DISTINCT f.* FROM delayed_manual_reply j
+            JOIN outbound_mail_attachment f ON f.expert_contact_id=j.expert_contact_id AND
+              JSON_CONTAINS(JSON_EXTRACT(IF(JSON_VALID(j.snapshot_json),j.snapshot_json,'{}'),
+                '$.payload.outboundAttachments[*].id'),JSON_QUOTE(f.id))
+            WHERE j.id IN (:ids) AND j.expert_contact_id=:contact AND j.account_code IN (:accounts)""",
+            mapOf("ids" to ids, "contact" to contactId, "accounts" to accountCodes)) { r, _ ->
+            com.weibo.talentintroduction.mail.domain.OutboundMailAttachment(
+                r.getString("id"), r.getLong("expert_contact_id"), r.getString("created_by"),
+                r.getString("file_name"), r.getString("content_type"), r.getLong("byte_length"),
+                r.getString("sha256"), r.getTimestamp("created_at").toLocalDateTime())
+        }.associateBy { it.id }
+    }
+
     fun findByAttemptId(attemptId: Long): DelayedManualReplyRow? = jdbc.query(
         "SELECT $COLUMNS FROM delayed_manual_reply WHERE send_attempt_id=:attempt",
         mapOf("attempt" to attemptId),

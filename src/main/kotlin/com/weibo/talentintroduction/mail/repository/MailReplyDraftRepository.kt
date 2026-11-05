@@ -35,6 +35,19 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
         "kind" to target.kind.name, "processing" to target.processingId, "scope" to target.accountScope)
     fun findTarget(owner: String, target: MailReplyDraftTarget): MailReplyDraftRow? = jdbc.query("$projection WHERE d.username=:owner AND d.expert_contact_id=:contact AND d.target_kind=:kind AND d.inbound_processing_id=:processing AND d.account_scope=:scope", targetParams(owner, target), mapper).singleOrNull()
     fun findOwned(owner: String, id: Long): MailReplyDraftRow? = jdbc.query("$projection WHERE d.username=:owner AND d.id=:id", mapOf("owner" to owner, "id" to id), mapper).singleOrNull()
+
+    /** Current-page source read only: preserve the canonical projection, never acquire send locks. */
+    internal fun findForDelayedPage(contactId: Long, accountCodes: List<String>,
+                                   jobIds: Collection<Long>): List<MailReplyDraftRow> {
+        require(contactId > 0 && jobIds.size <= 100 && jobIds.all { it > 0 })
+        if (jobIds.isEmpty() || accountCodes.isEmpty()) return emptyList()
+        return jdbc.query("""$projection WHERE d.expert_contact_id=:contact AND EXISTS (
+            SELECT 1 FROM delayed_manual_reply page_job
+             WHERE page_job.id IN (:ids) AND page_job.origin_kind='DRAFT' AND page_job.origin_id=d.id
+               AND page_job.expert_contact_id=:contact AND page_job.account_code IN (:accounts)
+               AND page_job.actor_username=d.username)""",
+            mapOf("contact" to contactId, "accounts" to accountCodes, "ids" to jobIds), mapper)
+    }
     /**
      * fast-p 03：按目标唯一键锁定源行（先锁草稿再锁 attempt/job，保持统一锁序）。
      * 行不存在时不加锁，随后由唯一键插入竞争决出唯一赢家。

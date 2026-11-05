@@ -33,6 +33,19 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
         "SELECT * FROM mailbox_review_draft WHERE owner_username=:owner AND client_request_id=:request",
         mapOf("owner" to owner, "request" to clientRequestId), mapper).singleOrNull()
 
+    /** Bounded, non-locking canonical review rows for the server-selected timeline page. */
+    internal fun findForDelayedPage(contactId: Long, accountCodes: List<String>,
+                                   jobIds: Collection<Long>): List<MailReviewDraftRow> {
+        require(contactId > 0 && jobIds.size <= 100 && jobIds.all { it > 0 })
+        if (jobIds.isEmpty() || accountCodes.isEmpty()) return emptyList()
+        return jdbc.query("""SELECT d.* FROM mailbox_review_draft d
+            WHERE d.expert_contact_id=:contact AND d.account_code IN (:accounts) AND EXISTS (
+                SELECT 1 FROM delayed_manual_reply page_job
+                 WHERE page_job.id IN (:ids) AND page_job.origin_kind='REVIEW' AND page_job.origin_id=d.id
+                   AND page_job.expert_contact_id=:contact AND page_job.account_code=d.account_code)""",
+            mapOf("contact" to contactId, "accounts" to accountCodes, "ids" to jobIds), mapper)
+    }
+
     private fun params(r: MailReviewDraftRow) = MapSqlParameterSource()
         .addValue("id", r.id).addValue("owner", r.ownerUsername).addValue("contact", r.contactId)
         .addValue("request", r.clientRequestId).addValue("kind", r.targetKind).addValue("target", r.targetId)

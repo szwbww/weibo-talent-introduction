@@ -18,7 +18,7 @@ import java.time.LocalDateTime
  * 稳定排序键 (event_at, source_rank, id)，source_rank 1=MAIL_RECORD 2=INBOUND_PROCESSING。
  * 文本列沿既有 mailbox SQL 显式统一 utf8mb4_unicode_ci，避免 UNION 排序字符集冲突。
  *
- * summary / count / timeline 共用同一份归一化 UNION SQL 基础（[rangeUnionSql]）。
+ * summary / count / timeline 共用 UI union（[uiMessageUnionSql]），审核使用真实邮件 union。
  * 聚合在账号范围（accountCodes ∩ accountCode）全历史计算；方向/日期/主题/标签等
  * 消息级筛选只经 EXISTS 限定专家 membership，绝不影响聚合口径（I-2/I-4）。
  */
@@ -46,7 +46,7 @@ class MailboxConversationRepository(
         feed(contactId.toString())
         if (accountCodes.isNotEmpty()) {
             val sql = """
-                SELECT u.* FROM (${rangeUnionSql(includeBody = true)}) u
+                SELECT u.* FROM (${rawMailUnionSql(includeBody = true)}) u
                 JOIN mail_sender_account a ON a.account_code=u.account_code
                 WHERE u.expert_contact_id=:contactId AND a.account_code<>:simulator
                 ORDER BY u.source_rank,u.id
@@ -116,7 +116,8 @@ class MailboxConversationRepository(
          * 01 (I-1/I-4)：DB 真值三态（无行 = NONE）。`followed` 由同一次读取派生，
          * 绝不二次查询状态或布尔。
          */
-        val progressStatus: MailboxProgressStatus
+        val progressStatus: MailboxProgressStatus,
+        val delayedPendingCount: Long = 0
     ) {
         val followed: Boolean
             get() = progressStatus == MailboxProgressStatus.FOLLOWING
@@ -204,7 +205,7 @@ class MailboxConversationRepository(
         val sql = """
             SELECT COUNT(*) FROM (
                 SELECT u.expert_contact_id AS expert_contact_id
-                  FROM (${rangeUnionSql(includeBody = false)}) u
+                  FROM (${uiMessageUnionSql(includeBody = false)}) u
                   JOIN expert_contact ec ON ec.id = u.expert_contact_id
                  WHERE ${expertPredicates(username, filter, eligibility)}
                  GROUP BY u.expert_contact_id
@@ -245,7 +246,7 @@ class MailboxConversationRepository(
             SELECT COUNT(*) FROM mailbox_review_draft d
               JOIN (
                   SELECT DISTINCT u.expert_contact_id
-                    FROM (${rangeUnionSql(includeBody = false)}) u
+                    FROM (${uiMessageUnionSql(includeBody = false)}) u
                     JOIN expert_contact ec ON ec.id = u.expert_contact_id
                    WHERE ${expertPredicates(username, scope, eligibility)}
               ) candidates ON candidates.expert_contact_id = d.expert_contact_id
@@ -260,7 +261,7 @@ class MailboxConversationRepository(
         val scope = ConversationFilter(accountCodes)
         val writable = jdbcTemplate.queryForObject("""
             SELECT COUNT(DISTINCT u.expert_contact_id)
-              FROM (${rangeUnionSql(includeBody = false)}) u
+              FROM (${uiMessageUnionSql(includeBody = false)}) u
               JOIN expert_contact ec ON ec.id = u.expert_contact_id
              WHERE EXISTS (
                  SELECT 1 FROM expert_mail_read_access access_grant
@@ -303,13 +304,14 @@ class MailboxConversationRepository(
                    SUM(u.sent_flag) AS sent_count,
                    SUM(u.failed_flag) AS failed_count,
                    SUM(u.pending_flag) AS pending_count,
+                   SUM(u.delayed_waiting_flag) AS delayed_pending_count,
                    MAX(u.event_at) AS latest_event_at,
                    COALESCE((
                        SELECT ef.progress_status FROM expert_follow ef
                         WHERE ef.username = :username
                           AND ef.expert_contact_id = u.expert_contact_id
                    ), 'NONE') AS progress_status
-              FROM (${rangeUnionSql(includeBody = false)}) u
+              FROM (${uiMessageUnionSql(includeBody = false)}) u
               JOIN expert_contact ec ON ec.id = u.expert_contact_id
              WHERE ${expertPredicates(username, filter, eligibility)}
              GROUP BY u.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id
@@ -350,7 +352,7 @@ class MailboxConversationRepository(
                         WHERE ef.username = :username
                           AND ef.expert_contact_id = u.expert_contact_id
                    ), 'NONE') AS progress_status
-              FROM (${rangeUnionSql(includeBody = false)}) u
+              FROM (${uiMessageUnionSql(includeBody = false)}) u
               JOIN expert_contact ec ON ec.id = u.expert_contact_id
              WHERE ${expertPredicates(username, filter, eligibility)}
              GROUP BY u.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id
@@ -414,11 +416,11 @@ class MailboxConversationRepository(
                    u.event_at AS event_at,
                    u.send_status AS send_status,
                    u.process_status AS process_status
-              FROM (${rangeUnionSql(includeBody = false)}) u
+              FROM (${uiMessageUnionSql(includeBody = false)}) u
              WHERE u.expert_contact_id IN (:contactIds)
                AND NOT EXISTS (
                    SELECT 1
-                     FROM (${rangeUnionSql(includeBody = false)}) newer
+                     FROM (${uiMessageUnionSql(includeBody = false)}) newer
                     WHERE newer.expert_contact_id = u.expert_contact_id
                       AND (newer.event_at > u.event_at
                            OR (newer.event_at = u.event_at
@@ -452,12 +454,12 @@ class MailboxConversationRepository(
                    u.account_code AS account_code,
                    u.message_id AS message_id,
                    u.event_at AS received_at
-              FROM (${rangeUnionSql(includeBody = false)}) u
+              FROM (${uiMessageUnionSql(includeBody = false)}) u
              WHERE u.expert_contact_id IN (:contactIds)
                AND u.source = 'INBOUND_PROCESSING'
                AND NOT EXISTS (
                    SELECT 1
-                     FROM (${rangeUnionSql(includeBody = false)}) newer
+                     FROM (${uiMessageUnionSql(includeBody = false)}) newer
                     WHERE newer.expert_contact_id = u.expert_contact_id
                       AND newer.source = 'INBOUND_PROCESSING'
                       AND (newer.event_at > u.event_at
@@ -493,7 +495,7 @@ class MailboxConversationRepository(
         val sql = """
             SELECT u.expert_contact_id AS expert_contact_id,
                    GROUP_CONCAT(DISTINCT u.account_code ORDER BY u.account_code SEPARATOR ',') AS account_codes
-              FROM (${rangeUnionSql(includeBody = false)}) u
+              FROM (${uiMessageUnionSql(includeBody = false)}) u
              WHERE u.expert_contact_id IN (:contactIds)
              GROUP BY u.expert_contact_id
         """.trimIndent()
@@ -652,7 +654,7 @@ class MailboxConversationRepository(
                    u.process_status AS process_status,
                    u.message_id AS message_id,
                    u.in_reply_to AS in_reply_to
-              FROM (${rangeUnionSql(includeBody = true)}) u
+              FROM (${uiMessageUnionSql(includeBody = true)}) u
              WHERE u.expert_contact_id = :contactId
                AND (:beforeTime IS NULL
                     OR u.event_at < :beforeTime
@@ -684,7 +686,7 @@ class MailboxConversationRepository(
      * 注意：本 SQL 片段同时作为 count/summary/latest 系列/accountCodes/timeline 的数据基础，
      * 各列位置与别名必须保持一致。
      */
-    private fun rangeUnionSql(includeBody: Boolean): String {
+    private fun rawMailUnionSql(includeBody: Boolean): String {
         val outboundBody = if (includeBody) {
             """,
                    CONVERT(mr.body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body,
@@ -750,6 +752,42 @@ class MailboxConversationRepository(
         """.trimIndent()
     }
 
+    /** UI identity survives retries and success; real records remain available to reviewContext. */
+    private fun uiMessageUnionSql(includeBody: Boolean): String {
+        val body = if (includeBody) """,
+            CONVERT(j.text_body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body,
+            CONVERT(j.text_body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cleaned_body""" else ""
+        return """
+            SELECT r.*, 0 AS delayed_waiting_flag
+              FROM (${rawMailUnionSql(includeBody)}) r
+             WHERE r.source_rank <> 1 OR NOT EXISTS (
+                 SELECT 1 FROM mail_record linked
+                 JOIN delayed_manual_reply job ON job.send_attempt_id=linked.mail_send_attempt_id
+                 WHERE linked.id=r.id)
+            UNION ALL
+            SELECT j.expert_contact_id, 3,
+                   CONVERT('DELAYED_MANUAL_REPLY' USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   j.id,
+                   CONVERT('OUTBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CONVERT(j.account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   FROM_UNIXTIME(j.created_at_ms / 1000.0),
+                   CONVERT(j.status USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CONVERT(j.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CONVERT(SUBSTRING(j.text_body,1,200) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CONVERT(mr.message_id USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CONVERT(mr.in_reply_to USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                   CASE WHEN j.status='SENT' THEN 1 ELSE 0 END,
+                   CASE WHEN j.status IN ('FAILED','UNKNOWN') THEN 1 ELSE 0 END,
+                   0, 0$body,
+                   CASE WHEN j.status IN ('WAITING','SENDING') THEN 1 ELSE 0 END
+              FROM delayed_manual_reply j
+              LEFT JOIN mail_record mr ON mr.mail_send_attempt_id=j.send_attempt_id
+             WHERE j.account_code IN (:accountCodes)
+               AND (:accountCode IS NULL OR j.account_code=:accountCode)
+        """.trimIndent()
+    }
+
     /** 消息级筛选在聚合口径上完全不可满足的组合（label 只存在于 INBOUND 侧）。 */
     private class MembershipEligibility(
         val impossible: Boolean,
@@ -784,6 +822,7 @@ class MailboxConversationRepository(
             EXISTS (
                 SELECT 1 FROM mail_record mro
                  WHERE mro.direction = 'OUTBOUND'
+                   AND NOT EXISTS (SELECT 1 FROM delayed_manual_reply j WHERE j.send_attempt_id=mro.mail_send_attempt_id)
                    AND mro.expert_contact_id = u.expert_contact_id
                    AND mro.sender_account_code IN (:accountCodes)
                    AND (:accountCode IS NULL OR mro.sender_account_code = :accountCode)
@@ -795,6 +834,18 @@ class MailboxConversationRepository(
                         OR mro.subject LIKE CONCAT('%', :keyword, '%')
                         OR mro.cleaned_body LIKE CONCAT('%', :keyword, '%')
                         OR mro.body LIKE CONCAT('%', :keyword, '%'))
+            ) OR EXISTS (
+                SELECT 1 FROM delayed_manual_reply j
+                JOIN mail_send_attempt attempt ON attempt.id=j.send_attempt_id
+                 WHERE j.expert_contact_id=u.expert_contact_id
+                   AND j.account_code IN (:accountCodes)
+                   AND (:accountCode IS NULL OR j.account_code=:accountCode)
+                   AND (:startTime IS NULL OR FROM_UNIXTIME(j.created_at_ms / 1000.0)>=:startTime)
+                   AND (:endTime IS NULL OR FROM_UNIXTIME(j.created_at_ms / 1000.0)<:endTime)
+                   AND (:subject IS NULL OR j.subject LIKE CONCAT('%',:subject,'%'))
+                   AND (:recipientEmail IS NULL OR attempt.recipient LIKE CONCAT('%',:recipientEmail,'%'))
+                   AND (:keyword IS NULL OR j.subject LIKE CONCAT('%',:keyword,'%')
+                        OR j.text_body LIKE CONCAT('%',:keyword,'%'))
             )
             """.trimIndent()
         } else null
@@ -1019,7 +1070,8 @@ class MailboxConversationRepository(
             failedCount = getLong("failed_count"),
             pendingCount = getLong("pending_count"),
             latestEventAt = localDateTime("latest_event_at"),
-            progressStatus = MailboxProgressStatus.valueOf(getString("progress_status"))
+            progressStatus = MailboxProgressStatus.valueOf(getString("progress_status")),
+            delayedPendingCount = getLong("delayed_pending_count")
         )
 
     private fun ResultSet.toLatestMessageRow(): ConversationLatestMessageRow =
@@ -1063,6 +1115,7 @@ class MailboxConversationRepository(
         const val DIRECTION_OUTBOUND = "OUTBOUND"
         const val SOURCE_MAIL_RECORD = "MAIL_RECORD"
         const val SOURCE_INBOUND_PROCESSING = "INBOUND_PROCESSING"
+        const val SOURCE_DELAYED_MANUAL_REPLY = "DELAYED_MANUAL_REPLY"
 
         /** 01 (I-3)：跨账号挂起摘要复用的待处理权威谓词。 */
         const val PROCESS_STATUS_MANUAL_REVIEW = "MANUAL_REVIEW"

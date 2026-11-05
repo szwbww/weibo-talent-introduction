@@ -228,7 +228,7 @@ class OutboundAttachmentService(
     }
 
     /** 读原件：realpath 越界/非普通文件/尺寸或 hash 不符都不放行（I-4）。 */
-    private fun readVerifiedFile(attachment: OutboundMailAttachment): OutboundMailFile {
+    internal fun readVerifiedFile(attachment: OutboundMailAttachment): OutboundMailFile {
         val snapshot = snapshotOf(attachment)
         val root = outboundRoot()
         val candidate = root.resolve(snapshot.id)
