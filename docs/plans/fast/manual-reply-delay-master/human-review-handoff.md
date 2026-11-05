@@ -1,8 +1,8 @@
 # Fast-P Human Review Handoff
 
-- Outcome: RUNNING
+- Outcome: PAUSED_FOR_HUMAN
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
-- Current/final code head: 9bbb3b050f533a0010d48d545b4756abc8aa7e82
+- Current/final code head: 9cebea6d41cc3b749382deb7691ba704471b131e
 - Branch/worktree: fast/manual-reply-delay-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
 
 ## Child Status
@@ -11,8 +11,8 @@
 | 01-storage | LIGHT_PASS | 05342b4be63bbc7d9b30416ae73ada2d44b562df..d57026edc072b5469f08e8642c8c771acbd894e9 | 0 | 322495454e9a62d22c3739a5cfe09750e2941207 |
 | 02-preparation | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9..72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | bdda233d1a376bc2ea01f61f8540545a833f18c8 |
 | 03-lifecycle | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 2 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 |
-| 04-worker-api | IMPLEMENTING | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 0 | a0633e8fd51c47a6444c44ad000870da8d11f25b |
-| 05-query | PENDING | N/A | 0 | — |
+| 04-worker-api | LIGHT_PASS_WITH_NOTES | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 9a04e50c645a18c50a10b6f67e083b5397a66117 |
+| 05-query | PAUSED_FOR_HUMAN | 9cebea6d41cc3b749382deb7691ba704471b131e..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 1fb2914e2038ccb6a139b45f9013bc82bdce92a4 |
 | 06-frontend | PENDING | N/A | 0 | — |
 | 07-activation | PENDING | N/A | 0 | — |
 
@@ -43,4 +43,13 @@ No whole-system verification was performed. review-fast-p was not invoked.
 ## Current resume — A7/A8
 
 The preceding pause is historical. User selected 「补齐原输入并继续」. Master/04 amendment d57b856427a83a6ccf23c60e58df9d92db9f266d authorizes Models and the explicit original-input/old-snapshot policy. Ledger is RUNNING,04 epoch2; fresh implementation and verification remain required. This is not a terminal review handoff.
+
+
+## Current pause — 05 attachment verification reuse
+
+- The04 pause/resume above is historical and resolved by A7–A10.04 Verify04Epoch2 returned LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD; compile/unit43/MySQL40/JS2038 passed, component loopbackSMTP observed. FullE2E/restart still belongs07. Clean04 full-manifest checkpoint passed at3c681a44f6911e28c637451e3ee7610c9b9fea9d before05 dispatch.
+- Current05 blocker: `OutboundAttachmentService.readVerifiedFile(OutboundMailAttachment): OutboundMailFile` is private. Its public alternatives fetch metadata with per-file SQL; aggregating page attachments misapplies per-mail limits. Smallest requested authority is that file solely to expose the same method as internal, unchanged security body/ownership/public APIs. Server-loaded page metadata and per-job ownership/limits remain05 service responsibilities.
+- Exact audit and proposed coverage: children/05-query/execution.md:33-85. READ skips private metadata/disk/actions; FULL/admin may verify disk. This interpretation is resolved and no metadata-only capability weakening is authorized.
+- No05 product/test changes or required commands; no independent verdict. Evidence commit1fb2914e2038ccb6a139b45f9013bc82bdce92a4. Resume05 under approved amendment/new epoch0repairs, not replay01–04.
+- Existing A5 blanket approval is for necessary existing-test compatibility only, not this new production path. Exact authority remains pending. No review-fast-p invoked.
 
