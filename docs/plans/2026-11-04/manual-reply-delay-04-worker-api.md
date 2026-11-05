@@ -1,6 +1,6 @@
 # 04 后台投递与操作API
 
-前置03通过。后台执行、HTTP权限两个子系统，8个文件（A7/A8）。不开启生产入队入口。
+前置03通过。后台执行、HTTP权限两个子系统，9个文件（A7/A8/A9/A10）。不开启生产入队入口。
 
 ## 需求描述
 
@@ -126,6 +126,7 @@ ExpertMailPermissionGuard注册controller.get/list为READ_CONTACT、restore/canc
 |6|src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt|新增HTTP矩阵|
 |7|src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt|新增路由授权矩阵|
 |8|src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt|A8：原输入恢复白名单、工厂和向后兼容codec|
+|9|src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplySnapshotTest.kt|A10：既有Prepared夹具补齐原输入，保留断言|
 
 ## 验收标准
 
@@ -136,6 +137,7 @@ ExpertMailPermissionGuard注册controller.get/list为READ_CONTACT、restore/canc
 - I-10 — 所有码只输出固定文案；堆栈、认证原文、内部路径不出响应；UNKNOWN与永久失败retry409。
 - I-11 — worker容量1、无60秒sleep、共享调度不执行SMTP、disabled仍处理旧任务；两个worker对同job只一个SMTP。03真实MySQL并发IT一并运行。
 - I-6/A8 — 在已授权Worker/Controller测试中验证完整LEGACY原输入往返（包含非UTC zone、原本地时间、frameSnapshot/requestFactSelections、QA/RAG/adopt和有序附件），验证旧JSON无新增结构仍能解码并保持冻结投递与指纹不变、但restore422且无伪造副本；未知schema/非法白名单/超限仍拒绝。READ不可取原输入，公共投影不得出现恢复结构。不得为了兼容削弱现有投递/权限断言。
+- A10既有测试兼容 — `DelayedManualReplySnapshotTest` 必须加入Worker/Controller/PermissionGuard同一次必跑单测命令；仅补充既有Prepared夹具的显式原输入及实际会议输入，保留所有业务/codec/指纹断言，不以生产默认值反推原输入。
 
 ## 人工验收清单
 
@@ -166,4 +168,6 @@ ExpertMailPermissionGuard注册controller.get/list为READ_CONTACT、restore/canc
 ## 修正记录
 
 - A8（2026-11-05 用户选择「补齐原输入并继续」）：由04 epoch1实现前审计确认原输入持久化缺口，新增Models授权使文件数7→8；在T1a固定向后兼容和恢复失败语义，保持投递authority不变。审计证据见 `../fast/manual-reply-delay-master/children/04-worker-api/execution.md`。本次是范围补全而非放宽I-4/I-6/I-7；无新迁移，无后续子计划提前实施。Master A7同步文件数与兼容决定。
+
+- A10（适用用户已批准A5「授权必要测试兼容修订并持续执行」）：Impl04Epoch2报告 `DelayedManualReplySnapshotTest.kt:291-312` 的Prepared构造未提供新工厂要求的originalInput；现有fromPrepared测试依赖该夹具。授权该测试文件补齐显式原请求及会议输入，不修改生产接口/降低原断言，文件数8→9。精确失配与变更记录保存在04 execution.md；不要求先运行必然失配的用例来重复确认源码事实。Master A9同步清单，执行周期仍为epoch2、修复轮次0。
 
