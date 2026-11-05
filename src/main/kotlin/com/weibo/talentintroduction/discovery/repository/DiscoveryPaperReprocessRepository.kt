@@ -27,7 +27,8 @@ class DiscoveryPaperReprocessRepository(
     private val jdbc: JdbcTemplate,
     manager: PlatformTransactionManager,
     private val mapper: ObjectMapper,
-    private val tasks: TaskExecutionRepository
+    private val tasks: TaskExecutionRepository,
+    private val verification: DiscoveryVerificationRepository = DiscoveryVerificationRepository(jdbc)
 ) {
     private val tx = TransactionTemplate(manager)
     @Suppress("UNCHECKED_CAST")
@@ -412,6 +413,9 @@ class DiscoveryPaperReprocessRepository(
         jdbc.update("""UPDATE discovery_paper_reprocess_run SET state=?,active_key=NULL,scope_json=?,lease_token=NULL,
             lease_until=NULL,revision=revision+1,updated_at=?,finished_at=? WHERE execution_id=?""",
             state.name, json(scope, "INPUT_TOO_LARGE"), db(time), db(time), run.executionId)
+        // Same transaction as the parent terminal state, including failure and lease-loss recovery.
+        // A child failure rolls everything back; never leave a stopped parent holding a review slot.
+        if (run.mode == ReprocessMode.ENFORCE) verification.settleStoppedPaperReprocess(run.executionId, time)
         val summary = summary(run.executionId)
         val taskState = when (state) {
             ReprocessState.COMPLETED -> "SUCCESS"
@@ -446,6 +450,7 @@ class DiscoveryPaperReprocessRepository(
             revision=revision+1,updated_at=? WHERE execution_id=?""", db(time), runId)
         terminalizeItems(runId, setOf(ReprocessItemState.PENDING), ReprocessItemState.CANCELLED, "CANCELLED", time)
         jdbc.update("UPDATE task_execution SET status='CANCELLING',updated_at=? WHERE id=? AND status='RUNNING'", taskTime(time), runId)
+        if (run.mode == ReprocessMode.ENFORCE) verification.settleStoppedPaperReprocess(runId, time)
         find(runId)!!
     }
 

@@ -58,6 +58,17 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     fun paperRunPermission(executionId: Long): Boolean = findRun(executionId)?.let { paperAllowed(it) } == true
 
+    /** Only a durable terminal/cancelled ENFORCE parent revokes the slot. An expired lease alone
+     * is recoverable and must never cancel children or allow a second review to overlap it. */
+    private fun stoppedPaperParent(parentId: Long, locked: Boolean = false): Boolean {
+        val row = jdbc.queryForList("""SELECT p.state,p.cancel_requested FROM discovery_paper_reprocess_run p
+            JOIN task_execution t ON t.id=p.execution_id WHERE p.execution_id=? AND p.mode='ENFORCE'
+            AND t.task_type='DISCOVERY_PAPER_REPROCESS' ${if (locked) "FOR UPDATE" else ""}""", parentId).singleOrNull()
+            ?: return false
+        return cancelled(row["cancel_requested"]) || row["state"] in setOf(
+            "FAILED", "INTERRUPTED", "CANCELLED", "COMPLETED", "COMPLETED_WITH_ERRORS")
+    }
+
     fun requirePaperSources(parentId: Long, docId: String,
         refs: List<com.weibo.talentintroduction.discovery.service.PaperSourceRef>) {
         require(refs.isNotEmpty() && refs.distinct().size == refs.size)
@@ -114,14 +125,11 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     @Transactional
     fun cancelPaperReprocessOrdinaryRun(parentId: Long) {
-        val row = jdbc.queryForList("""SELECT p.cancel_requested FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
-            WHERE p.execution_id=? AND p.mode='ENFORCE' AND t.task_type='DISCOVERY_PAPER_REPROCESS' FOR UPDATE""", parentId).singleOrNull()
-            ?: error("PAPER_PARENT_NOT_FOUND")
-        check(cancelled(row["cancel_requested"]))
+        check(stoppedPaperParent(parentId, locked = true)) { "PAPER_PARENT_STILL_ACTIVE" }
         val run = findRun(parentId) ?: return
         require(paperParentId(run) == parentId && run.recheckJson == null)
         lockRun(parentId)
-        closeInput(parentId, Instant.now())
+        if (!run.inputClosed) closeInput(parentId, Instant.now())
         jdbc.query("""SELECT id FROM discovery_verification_item WHERE owner_execution_id=? AND review_epoch=0
             AND state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT') AND admission_revision IS NULL ORDER BY id""",
             RowMapper { rs, _ -> rs.getLong(1) }, parentId).forEach { id ->
@@ -141,8 +149,18 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     @Transactional
     fun cancelPaperReprocessChildren(parentId: Long) {
+        check(settleStoppedPaperReprocess(parentId, Instant.now())) { "PAPER_PARENT_STILL_ACTIVE" }
+    }
+
+    /** Parent -> verification runs -> items. Caller may already hold the parent lock. Completed
+     * receipts/admissions are preserved; clearing leases prevents late workers from committing.
+     * CANCELLED remains resumable only through the existing explicit parent retry workflow. */
+    @Transactional
+    fun settleStoppedPaperReprocess(parentId: Long, now: Instant): Boolean {
+        if (!stoppedPaperParent(parentId, locked = true)) return false
         cancelPaperReprocessOrdinaryRun(parentId)
-        paperReprocessRuns(parentId).filter { it.recheckJson != null }.forEach { cancelRecheck(it.executionId, Instant.now()) }
+        paperReprocessRuns(parentId).filter { it.recheckJson != null }.forEach { cancelRecheck(it.executionId, now) }
+        return true
     }
 
     /**
@@ -585,7 +603,10 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         WHERE recheck_json IS NOT NULL
           AND JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.control.phase')) IN ('PREPARING','READY','RUNNING','CANCELLING')
           ${if (actor != null) "AND JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.spec.actor'))=?" else ""}
-        ORDER BY execution_id DESC""", runMapper, *listOfNotNull(actor).toTypedArray())
+        ORDER BY execution_id DESC""", runMapper, *listOfNotNull(actor).toTypedArray()).filter { run ->
+            // Read-only: historical orphans cannot block a new run even before scheduled cleanup.
+            paperParentId(run)?.let { !stoppedPaperParent(it) } ?: true
+        }
 
     @Transactional
     fun savePreparationInputs(executionId: Long, inputs: List<Pair<String, String>>, now: Instant) {
@@ -733,11 +754,15 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     /** Scheduled reconciliation only; GET never repairs, claims leases or changes task state. */
     fun unsettledRechecks(): List<Long> = jdbc.query("""SELECT execution_id FROM discovery_verification_run
         WHERE JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.control.phase')) IN ('PREPARING','RUNNING','CANCELLING')
+           OR (JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.control.phase'))='READY'
+               AND JSON_EXTRACT(settings_json,'$.paperReprocessParentId') IS NOT NULL)
         ORDER BY execution_id LIMIT 100""", RowMapper { rs, _ -> rs.getLong(1) })
 
     @Transactional
     fun reconcileRecheck(executionId: Long, now: Instant) {
         val run = lockRun(executionId)
+        val parentId = paperParentId(run)
+        if (parentId != null && settleStoppedPaperReprocess(parentId, now)) return
         val control = recheck(run).control
         when {
             control.phase == RecheckPhase.PREPARING && !run.inputClosed &&
