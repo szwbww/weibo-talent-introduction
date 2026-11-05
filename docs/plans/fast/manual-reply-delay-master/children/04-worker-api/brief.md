@@ -17,6 +17,7 @@
 6. src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt (new)
 7. src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt
 8. src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt (A8, restore-input model/factory/codec only)
+9. src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplySnapshotTest.kt (A10, existing explicit original-input fixture compatibility only)
 
 No product/test changes outside these paths. Never edit applied migrations, plans, config, unlisted shared models or lifecycle files. A8 explicitly permits the Models path above for original-input restoration and compatibility only. If another exact requirement cannot be implemented inside this set, report PLAN_CONFLICT with smallest required amendment; do not silently widen scope. Controller owns fast-p evidence except your execution report.
 
@@ -32,7 +33,7 @@ Implement T1–T4 and all child acceptance criteria, preserving master I-1/I-4/I
 ## Required commands and proof
 Java 11: JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home.
 1. `mvn -q -DskipTests test-compile`
-2. `mvn test -Dtest='DelayedManualReplyWorkerTest,DelayedManualReplyControllerTest,ExpertMailPermissionGuardTest'`
+2. `mvn test -Dtest='DelayedManualReplyWorkerTest,DelayedManualReplyControllerTest,ExpertMailPermissionGuardTest,DelayedManualReplySnapshotTest'`
 3. `mvn test -Dtest=DelayedManualReplyLifecycleIT -DmysqlIt=true` using the isolated Testcontainers environment supplied by 03, never default dev/prod datasource.
 Record actual counts/skips, environment and exit codes. Exercise the real changed worker/API path with a throwaway smoke harness if it is not already exercised live by the required runtime scenario; remove scaffolding afterwards. No production SMTP or production database. Preserve the plan's 59999/60000ms boundary, replayed frozen content, unknown-result convergence, current-permission and thread-capacity proof.
 
@@ -54,4 +55,10 @@ Read skill://execute-p first. One writer only; no push/merge/rebase/amend/reset 
 - Implement the complete child, including new I-6/T1a/A4. Preserve original assembly request/frame/requestFactSelections and MeetingInput as bounded restore-only data. No UTC/ICS inference or verified-result substitution. Retain schemaVersion, old decode/frozen delivery/fingerprint semantics; old LEGACY missing full original input returns422 SNAPSHOT_INVALID on restore only.
 - Add round-trip/new-input and historical compatibility assertions inside the already-authorized Worker/Controller tests. This amendment does not authorize lifecycle or later-child production changes.
 - Same required commands and runtime smoke. Append epoch2 execution report after historical epoch1; do not overwrite it. Use a fresh independent verifier afterward. Continue automatically through later children after clean evidence checkpoints; never run review-fast-p.
+
+
+## Epoch 2 — Existing test compatibility A9/A10
+
+- Latest master/04 identity: de076f6413b65809ca13610c0455965134056dcb. Preapproved A5 applies to the concrete SnapshotTest Prepared fixture missing mandatory originalInput; add explicit original request/meeting fixtures and preserve all business assertions. No production contract expansion.
+- Authorized set now9files; required unit command now includes DelayedManualReplySnapshotTest. Record exact mismatch and current identity in execution report, retain historical authority/epoch records.
 
