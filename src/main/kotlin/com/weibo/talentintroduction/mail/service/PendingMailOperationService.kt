@@ -98,7 +98,8 @@ class PendingMailOperationService(
     // Spring 运行时按主构造器完整注入，可空默认值只让既有的直接构造单元测试零改动；
     // 携带附件的入口在 claim 之前用 requireNotNull 防御性校验，绝不静默放行。
     private val outboundAttachmentService: OutboundAttachmentService? = null,
-    private val mailReplyDraftService: MailReplyDraftService? = null
+    private val mailReplyDraftService: MailReplyDraftService? = null,
+    private val mailReviewDraftService: MailReviewDraftService? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
@@ -382,7 +383,14 @@ class PendingMailOperationService(
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft,
-            reviewSendRef = reviewSendRef
+            reviewSendRef = reviewSendRef,
+            originalInput = PendingManualRichReplyRequest(
+                senderAccountCode, subject, htmlBody, textBody, operatorName,
+                qaRuleIds, suggestedRuleIds, ackSnippetId, edited, freeTextPreview, useVariants,
+                templateTextBody, templateHtmlBody, trustReplyAssembly, ragFactCodes,
+                ragCorpusFingerprint, safetyWarningConfirmed, strongConfirmationText,
+                meeting, previewAttachmentSha256, attachmentIds, draftRef
+            )
         )
     }
 
@@ -625,7 +633,8 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftSendRef: ValidatedDraftSendRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
+        reviewSendRef: MailReviewSendRef? = null,
+        originalInput: PendingManualRichReplyRequest? = null
     ): PreparedManualReplyOutcome {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
@@ -880,7 +889,8 @@ class PendingMailOperationService(
                 rawHtmlBody = htmlBody,
                 rawTextBody = textBody,
                 draftSendRef = draftSendRef,
-                reviewSendRef = reviewSendRef
+                reviewSendRef = reviewSendRef,
+                originalInput = originalInput
             )
         )
     }
@@ -905,7 +915,8 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftSendRef: ValidatedDraftSendRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
+        reviewSendRef: MailReviewSendRef? = null,
+        originalInput: PendingManualRichReplyRequest? = null
     ): PendingMailSendResult {
         val outcome = prepareManualRichSend(
             source = source,
@@ -921,7 +932,8 @@ class PendingMailOperationService(
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
             draftSendRef = draftSendRef,
-            reviewSendRef = reviewSendRef
+            reviewSendRef = reviewSendRef,
+            originalInput = originalInput
         )
         val prepared = when (outcome) {
             is PreparedManualReplyOutcome.Completed -> return outcome.result
@@ -939,7 +951,140 @@ class PendingMailOperationService(
      * 同步路径会循环入队）；[delayedRef] 是后续延迟 worker 的 server-only 任务令牌，
      * 本阶段无队列行时保持 null 并沿旧完成逻辑。
      */
-    @Suppress("UNUSED_PARAMETER")
+    /** Rebuild runtime resources only. Restore-only request data never authorizes delivery. */
+    @Transactional
+    internal fun rehydrateDelayed(snapshot: DelayedManualReplySnapshot, actor: String, forRetry: Boolean = false): PreparedManualReply {
+        fun fail(reason: DelayedReplyPublicError): Nothing =
+            throw DelayedManualReplyException(422, reason.code, reason.message)
+        fun <T> checked(reason: DelayedReplyPublicError, block: () -> T): T =
+            try { block() } catch (ex: DelayedManualReplyException) { throw ex }
+            catch (_: com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException) {
+                fail(DelayedReplyPublicError.ACCESS_CHANGED)
+            }
+            catch (ex: MailReviewDraftException) {
+                fail(when {
+                    ex.status == 403 -> DelayedReplyPublicError.ACCESS_CHANGED
+                    ex.code == "REVIEW_CONTEXT_CHANGED" -> DelayedReplyPublicError.REVIEW_CONTEXT_CHANGED
+                    else -> DelayedReplyPublicError.SOURCE_CHANGED
+                })
+            }
+            catch (ex: MailReplyDraftException) {
+                fail(if (ex.status == HttpStatus.FORBIDDEN) DelayedReplyPublicError.ACCESS_CHANGED else DelayedReplyPublicError.SOURCE_CHANGED)
+            }
+            catch (_: Exception) { fail(reason) }
+        checked(DelayedReplyPublicError.SNAPSHOT_INVALID) { DelayedManualReplySnapshotCodec.validate(snapshot) }
+        val p = snapshot.payload
+        val s = snapshot.source
+        checked(DelayedReplyPublicError.SNAPSHOT_INVALID) {
+            p.calendarAttachment?.let { calendar ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(calendar.icsText.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+                require(digest == calendar.sha256)
+            }
+        }
+        checked(DelayedReplyPublicError.ACCESS_CHANGED) {
+            require(actor == "admin" || actor == "user1")
+            expertMailPermissionGuard.requireDelayedActor(actor)
+            expertMailPermissionGuard.requireFull(actor, p.contactId)
+        }
+        val contact = checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+            expertContactRepository.findById(p.contactId).orElseThrow().also {
+                require(it.orcidId == p.orcidId && it.expertEmail.trim().lowercase() == p.normalizedRecipient)
+            }
+        }
+        val account = checked(DelayedReplyPublicError.ACCOUNT_UNAVAILABLE) {
+            mailSenderAccountService.getManualSendAccount(p.accountCode).also {
+                require(it.enabled && it.accountCode == p.accountCode && it.accountCode != "SIMULATOR_NOOP")
+            }
+        }
+        if (emailSuppressionService.isSuppressed(contact.expertEmail)) fail(DelayedReplyPublicError.RECIPIENT_SUPPRESSED)
+        val inbound = p.inboundProcessingId?.let { id ->
+            checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+                inboundMailProcessingRepository.findById(id).orElseThrow().also {
+                    require(it.expertContactId == p.contactId && it.senderAccountCode == p.accountCode)
+                    require(it.messageId == p.inReplyTo && it.messageId?.takeIf(String::isNotBlank) == s.sourceMessageId)
+                    require(s.smtpInReplyTo == null && s.smtpReferences == null)
+                }
+            }
+        }
+        val anchor = s.anchorMailRecordId?.let { id ->
+            checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+                resolveIdentityConversationAnchor(p.contactId, p.accountCode, id).also {
+                    val messageId = it.messageId?.trim()?.takeIf { value -> value.isNotBlank() && value.length <= 255 }
+                    val references = messageId?.let { message ->
+                        listOfNotNull(it.inReplyTo?.trim()?.takeIf(String::isNotBlank), message).joinToString(" ")
+                    }
+                    require(messageId == p.inReplyTo && messageId == s.smtpInReplyTo && references == s.smtpReferences)
+                    require(it.messageId?.takeIf(String::isNotBlank) == s.sourceMessageId)
+                }
+            }
+        }
+        var draftRef: ValidatedDraftSendRef? = null
+        var reviewRef: MailReviewSendRef? = null
+        when (val restore = snapshot.restore) {
+            is DelayedDraftRestore -> checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+                require(restore.owner == actor)
+                val source = requireNotNull(mailReplyDraftService).lockDelayedSource(actor, restore)
+                require(source.contentMatches)
+                draftRef = requireNotNull(source.ref)
+            }
+            is DelayedReviewRestore -> checked(DelayedReplyPublicError.REVIEW_CONTEXT_CHANGED) {
+                require(actor == "admin" && restore.actor == actor)
+                val service = requireNotNull(mailReviewDraftService)
+                reviewRef = if (forRetry) {
+                    val current = service.lockDelayedReviewForRetry(actor, restore)
+                    MailReviewSendRef(current.first, actor, current.second)
+                } else {
+                    MailReviewSendRef(service.lockDelayedReview(actor, restore, restore.confirmationEventId),
+                        actor, restore.confirmationEventId)
+                }
+            }
+            is DelayedLegacyRestore -> Unit
+        }
+        val files = checked(DelayedReplyPublicError.ATTACHMENT_UNAVAILABLE) {
+            resolveOutboundAttachmentFileSet(p.contactId, p.outboundAttachments.map { it.id }, actor).also {
+                require(it.snapshots == p.outboundAttachments)
+            }
+        }
+        val payload = ManualReplySendAttemptService.SendPayload(
+            orcidId = p.orcidId, contactId = p.contactId, inboundProcessingId = p.inboundProcessingId,
+            accountCode = p.accountCode, normalizedRecipient = p.normalizedRecipient, subject = p.subject,
+            finalText = p.finalText, finalHtml = p.finalHtml, inReplyTo = p.inReplyTo,
+            canonicalQaRuleIds = p.canonicalQaRuleIds, primaryRuleId = p.primaryRuleId,
+            sourceAnchor = p.sourceAnchor, idempotencyRequestId = p.idempotencyRequestId,
+            calendarAttachment = p.calendarAttachment,
+            meetingEvent = p.meetingEvent?.let {
+                com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput(
+                    Instant.ofEpochMilli(it.startUtcMs), Instant.ofEpochMilli(it.endUtcMs), it.meetingLink)
+            }, outboundAttachments = p.outboundAttachments
+        ).also {
+            it.draftSendRef = draftRef
+            it.reviewSendRef = reviewRef
+            it.ragEvidence = snapshot.evidence.ragFactCodes.takeIf { codes -> codes.isNotEmpty() }?.let { codes ->
+                ManualReplySendAttemptService.RagEvidence(codes, snapshot.evidence.ragCorpusFingerprint)
+            }
+        }
+        val e = snapshot.evidence
+        return PreparedManualReply(
+            source = ManualRichSendSource(contact, p.contactId, p.inboundProcessingId, inbound, account,
+                p.accountCode, p.inReplyTo, s.smtpInReplyTo, s.smtpReferences, s.anchorMailRecordId,
+                p.idempotencyRequestId, anchor),
+            payload = payload, renderedSubject = p.subject, finalTextBody = p.finalText, finalHtmlBody = p.finalHtml,
+            calendarSnapshot = p.calendarAttachment, attachmentFileSet = files,
+            evidence = ManualReplyEvidenceContext(frozenAssembly = e.assembly, carriesQa = e.carriesQa,
+                canonicalFactIds = e.canonicalFactIds, serverSuggestedFactIds = e.serverSuggestedFactIds,
+                ragMode = e.ragFactCodes.isNotEmpty(), ragFactCodes = e.ragFactCodes,
+                ragFingerprintAtSend = e.ragCorpusFingerprint, templateTextBody = e.templateTextBody, edited = e.edited),
+            operatorName = e.operator, authenticatedUsername = actor,
+            requiresStrong = snapshot.confirmation.strongConfirmationRequired,
+            safetyWarningConfirmed = snapshot.confirmation.safetyWarningConfirmed,
+            strongConfirmationText = snapshot.confirmation.strongConfirmationText,
+            bodyPreviewText = e.bodyPreviewText.orEmpty(), auditNote = e.auditNote.orEmpty(),
+            rawSubject = p.subject, rawHtmlBody = p.finalHtml, rawTextBody = p.finalText,
+            draftSendRef = draftRef, reviewSendRef = reviewRef
+        )
+    }
+
     internal fun deliverPrepared(
         prepared: PreparedManualReply,
         claim: ManualReplySendAttemptService.ClaimedAttempt,
@@ -992,7 +1137,8 @@ class PendingMailOperationService(
                             val id = manualReplySendAttemptService.finalizeSuccess(
                                 payload = payload,
                                 attemptId = claim.attemptId,
-                                messageId = claim.messageId
+                                messageId = claim.messageId,
+                                delayedRef = delayedRef
                             )
                             if (source.inboundProcessingId != null) {
                                 manualReplySendAttemptService.recordSendAudit(
@@ -1011,7 +1157,8 @@ class PendingMailOperationService(
                                     serverSuggestedFactIds = evidence.serverSuggestedFactIds,
                                     edited = evidence.edited,
                                     // 04 (I-1/I-7): 仅在该次发送存在 verified assembly 时附加诊断。
-                                    trustReplyDiagnostics = evidence.verifiedAssembly?.response?.diagnostics,
+                                    trustReplyDiagnostics = evidence.verifiedAssembly?.response?.diagnostics
+                                        ?: evidence.frozenAssembly?.diagnostics,
                                     note = auditNote
                                 )
                             } else {
@@ -1041,7 +1188,8 @@ class PendingMailOperationService(
                                     attemptId = claim.attemptId,
                                     messageId = claim.messageId,
                                     resultStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
-                                    errorSummary = "finalize_failure:${finalizeEx.message?.take(400).orEmpty()}"
+                                    errorSummary = "finalize_failure:${finalizeEx.message?.take(400).orEmpty()}",
+                                    delayedRef = delayedRef
                                 )
                             } catch (finalizeFailEx: Exception) {
                                 log.error("finalizeFailure to UNKNOWN also failed for attempt {}: {}",
@@ -1061,7 +1209,8 @@ class PendingMailOperationService(
                                 finalTextBody = finalTextBody,
                                 operatorName = operatorName,
                                 outboundMailRecordId = mailRecordId,
-                                verifiedAssembly = evidence.verifiedAssembly
+                                verifiedAssembly = evidence.verifiedAssembly,
+                                frozenAssembly = evidence.frozenAssembly
                             )
                         } else {
                             UnsupportedAnswerIndexArchiveResult()
@@ -1083,7 +1232,8 @@ class PendingMailOperationService(
                             attemptId = claim.attemptId,
                             messageId = claim.messageId,
                             resultStatus = classification.attemptStatus,
-                            errorSummary = classification.errorSummary
+                            errorSummary = classification.errorSummary,
+                            delayedRef = delayedRef
                         )
                         if (classification.isUnknown) {
                             throw ResponseStatusException(
@@ -1113,7 +1263,8 @@ class PendingMailOperationService(
                                     attemptId = claim.attemptId,
                                     messageId = claim.messageId,
                                     resultStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
-                                    errorSummary = "delivery_error:${deliveryEx.message?.take(400).orEmpty()}"
+                                    errorSummary = "delivery_error:${deliveryEx.message?.take(400).orEmpty()}",
+                                    delayedRef = delayedRef
                                 )
                             } catch (finalizeEx: Exception) {
                                 log.error("finalizeFailure to UNKNOWN failed for attempt {}: {}",
@@ -1409,12 +1560,17 @@ class PendingMailOperationService(
         outboundMailRecordId: Long?,
         // 03 (阶段 4): 直接复用发送前 verifyAssembly 的已验证结果；不再发送成功后
         // 二次 assemble（避免前后两次解析漂移）。
-        verifiedAssembly: VerifiedTrustReplyAssembly?
+        verifiedAssembly: VerifiedTrustReplyAssembly?,
+        frozenAssembly: DelayedReplyAssemblySnapshot? = null
     ): UnsupportedAnswerIndexArchiveResult {
-        if (verifiedAssembly == null || outboundMailRecordId == null) {
+        if (outboundMailRecordId == null) {
             return UnsupportedAnswerIndexArchiveResult()
         }
-        val assembled = verifiedAssembly.response
+        // A persisted archive projection is not a newly verified assembly response. Keep its
+        // deliberately smaller type rather than inventing source versions or a draft hash.
+        val assembled = frozenAssembly ?: verifiedAssembly?.response?.let {
+            DelayedReplyAssemblySnapshot(it.source, it.itemVersions, it.finalParagraphByRequestKey, it.diagnostics)
+        } ?: return UnsupportedAnswerIndexArchiveResult()
         val operatorDirectedCount = assembled.itemVersions.count {
             it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }
@@ -1459,7 +1615,7 @@ class PendingMailOperationService(
                 inboundProcessingId,
                 error.javaClass.simpleName
             )
-            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(verifiedAssembly)))
+            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(assembled)))
         }
     }
 
@@ -1471,8 +1627,8 @@ class PendingMailOperationService(
 
     // Repair R-2 (V-2)：失败归档计数对齐权威资格判定（旧口径只数
     // ANSWER_FROM_OPERATOR_INPUT，与放宽后的允许集合不一致）。
-    private fun eligibleFailureCount(verifiedAssembly: VerifiedTrustReplyAssembly): Int =
-        verifiedAssembly.response.itemVersions.count { version ->
+    private fun eligibleFailureCount(assembly: DelayedReplyAssemblySnapshot): Int =
+        assembly.itemVersions.count { version ->
             unsupportedAnswerIndexService.isArchiveEligible(version)
         }.coerceAtLeast(1)
 
@@ -2027,7 +2183,8 @@ internal data class PreparedManualReply(
     val rawHtmlBody: String,
     val rawTextBody: String?,
     val draftSendRef: ValidatedDraftSendRef?,
-    val reviewSendRef: MailReviewSendRef?
+    val reviewSendRef: MailReviewSendRef?,
+    val originalInput: PendingManualRichReplyRequest? = null
 )
 
 /**
@@ -2075,7 +2232,9 @@ internal data class ManualReplyEvidenceContext(
     val inboundText: String = "",
     val researchProfileSufficient: Boolean = false,
     /** T2.7：false 时只跑数字/URL、高风险声明、信任话术通用检查后返回。来信默认 true。 */
-    val runInboundSemanticChecks: Boolean = true
+    val runInboundSemanticChecks: Boolean = true,
+    /** Already-persisted audit/archive projection; never reused as fresh selection authority. */
+    val frozenAssembly: DelayedReplyAssemblySnapshot? = null
 )
 
 data class PendingMailSendResult(
@@ -2190,3 +2349,22 @@ data class SafetyFinding(
 class ManualSendSafetyBlockedException(
     val findings: List<SafetyFinding>
 ) : RuntimeException("发送内容安全校验未通过")
+
+/** Keep synchronous completion unchanged; delayed completion carries the original claim token. */
+private fun ManualReplySendAttemptService.finalizeSuccess(
+    payload: ManualReplySendAttemptService.SendPayload,
+    attemptId: Long,
+    messageId: String,
+    delayedRef: DelayedDispatchRef?
+): Long = if (delayedRef == null) finalizeSuccess(payload, attemptId, messageId)
+else finalizeDelayedSuccess(payload, attemptId, messageId, delayedRef)
+
+private fun ManualReplySendAttemptService.finalizeFailure(
+    payload: ManualReplySendAttemptService.SendPayload,
+    attemptId: Long,
+    messageId: String,
+    resultStatus: String,
+    errorSummary: String?,
+    delayedRef: DelayedDispatchRef?
+): Long = if (delayedRef == null) finalizeFailure(payload, attemptId, messageId, resultStatus, errorSummary)
+else finalizeDelayedFailure(payload, attemptId, messageId, resultStatus, errorSummary, delayedRef)

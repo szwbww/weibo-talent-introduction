@@ -70,6 +70,7 @@ class ExpertMailPermissionGuardTest {
         guard = ExpertMailPermissionGuard(ExpertMailReadAccessService(named), named)
         // Only existing metadata columns consumed by the guard; no application schema mutation.
         listOf(
+            "CREATE TABLE admin_user(username VARCHAR(64) PRIMARY KEY)",
             "CREATE TABLE expert_contact(id BIGINT PRIMARY KEY)",
             "CREATE TABLE expert_mail_read_access(username VARCHAR(64),expert_contact_id BIGINT,access_level VARCHAR(8))",
             "CREATE TABLE mail_record(id BIGINT PRIMARY KEY,expert_contact_id BIGINT)",
@@ -83,10 +84,11 @@ class ExpertMailPermissionGuardTest {
 
     @AfterAll fun stop() { mysql.stop() }
     @BeforeEach fun fixture() {
-        listOf("expert_mail_read_access", "expert_contact", "mail_record", "inbound_mail_processing",
+        listOf("admin_user", "expert_mail_read_access", "expert_contact", "mail_record", "inbound_mail_processing",
             "manual_expert_material_upload", "mail_attachment", "outbound_mail_attachment", "meeting_calendar_event")
             .forEach { jdbc.update("DELETE FROM $it") }
         jdbc.update("INSERT INTO expert_contact VALUES(1),(2),(3)")
+        jdbc.update("INSERT INTO admin_user VALUES('admin'),('user1')")
         jdbc.update("INSERT INTO expert_mail_read_access VALUES('user1',1,'FULL'),('user1',2,'READ')")
         jdbc.update("INSERT INTO mail_record VALUES(201,1),(202,2),(203,3)")
         jdbc.update("INSERT INTO inbound_mail_processing VALUES(101,1),(102,2),(103,3),(104,NULL)")
@@ -136,6 +138,43 @@ class ExpertMailPermissionGuardTest {
     }
     @AfterEach fun close() { context.close() }
     private fun session(user: String = "user1") = MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, user) }
+
+    @Test fun `persisted actor must still exist and cannot use null identity bypass`() {
+        assertDoesNotThrow { guard.requireDelayedActor("admin") }
+        assertDoesNotThrow { guard.requireDelayedActor("user1") }
+        jdbc.update("DELETE FROM admin_user WHERE username='admin'")
+        for (actor in listOf("admin", "", "unknown")) {
+            assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) {
+                guard.requireDelayedActor(actor)
+            }
+        }
+    }
+
+    @Test fun `delayed handlers use exact read and full resource admission`() {
+        val type = com.weibo.talentintroduction.mail.controller.DelayedManualReplyController::class.java
+        val controller = Mockito.mock(type)
+        for (name in listOf("get", "list", "restore", "cancel", "retry")) {
+            val method = type.declaredMethods.single { it.name == name }
+            val handler = org.springframework.web.method.HandlerMethod(controller, method)
+            val verb = if (name in listOf("cancel", "retry")) "POST" else "GET"
+            assertTrue(com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy.isReaderAllowed(handler, verb))
+            assertFalse(ExpertMailPermissionGuard.isResourceHandler(handler, "DELETE"))
+            for (contact in 1L..3L) {
+                val request = org.springframework.mock.web.MockHttpServletRequest(verb, "/").apply {
+                    setAttribute(org.springframework.web.servlet.HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
+                        mapOf("contactId" to contact.toString(), "jobId" to "10"))
+                }
+                if (contact == 1L || contact == 2L && name in listOf("get", "list")) {
+                    assertDoesNotThrow { guard.authorize("user1", handler, request) }
+                } else {
+                    assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) {
+                        guard.authorize("user1", handler, request)
+                    }
+                }
+                assertDoesNotThrow { guard.authorize("admin", handler, request) }
+            }
+        }
+    }
 
     @Test fun `logs and workbench options require an explicit currently writable expert`() {
         for ((path, parameter) in listOf("/api/operator-action-logs" to "expertContactId", "/api/reply-snippets" to "contactId")) {

@@ -172,7 +172,10 @@ class DelayedManualReplySnapshotTest {
         val decoded = DelayedManualReplySnapshotCodec.decode(
             DelayedManualReplySnapshotCodec.encode(
                 DelayedManualReplySnapshotFactory.fromPrepared(
-                    prepared(calendar = calendar, meeting = meeting)
+                    prepared(calendar = calendar, meeting = meeting,
+                        originalMeeting = MeetingInput(zoneId = "Asia/Shanghai", startLocal = "2026-11-05T18:00",
+                            endLocal = "2026-11-05T18:30", zoomUrl = "https://zoom.us/j/123",
+                            generatedAt = "2026-11-04T10:00:00Z"))
                 )
             )
         )
@@ -272,7 +275,8 @@ class DelayedManualReplySnapshotTest {
         meeting: MeetingCalendarInput? = null,
         attachments: List<OutboundAttachmentSnapshot> = emptyList(),
         text: String = unicodeText,
-        html: String = unicodeHtml
+        html: String = unicodeHtml,
+        originalMeeting: MeetingInput? = null
     ): PreparedManualReply {
         val finalPayload = payload.copy(
             subject = unicodeSubject,
@@ -308,7 +312,12 @@ class DelayedManualReplySnapshotTest {
             rawHtmlBody = html,
             rawTextBody = text,
             draftSendRef = draftSendRef,
-            reviewSendRef = reviewSendRef
+            reviewSendRef = reviewSendRef,
+            originalInput = PendingManualRichReplyRequest(
+                senderAccountCode = "sender-1", subject = unicodeSubject, htmlBody = html, textBody = text,
+                operatorName = "op", meeting = originalMeeting, previewAttachmentSha256 = calendar?.sha256,
+                attachmentIds = attachments.map { it.id }
+            )
         )
     }
 

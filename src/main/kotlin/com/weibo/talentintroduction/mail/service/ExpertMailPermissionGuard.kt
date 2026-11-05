@@ -34,6 +34,12 @@ class ExpertMailPermissionGuard(
             }
             route(OperatorActionLogController::class.java, "search", "GET", Target.LOGS)
             route(ReplySnippetController::class.java, "list", "GET", Target.SNIPPETS)
+            val delayed = DelayedManualReplyController::class.java
+            route(delayed, "get", "GET", Target.READ_CONTACT)
+            route(delayed, "list", "GET", Target.READ_CONTACT)
+            route(delayed, "restore", "GET", Target.CONTACT)
+            route(delayed, "cancel", "POST", Target.CONTACT)
+            route(delayed, "retry", "POST", Target.CONTACT)
             val conversation = MailboxConversationController::class.java
             route(conversation, "conversationManualRichReply", "POST", Target.CONTACT)
             route(conversation, "follow", "PUT", Target.CONTACT)
@@ -94,6 +100,13 @@ class ExpertMailPermissionGuard(
         private fun forbidden(): Nothing = throw MailReadAccessDeniedException(
             MAIL_WRITE_FORBIDDEN, "无权操作该专家的邮件资源"
         )
+    }
+
+    /** Persisted actors cannot inherit the synchronous internal null-identity bypass. */
+    fun requireDelayedActor(username: String) {
+        if (username != MailReadOnlyPolicy.ADMIN_USERNAME && username != MailReadOnlyPolicy.READER_USERNAME) forbidden()
+        if (jdbc.queryForList("SELECT username FROM admin_user WHERE username=:username",
+                mapOf("username" to username)).size != 1) forbidden()
     }
 
     /** Service-entry recheck also precedes completed-attempt/draft returns. Null stays internal, not user1. */

@@ -199,7 +199,9 @@ data class DelayedLegacyRestore(
     val templateTextBody: String?,
     val calendarAttachment: CalendarAttachmentSnapshot?,
     val meetingEvent: DelayedMeetingEventSnapshot?,
-    val outboundAttachments: List<OutboundAttachmentSnapshot>
+    val outboundAttachments: List<OutboundAttachmentSnapshot>,
+    /** Restore-only request; historical v1 snapshots omit it. Never used as delivery evidence. */
+    val originalInput: PendingManualRichReplyRequest? = null
 ) : DelayedReplyRestore
 
 /** restore 判别联合；未知 kind 由 Jackson 解码失败，即 fail closed。 */
@@ -282,6 +284,15 @@ object DelayedManualReplySnapshotCodec {
         .configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, true)
         .configure(DeserializationFeature.ACCEPT_FLOAT_AS_INT, false)
 
+    // Tighten only the newly added restore request; historical frozen-payload decoding stays unchanged.
+    private val originalInputReader = mapper.copy().apply {
+        disable(com.fasterxml.jackson.databind.MapperFeature.ALLOW_COERCION_OF_SCALARS)
+        coercionConfigFor(com.fasterxml.jackson.databind.type.LogicalType.Textual)
+            .setCoercion(com.fasterxml.jackson.databind.cfg.CoercionInputShape.Integer, com.fasterxml.jackson.databind.cfg.CoercionAction.Fail)
+            .setCoercion(com.fasterxml.jackson.databind.cfg.CoercionInputShape.Float, com.fasterxml.jackson.databind.cfg.CoercionAction.Fail)
+            .setCoercion(com.fasterxml.jackson.databind.cfg.CoercionInputShape.Boolean, com.fasterxml.jackson.databind.cfg.CoercionAction.Fail)
+    }.readerFor(PendingManualRichReplyRequest::class.java)
+
     fun encode(snapshot: DelayedManualReplySnapshot): String {
         validate(snapshot)
         val json = try {
@@ -297,7 +308,11 @@ object DelayedManualReplySnapshotCodec {
     fun decode(json: String): DelayedManualReplySnapshot {
         requireSize(json)
         val snapshot = try {
-            mapper.readValue<DelayedManualReplySnapshot>(json)
+            val root = mapper.readTree(json)
+            root.path("restore").get("originalInput")?.takeUnless { it.isNull }?.let {
+                originalInputReader.readValue<PendingManualRichReplyRequest>(it.traverse())
+            }
+            mapper.treeToValue(root, DelayedManualReplySnapshot::class.java)
         } catch (ex: Exception) {
             throw DelayedManualReplySnapshotException("Delayed manual reply snapshot cannot be decoded", ex)
         }
@@ -468,6 +483,35 @@ object DelayedManualReplySnapshotCodec {
                 if (restore.ragFactCodes.size > MAX_RAG_FACT_CODES) fail("restore.ragFactCodes exceeds $MAX_RAG_FACT_CODES")
                 if (restore.ragFactCodes.any { it.isBlank() }) fail("restore.ragFactCodes contains a blank code")
                 restore.assembly?.let { validateAssembly(it, "restore.assembly") }
+                restore.originalInput?.let { input ->
+                    requireText(input.subject.trim(), "restore.originalInput.subject", MAX_SUBJECT_LENGTH)
+                    requireNonEmpty(input.htmlBody, "restore.originalInput.htmlBody")
+                    input.qaRuleIds?.let { requireRuleIds(it, "restore.originalInput.qaRuleIds") }
+                    input.suggestedRuleIds?.let { requireRuleIds(it, "restore.originalInput.suggestedRuleIds") }
+                    if (input.attachmentIds.size > MAX_ATTACHMENTS ||
+                        input.attachmentIds.distinct().size != input.attachmentIds.size) fail("Invalid restore attachment ids")
+                    input.attachmentIds.forEach { requireUuid(it, "restore.originalInput.attachmentIds") }
+                    if ((input.ragFactCodes?.size ?: 0) > MAX_RAG_FACT_CODES) fail("Too many restore facts")
+                    input.trustReplyAssembly?.let { request ->
+                        requirePositive(request.source.sourceId, "restore.originalInput.assembly.sourceId")
+                        request.requestedFactIds?.let { requireRuleIds(it, "restore.originalInput.assembly.factIds") }
+                        request.requestFactSelections?.forEach {
+                            requireText(it.requestKey, "restore.originalInput.assembly.requestKey", 200)
+                            requireRuleIds(it.factRuleIds, "restore.originalInput.assembly.requestFacts")
+                        }
+                        request.frameSnapshot?.selection?.let { frame ->
+                            listOfNotNull(frame.salutationSnippetId, frame.greetingSnippetId, frame.ackSnippetId, frame.closingSnippetId)
+                                .forEach { requirePositive(it, "restore.originalInput.assembly.frame") }
+                        }
+                        request.finalParagraphs.forEach {
+                            if (it.factIds.size > MAX_RULE_IDS) fail("Too many restore paragraph facts")
+                        }
+                        if (request.lockedItems.size > MAX_RULE_IDS ||
+                            (request.requestFactSelections?.size ?: 0) > MAX_RULE_IDS ||
+                            request.finalParagraphs.size > MAX_RULE_IDS || request.operatorFacts.size > MAX_RULE_IDS)
+                            fail("Too many restore assembly items")
+                    }
+                }
                 restore.templateTextBody?.let { requireNonEmpty(it, "restore.templateTextBody") }
                 restore.calendarAttachment?.let { validateCalendar(it) }
                 restore.meetingEvent?.let {
@@ -720,7 +764,9 @@ internal object DelayedManualReplySnapshotFactory {
             templateTextBody = prepared.evidence.templateTextBody,
             calendarAttachment = prepared.payload.calendarAttachment,
             meetingEvent = meetingEventOf(prepared.payload.meetingEvent),
-            outboundAttachments = prepared.payload.outboundAttachments
+            outboundAttachments = prepared.payload.outboundAttachments,
+            originalInput = prepared.originalInput
+                ?: throw DelayedManualReplySnapshotException("Original legacy request is required")
         )
     }
 
