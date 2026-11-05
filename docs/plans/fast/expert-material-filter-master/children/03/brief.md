@@ -43,3 +43,12 @@ Read the exact child plan in full from this worktree. Its T1..T4, acceptance mat
 
 ## Baseline evidence
 Baseline command outputs and exact counts are recorded in ledger.md under Baseline before dispatch. Required new Eligibility/SQL IT classes do not exist at the approved master base, so no pre-change pass is claimed for them.
+
+## Predecessor output and dispatch boundary
+- Child 01 LIGHT_PASS: code head 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a; evidence 89a56a9ee6d43fb78c9e76440a3d2869c94345b1; reusable stateless eligibility API, fixed alias `a` SQL const, and raw-first filtered message attachment resolution are checked in.
+- Child 02 LIGHT_PASS: code head 00d48c74955626519fcfcc6de859f1fcc63b8c82; evidence ed2a17d8a2fc30dbbd6b5cb54049b18ce6055ac5; new MIME/business/save/bridge/upload paths reuse the same rule with no new DTO/schema/state.
+- Complete-manifest checkpoint through 02 passed with `--allow-dirty-artifacts` then clean mode: exit 0, VALID, CHILD_CHECKPOINT; clean checkpoint HEAD e9ee3aae67ffe4519106dd83d596c8695f708666, child 03 still PENDING.
+- Child 03 product base is 00d48c74955626519fcfcc6de859f1fcc63b8c82, not an evidence SHA. Prior required commands were independently fresh with zero skips; their results do not replace child 03 commands.
+- Use existing `ExpertMaterialEligibility.isMaterial`, compile-time `MATERIAL_SQL`, and `ERROR_MESSAGE`; do not edit any predecessor product/test file. Preserve the exact existing query scopes/owner matching, preview classification, and operator authority boundaries.
+- No unresolved helper prerequisite: explicitly human-authorized metadata-only stale-registration cleanup restored the unmodified mandatory worktree helper. No further metadata/helper changes are authorized.
+
