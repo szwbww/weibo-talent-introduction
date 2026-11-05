@@ -1,6 +1,6 @@
 # 06 前端倒计时、异常图标与二次确认
 
-前置05通过。前端工作台与窄恢复接口契约两个子系统，13个文件（A15/A16特批11＋A17/A18既有测试兼容2）。以下CSS为最终合同，不是示意。未开启后端入队时兼容原SENT响应。
+前置05通过。前端工作台与窄恢复接口契约两个子系统，18个文件（A15/A16特批11＋A17–A20既有测试兼容7）。以下CSS为最终合同，不是示意。未开启后端入队时兼容原SENT响应。
 
 ## 需求描述
 
@@ -188,7 +188,12 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 |10|src/main/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyController.kt|A16：restore-only原processing身份与当前来源校验|
 |11|src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt|A16：原来源精确返回与缺失/错配拒绝，保留原授权断言|
 |12|src/test/js/mailboxChatBehavior.test.js|A18：既有宿主补performance单调时钟与周期定时器清理，保留断言|
-|13|src/test/js/mailboxReadOnly.test.js|A18：既有宿主补performance/SVG namespace DOM/定时器清理，保留断言|
+|13|src/test/js/mailboxReadOnly.test.js|A18/A20：宿主兼容；删除被新focus刷新合同替代的旧“不刷新”断言，其余业务/DOM/scroll/权限coalescing断言保留|
+|14|src/test/js/mailboxMailReadAccess.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
+|15|src/test/js/mailboxOutboundAttachments.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
+|16|src/test/js/mailboxReplyIdentity.test.js|A20：extractFn宿主仅补新增直接closure依赖，保留身份/载荷断言|
+|17|src/test/js/mailboxSuspension.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
+|18|src/test/js/meetingConfirmationIntegration.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
 
 ## 验收标准
 
@@ -202,7 +207,7 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 - S-4 — 1440px/390px截图和键盘验证，移动44px、无横向溢出；20个现有资源版本参数一致且数量不变（A18更正原19计数笔误）。前端代码无inline style或未声明class。
 - 执行 `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailReviewAdmin.test.js src/test/js/mailboxChatStyle.test.js`，再执行上述既有受影响功能测试。浏览器验收用真实05/04接口及测试SMTP，不能注入假数据宣称集成通过。
 - A16 — 运行JDK11 `mvn test -Dtest=DelayedManualReplyControllerTest`，原及新增控制器断言均实际执行；真实浏览器A-3刷新后从会话撤回恢复到原processing编辑器，使用与job.id不同的源ID，缺失/错配源不能恢复，READ无来源载荷/能力。该命令与Node/浏览器验收均在全部改动完成后执行，不以测试stub代替界面证据。
-- A18 — mailboxChatBehavior/mailboxReadOnly既有宿主缺performance/newSVG namespace DOM，新增持续轮询须有测试teardown；仅补齐宿主能力与清理，不改原行为断言、不中止生产轮询躲避用例。两文件纳入既有受影响功能必跑集，Node进程正常退出。资源基线20项的完整grep回执记录在执行证据，不重复旧19断言。
+- A18/A20 — 既有宿主补齐performance/SVG namespace/直接closure依赖与周期定时器清理，单次drain执行当前macrotask集合而非无限追逐新周期；不得禁用生产轮询或丢弃待验证回调。除已被新focus刷新合同明确替代的mailboxReadOnly“不刷新”断言删除外，原业务/DOM/scroll/权限coalescing断言保留，不将旧计数4重钉为6。所有授权兼容测试进入受影响必跑集且Node正常退出；新刷新合同由行为测试/真实浏览器证明。资源20项回执保留。
 
 ## 人工验收清单
 
@@ -229,4 +234,6 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 - A16（2026-11-05 用户选择「授权本次及同类契约补齐」）：04的生产restore响应遗漏原processing标识，导致06T1/A-3刷新后无法安全定位原编辑器。新增控制器/测试授权并将06文件数9→11特批，T0补齐读取契约和直接验证；不改公共READ投影/数据库/快照schema/发送权限，不重写完成子计划证据。Master A15同步例外及后续同类遗漏契约补齐的严格边界。证据见06 epoch1报告；修订不代表实现或验收已通过。
 
 - A18（适用已批准A5与A15）：既有mailboxChatBehavior.test.js:1100–1102、mailboxReadOnly.test.js:184–187的sandbox缺performance，后者缺createElementNS；新必须周期定时器需清理以免Node挂起。授权两个既有宿主兼容修订，保持业务断言，文件数11→13，仅测试扩大、无产品范围变化。另据实际index `\?v=` 回执（CSS lines11–17、JS lines2547–2559）更正资源总数19→20，保留“全部资源、数量不变”的原合同。完整回执由执行报告保存；不构成样式/行为/安全降级。
+
+- A20（适用已批准A5）：artifact2329真实报告436项/432通过/4失败，mailboxMailReadAccess:739–741/778/795–796与mailboxOutboundAttachments:951–953/1145的复制宿主缺performance且无限drain，mailboxReplyIdentity:379报state undefined。全JS定向grep另确认mailboxSuspension:954–956/1107和meetingConfirmationIntegration:930–932/1105相同缺口；新增五个既有测试文件授权，限宿主clock/单turn drain/直接closure依赖，文件数13→18。已有mailboxReadOnly:844–865旧focus不刷列表断言与T3冲突，删除该过时断言、不改计数凑绿，保留其他业务断言。证据/命令/中断记录由execution保存；同epoch2、修复轮0，无产品范围扩张或新job UNKNOWN锁放宽。
 
