@@ -95,6 +95,29 @@ class ImapMetadataFetchIT {
         )
 
     @Test
+    fun `signature plus PDF metadata reads body but neither attachment bytes`() {
+        metadataServer()
+        server.addBox("user1", "pw", 906L, listOf(FixtureMail(
+            43L, "signed reply", "Readable signed body",
+            listOf(
+                FixtureAttachment("smime.p7s", "application/pkcs7-signature", byteArrayOf(1, 2)),
+                FixtureAttachment("CV.pdf", "application/pdf", "cv".toByteArray())
+            )
+        )))
+        val mail = service(true).fetchInboundSince(account(server.port()), 0L, 5).mails.single()
+        assertEquals("Readable signed body", mail.body)
+        assertEquals(listOf("CV.pdf"), mail.attachments.map { it.fileName })
+        assertEquals("3", mail.attachments.single().source!!.partPath)
+        assertNull(mail.attachments.single().content)
+        val log = server.commandLog()
+        assertTrue(log.any { it.contains("BODYSTRUCTURE") })
+        assertTrue(log.none {
+            it.contains("BODY.PEEK[2]") || it.contains("BODY[2]") ||
+                it.contains("BODY.PEEK[3]") || it.contains("BODY[3]")
+        }, log.toString())
+    }
+
+    @Test
     fun `initial inbox position reads only mailbox metadata and uses UID not message count`() {
         server.addBox("user1", "pw", 901L,
             listOf(server.mail(42L, "old", "must not be read", 0)))

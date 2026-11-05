@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
@@ -118,14 +119,11 @@ class AutoMailReplyService(
         }
         // I-3/I-4：外链材料只在这里并入业务资料写链（MIME 之后，保持稳定顺序），
         // self-check/bounce/DMARC 位于调用前，仍只读真实 MIME attachments。
-        val businessMail = (if (received.linkedMaterials.isEmpty()) {
-            received
-        } else {
-            received.copy(
-                attachments = received.attachments + received.linkedMaterials,
-                linkedMaterials = emptyList()
-            )
-        }).copy(
+        val businessMail = received.copy(
+            attachments = (received.attachments + received.linkedMaterials).filter {
+                ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType)
+            },
+            linkedMaterials = emptyList(),
             recoveryOnly = received.recoveryOnly || received.folder != "INBOX" || source.accountCode != owner.accountCode)
         // I-1：新接收必须携带真实 UIDVALIDITY（0 仅历史未知）。未知远端 source
         // fail-closed——不落 processing、不 markSeen，绝不反写 0/猜测代际。

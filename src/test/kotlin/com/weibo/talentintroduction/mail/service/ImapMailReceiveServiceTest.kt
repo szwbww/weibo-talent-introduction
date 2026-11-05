@@ -91,6 +91,43 @@ class ImapMailReceiveServiceTest {
     }
 
     @Test
+    fun `signature leaves never open streams in signed containers and preserve CV locator`() {
+        for (metadataOnly in listOf(false, true)) {
+            for ((name, mime) in listOf(
+                "smime.p7s" to "application/octet-stream",
+                "hidden.p7s" to "text/plain",
+                "signature.bin" to "application/pkcs7-signature",
+                null to "application/x-pkcs7-signature"
+            )) {
+                var opened = false
+                val signature = object : MimeBodyPart() {
+                    override fun getInputStream(): InputStream {
+                        opened = true
+                        throw IOException("signature stream must never open")
+                    }
+                    override fun getContent(): Any {
+                        opened = true
+                        throw IOException("signature content must never open")
+                    }
+                }.apply {
+                    setHeader("Content-Type", mime)
+                    if (name != null) fileName = name
+                }
+                val message = multipartMessage(parts = listOf(
+                    MimeBodyPart().apply { setText("Body preserved") },
+                    signature,
+                    attachmentPdf()
+                ), subtype = "signed")
+                val received = convert(message, metadataOnly)
+                assertFalse(opened)
+                assertTrue(received.body.contains("Body preserved"))
+                assertEquals(listOf("cv.pdf"), received.attachments.map { it.fileName })
+                assertEquals("3", received.attachments.single().source!!.partPath)
+            }
+        }
+    }
+
+    @Test
     fun `legacy mode returns original attachment bytes and keeps legacy DTO shape`() {
         val message = roundTrip(multipartMessage(parts = listOf(attachmentPdf())))
         val received = convert(message)
@@ -820,7 +857,8 @@ class ImapMailReceiveServiceTest {
     private fun multipartMessage(
         parts: List<MimeBodyPart>,
         to: String? = null,
-        cc: String? = null
+        cc: String? = null,
+        subtype: String = "mixed"
     ): MimeMessage {
         val session = Session.getDefaultInstance(Properties())
         val message = MimeMessage(session)
@@ -829,7 +867,7 @@ class ImapMailReceiveServiceTest {
         message.setHeader("Message-ID", "<unit-test@example.com>")
         to?.let { message.setHeader("To", it) }
         cc?.let { message.setHeader("Cc", it) }
-        val multipart = MimeMultipart("mixed")
+        val multipart = MimeMultipart(subtype)
         parts.forEach { multipart.addBodyPart(it) }
         message.setContent(multipart)
         message.saveChanges()

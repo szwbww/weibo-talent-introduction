@@ -274,6 +274,45 @@ class ManualExpertMaterialUploadFlowTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `signature uploads reject before stream filesystem and transaction`() {
+        for ((name, mime) in listOf(
+            "smime.p7s" to "application/octet-stream",
+            "signature.bin" to "application/pkcs7-signature"
+        )) {
+            val response = postUpload(OWNER, CONTACT_ID, name, mime, byteArrayOf(1))
+            assertEquals(400, response.status)
+            assertEquals("BAD_REQUEST", json(response).path("code").asText())
+            assertEquals("邮件数字签名不属于专家材料", json(response).path("message").asText())
+            assertThrows(com.weibo.talentintroduction.mail.service.OutboundAttachmentException::class.java) {
+                service.upload(CONTACT_ID, OWNER, name, mime, object : InputStream() {
+                    override fun read(): Int = throw AssertionError("signature stream opened")
+                })
+            }
+        }
+        assertTrue(uploadRows.isEmpty())
+        assertTrue(attachmentRows.isEmpty())
+        assertTrue(documentRows.isEmpty())
+        assertFalse(Files.exists(manualRoot()))
+        Mockito.verifyNoInteractions(mailAttachmentTransferRepository)
+    }
+
+    @Test
+    fun `ordinary images and empty text remain stored pending review`() {
+        for ((name, mime, bytes) in listOf(
+            Triple("certificate.png", "image/png", byteArrayOf(1, 2, 3)),
+            Triple("scan.jpg", "image/jpeg", byteArrayOf(4, 5, 6)),
+            Triple("notes.txt", "text/plain", byteArrayOf())
+        )) {
+            val response = postUpload(OWNER, CONTACT_ID, name, mime, bytes)
+            assertEquals(201, response.status)
+            val attachment = attachmentRows.values.last()
+            assertArrayEquals(bytes, Files.readAllBytes(Path.of(attachment.storagePath)))
+            assertEquals(bytes.size.toLong(), attachment.fileSize)
+            assertEquals("PENDING_REVIEW", documentRows.values.last().documentStatus)
+        }
+    }
+
+    @Test
     fun `small upload returns 201 with session identity real bytes and three rows`() {
         val content = "手动上传的简历内容".toByteArray(StandardCharsets.UTF_8)
 

@@ -88,6 +88,9 @@ class ManualExpertMaterialUploadService(
         }
         val fileName = normalizeOutboundFileName(originalFilename)
         val contentType = normalizeOutboundContentType(declaredContentType)
+        if (!ExpertMaterialEligibility.isMaterial(fileName, contentType)) {
+            throw OutboundAttachmentException.badRequest("邮件数字签名不属于专家材料")
+        }
         val documentType = mailAttachmentService.inferDocumentType(fileName).name
 
         val root = manualRoot()

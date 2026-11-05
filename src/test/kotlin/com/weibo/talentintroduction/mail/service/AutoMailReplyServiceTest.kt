@@ -206,6 +206,122 @@ class AutoMailReplyServiceTest {
     }
 
     @Test
+    fun `normal unknown body signature receipt carries no material evidence`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        stubNotReadyDecision("fixture unknown body")
+        val result = service.processSingle(account, reply(body = "fixture-neutral-01", attachments = listOf(signatureAttachment())))
+        assertEquals(InboundIntentCode.UNKNOWN, result.intentCode)
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), eqValue(emptyList())
+        )
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(Mockito.anyLong(), eqValue(emptyList()))
+        Mockito.verify(automaticApplicationPromotionService).promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), Mockito.eq(0)
+        )
+    }
+
+    @Test
+    fun `manual handoff signature receipt preserves manual policy with empty materials`() {
+        val account = account("sender")
+        val contact = introSentContact().copy(
+            currentStatus = ConversationStatus.MANUAL_HANDOFF.name, autoReplyEnabled = false
+        )
+        defaultPromotionStubs(contact)
+        stubAutoReplyPipeline(account, contact)
+        service.processSingle(account, reply(body = "fixture-neutral-01", attachments = listOf(signatureAttachment())))
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), eqValue(emptyList())
+        )
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(Mockito.anyLong(), eqValue(emptyList()))
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `no introduction signature receipt saves empty processing materials`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(false)
+        service.processSingle(account, reply(attachments = listOf(signatureAttachment())))
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(
+            Mockito.anyLong(), eqValue(emptyList()), eqValue(11L)
+        )
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `direct unmatched signature receipt saves and bridges empty business collection`() {
+        val account = account("sender")
+        service.processSingle(account, reply(attachments = listOf(signatureAttachment())))
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(
+            Mockito.anyLong(), eqValue(emptyList()), Mockito.isNull()
+        )
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `global disabled signature receipt has zero promotion attachment count`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        service.processSingle(account, reply(attachments = listOf(signatureAttachment())))
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), eqValue(emptyList())
+        )
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(Mockito.anyLong(), eqValue(emptyList()))
+        Mockito.verify(automaticApplicationPromotionService).promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), Mockito.eq(0)
+        )
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `expert disabled signature receipt has zero promotion attachment count`() {
+        val account = account("sender")
+        val contact = introSentContact().copy(autoReplyEnabled = false)
+        defaultPromotionStubs(contact)
+        stubAutoReplyPipeline(account, contact)
+        service.processSingle(account, reply(attachments = listOf(signatureAttachment())))
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), eqValue(emptyList())
+        )
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(Mockito.anyLong(), eqValue(emptyList()))
+        Mockito.verify(automaticApplicationPromotionService).promoteByMaterialIfNeeded(
+            anyValue(contact), anyValue(LocalDateTime.now()), anyValue(0L), Mockito.eq(0)
+        )
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `mixed MIME and linked business attachments keep source order after signature removal`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val cv = mimeAttachment(partPath = "3")
+        val linked = mimeAttachment(partPath = "gdrive:fixture").copy(fileName = "scan.jpg")
+        service.processSingle(account, reply(
+            attachments = listOf(signatureAttachment(), cv),
+            linkedMaterials = listOf(signatureAttachment(), linked)
+        ))
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), eqValue(listOf(cv, linked))
+        )
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(
+            Mockito.anyLong(), eqValue(listOf(cv, linked))
+        )
+    }
+
+    private fun signatureAttachment() = ReceivedMailAttachment(
+        "smime.p7s", "application/octet-stream", null
+    )
+
+    @Test
     fun `first poll initializes owner without fetching or processing history`() {
         val owner = account("owner")
         Mockito.`when`(accountService.getAutoReceiveAccount("alias")).thenReturn(owner)
@@ -1695,6 +1811,7 @@ class AutoMailReplyServiceTest {
         val first = reply(
             subject = "Follow-up on the Talent Program",
             body = "Could you share the program details?",
+            attachments = listOf(signatureAttachment()),
             imapUid = 101L
         )
         val second = first.copy(imapUid = 102L, messageId = "reply-2")
@@ -1757,6 +1874,12 @@ class AutoMailReplyServiceTest {
         Mockito.verify(deliveryService, Mockito.times(1)).send(
             anyValue(account),
             anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        Mockito.verify(mailAttachmentService, Mockito.atLeastOnce()).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), eqValue(emptyList())
+        )
+        Mockito.verify(mailAttachmentService, Mockito.atLeastOnce()).bridgeInboundProcessing(
+            Mockito.anyLong(), eqValue(emptyList())
         )
     }
 
@@ -2012,7 +2135,7 @@ class AutoMailReplyServiceTest {
     fun `processByUids returns duplicate for already processed uid`() {
         val account = account("sender")
         val uid = 22L
-        val mail = reply(imapUid = uid)
+        val mail = reply(imapUid = uid, attachments = listOf(signatureAttachment()))
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
         Mockito.`when`(
@@ -2044,6 +2167,7 @@ class AutoMailReplyServiceTest {
         Mockito.verify(receiveService).markSeen(account, uid)
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
             .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verifyNoInteractions(mailAttachmentService, mailRecordRepository, deliveryService)
     }
 
     @Test
@@ -2112,7 +2236,7 @@ class AutoMailReplyServiceTest {
     fun `legacy zero validity row with unverifiable identity routes manual LEGACY_UID_UNVERIFIABLE`() {
         val account = account("sender")
         val uid = 101L
-        val mail = reply(imapUid = uid)
+        val mail = reply(imapUid = uid, attachments = listOf(signatureAttachment()))
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(null)
@@ -2149,6 +2273,9 @@ class AutoMailReplyServiceTest {
         // 只入人工复核：不自动回复、不盲吞；旧行不被改写（无 copy 保存）
         Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
         Mockito.verify(receiveService).markSeen(account, uid)
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(
+            Mockito.anyLong(), eqValue(emptyList()), Mockito.isNull()
+        )
     }
 
     @Test

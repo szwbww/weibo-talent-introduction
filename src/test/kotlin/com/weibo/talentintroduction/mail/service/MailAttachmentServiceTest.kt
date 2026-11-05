@@ -88,6 +88,44 @@ class MailAttachmentServiceTest {
     )
 
     @Test
+    fun `mixed signature and CV registers only CV for record and processing owners`(@TempDir tempDir: Path) {
+        stubMetadataSaveBehaviours()
+        val svc = service(tempDir.toString(), metadataOnly = true)
+        val signature = ReceivedMailAttachment("smime.p7s", "application/octet-stream", null)
+        val cv = metadataAttachment("CV.pdf", "3")
+        val mixed = listOf(signature, cv)
+        assertEquals(InboundIntentCode.CV_ATTACHED, svc.inferPrimaryIntentFromAttachments(mixed))
+        assertEquals(1, svc.saveInboundAttachments(11, 22, mixed).size)
+        assertEquals(1, svc.saveUnmatchedAttachments(33, mixed, 11).size)
+        val captor = ArgumentCaptor.forClass(MailAttachment::class.java)
+        Mockito.verify(mailAttachmentRepository, Mockito.times(2)).save(captor.capture())
+        assertTrue(captor.allValues.all { it.fileName == "CV.pdf" })
+        assertTrue(Files.list(tempDir).use { !it.findAny().isPresent })
+    }
+
+    @Test
+    fun `signature admission skips all owners before source and filesystem access`(@TempDir tempDir: Path) {
+        for (metadataOnly in listOf(false, true)) {
+            val root = tempDir.resolve("unused-$metadataOnly")
+            val svc = service(root.toString(), metadataOnly)
+            for (content in listOf(null, byteArrayOf(1, 2))) {
+                val signatures = listOf(
+                    ReceivedMailAttachment(" CV.P7S ", "application/octet-stream", content),
+                    ReceivedMailAttachment("signature.bin", "application/pkcs7-signature; name=x", content)
+                )
+                assertTrue(svc.saveInboundAttachments(11, 22, signatures).isEmpty())
+                for (contactId in listOf(null, 11L)) {
+                    assertTrue(svc.saveUnmatchedAttachments(33, signatures, contactId).isEmpty())
+                }
+                assertEquals(null, svc.inferPrimaryIntentFromAttachments(signatures))
+                svc.bridgeInboundProcessing(33, signatures)
+            }
+            assertTrue(Files.notExists(root))
+        }
+        Mockito.verifyNoInteractions(mailAttachmentRepository, expertDocumentRepository, attachmentTransferRepository)
+    }
+
+    @Test
     fun `saves attachment file and creates pending document`(@TempDir tempDir: Path) {
         val svc = service(basePath = tempDir.toString())
         Mockito.`when`(mailAttachmentRepository.save(Mockito.any(MailAttachment::class.java)))
@@ -504,6 +542,7 @@ class MailAttachmentServiceTest {
             .thenReturn(
                 listOf(
                     MailAttachment(id = 5L, inboundProcessingId = 99L, fileName = "cv.pdf", contentType = "application/pdf"),
+                    MailAttachment(id = 7L, inboundProcessingId = 99L, fileName = "smime.p7s", contentType = "application/octet-stream"),
                     MailAttachment(id = 6L, inboundProcessingId = 99L, fileName = "degree.pdf", contentType = "application/pdf")
                 )
             )
@@ -519,6 +558,8 @@ class MailAttachmentServiceTest {
             assertEquals(11L, it.expertContactId)
             assertEquals(DocumentStatus.PENDING_REVIEW.name, it.documentStatus)
         }
+        Mockito.verify(expertDocumentRepository, Mockito.never()).findFirstByMailAttachmentId(7L)
+        Mockito.verify(mailAttachmentRepository, Mockito.never()).delete(Mockito.any(MailAttachment::class.java))
 
         // 幂等：已存在文档不再重复创建
         Mockito.reset(expertDocumentRepository)

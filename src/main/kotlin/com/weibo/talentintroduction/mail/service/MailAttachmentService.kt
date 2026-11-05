@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.domain.ExpertDocumentType
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailAttachmentTransfer
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
@@ -48,12 +49,13 @@ class MailAttachmentService(
         mailRecordId: Long,
         attachments: List<ReceivedMailAttachment>
     ): List<ExpertDocument> {
-        if (attachments.isEmpty()) {
+        val eligible = attachments.filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+        if (eligible.isEmpty()) {
             return emptyList()
         }
 
         val now = LocalDateTime.now()
-        return attachments.map { received ->
+        return eligible.map { received ->
             val content = received.content
             if (content != null) {
                 saveLegacyRecordAttachment(expertContactId, mailRecordId, received, content, now)
@@ -88,12 +90,13 @@ class MailAttachmentService(
         attachments: List<ReceivedMailAttachment>,
         expertContactId: Long? = null
     ): List<MailAttachment> {
-        if (attachments.isEmpty()) {
+        val eligible = attachments.filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+        if (eligible.isEmpty()) {
             return emptyList()
         }
 
         val now = LocalDateTime.now()
-        return attachments.map { received ->
+        return eligible.map { received ->
             val attachment = if (received.content != null) {
                 saveLegacyProcessingAttachment(inboundProcessingId, received, received.content, now)
             } else {
@@ -127,6 +130,7 @@ class MailAttachmentService(
         }
         val now = LocalDateTime.now()
         mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(inboundProcessingId)
+            .filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
             .forEach { attachment ->
                 val attachmentId = attachment.id ?: return@forEach
                 if (expertDocumentRepository.findFirstByMailAttachmentId(attachmentId) == null) {
@@ -160,6 +164,7 @@ class MailAttachmentService(
     ) {
         val now = LocalDateTime.now()
         attachments.forEach { received ->
+            if (!ExpertMaterialEligibility.isMaterial(received.fileName, received.contentType)) return@forEach
             // 旧 content 模式附件（child-03 无条件携带 source）：bridge 不适用。
             if (received.content != null) return@forEach
             val source = received.source ?: return@forEach
@@ -356,10 +361,11 @@ class MailAttachmentService(
     }
 
     fun inferPrimaryIntentFromAttachments(attachments: List<ReceivedMailAttachment>): InboundIntentCode? {
-        if (attachments.isEmpty()) {
+        val eligible = attachments.filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+        if (eligible.isEmpty()) {
             return null
         }
-        val types = attachments.map { inferDocumentType(it.fileName) }.toSet()
+        val types = eligible.map { inferDocumentType(it.fileName) }.toSet()
         return if (types == setOf(ExpertDocumentType.CV) || ExpertDocumentType.CV in types) {
             InboundIntentCode.CV_ATTACHED
         } else {

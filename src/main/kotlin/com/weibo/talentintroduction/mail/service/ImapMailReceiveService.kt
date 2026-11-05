@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.sun.mail.imap.IMAPFolder
 import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -548,6 +549,11 @@ class ImapMailReceiveService(
                 segmentTexts.firstOrNull().orEmpty()
             }
             return NodeResult(chosen, anyTruncated, allAttachments, allLinkedMaterials)
+        }
+        val rawName = part.fileName
+        val decodedName = rawName?.let { runCatching { MimeUtility.decodeText(it) }.getOrElse { _ -> it } }.orEmpty()
+        if (!ExpertMaterialEligibility.isMaterial(decodedName, part.contentType)) {
+            return NodeResult("", false, emptyList())
         }
 
         // 附件叶：metadataOnly 只登记；legacy 读字节（含带文件名的 text/* 附件）。
