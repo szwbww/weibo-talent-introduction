@@ -167,7 +167,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 02 | [冻结与投递分离](manual-reply-delay-02-preparation.md) | 8（A1） | 01 |
 | 03 | [事务状态机与草稿](manual-reply-delay-03-lifecycle.md) | 12（A2/A3/A5/A6） | 02 |
 | 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 9（A7/A8/A9/A10） | 03 |
-| 05 | [会话读模型](manual-reply-delay-05-query.md) | 8（A11/A12） | 04 |
+| 05 | [会话读模型](manual-reply-delay-05-query.md) | 10（A11–A14） | 04 |
 | 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 9 | 05 |
 | 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4） | 06 |
 
@@ -295,4 +295,6 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 
 - A11/A12（2026-11-05 用户选择「授权本次及同类内部接口修订」）：05新增 `OutboundAttachmentService.kt` 授权，仅将既有无SQL的 `readVerifiedFile(OutboundMailAttachment): OutboundMailFile` 从private改为internal，方法体/公共API/安全校验不变，供当前页服务端批量元数据复用。05文件数7→8；READ不查私有附件元数据/不读磁盘，FULL/admin仍执行现行完整性与源有效性规则。审计见05 execution.md:33-85，身份见ledger A11/A12。
 - 后续同类授权边界（A11）：仅为实现已批准不变量所必需的既有内部方法可见性调整或无副作用批量读取接口，可根据具体源码/调用失配证据更新子计划授权文件、精确接口/调用约束/验收与ledger身份后连续执行，不逐项向用户确认。不得据此新增业务行为、改变兼容语义、修改数据库结构、放宽安全/权限校验或降低验收；不允许未记录的越表编辑。其他生产范围变化仍需明确授权。继续至READY_FOR_HUMAN_REVIEW，不执行review-fast-p。
+
+- A13/A14（适用用户已批准A11「授权本次及同类内部接口修订」）：05当前页能力计算须复用普通/审核草稿canonical行及既有指纹输入，但两个repository只有逐条查询且mapper私有。Impl05Epoch2提供 `MailReplyDraftService:173–202`、`MailReviewDraftService:272–283/306–320`、对应repository mapper与指纹消费证据。仅授权两个既有repository各新增受contact/account/服务端当前页jobIds限定的内部只读批量接口，复用原mapper、无锁/写入/生命周期改动；05文件数8→10，业务/兼容/权限不变量不变。具体接口/验收见05T2b，身份见ledger A13/A14。
 
