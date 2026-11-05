@@ -1,16 +1,16 @@
 # Fast-P Ledger — master: docs/plans/2026-11-04/manual-reply-delay-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit 525aeeb9e97241d5ad044f5662c75194db1a5944)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,A21,A22,A23,A24,A25,A26
+- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit 7ac03c6e3a0ab9ebf4cf406fbc35af082a472888)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,A21,A22,A23,A24,A25,A26,A27,A28
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
 - Branch: fast/manual-reply-delay-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-11-04T08:19:33Z
-- Current child: 07-source-contract
-- Waiting role: N/A
+- Current child: 07-activation
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -26,7 +26,7 @@
 | 05-query | docs/plans/2026-11-04/manual-reply-delay-05-query.md | commit:baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb | 04-worker-api | 2 | LIGHT_PASS | 9cebea6d41cc3b749382deb7691ba704471b131e | 223b8e4aed8852734552ef662c3b732c90e60e42 | 0 | — | 223b8e4aed8852734552ef662c3b732c90e60e42 | 869eeb2be03bc9353fee8defbd538413f7a2069f | Verify05Epoch2 COMPLETE_CHILD; Query8/Repo41/other56 passed, runtime API smoke included; SMTPstubbed and fullE2E/restart remain07. |
 | 06-frontend | docs/plans/2026-11-04/manual-reply-delay-06-frontend.md | commit:a5c1ddb90e92b5aef7bf8f16b031dd4d51c49b80 | 05-query | 2 | LIGHT_PASS_WITH_NOTES | 223b8e4aed8852734552ef662c3b732c90e60e42 | 38ae375b25393c4eb69e5b0b4e406565947c1c47 | 1 | 4e64c1f4da4eb5acdac282731f58f2798ab9ff5d | 4e64c1f4da4eb5acdac282731f58f2798ab9ff5d | f8892fce08a38849aa763bdf868e56d6050e59fc | Reverify06Round1 COMPLETE_CHILD; F06-01 CLOSED. Fresh153/613/controller13/fullJS2065/syntax16 passed; independent current raw/text/format-only SMTP MIME proof. O06-01: public enqueue/restart integrated acceptance remains07. |
 | 07-source-contract | docs/plans/2026-11-04/manual-reply-delay-07-source-contract.md | commit:525aeeb9e97241d5ad044f5662c75194db1a5944 | 06-frontend | 1 | LIGHT_PASS_WITH_NOTES | 4e64c1f4da4eb5acdac282731f58f2798ab9ff5d | a9c09c9abf8cf08707d86514b168318341716126 | 0 | — | a9c09c9abf8cf08707d86514b168318341716126 | d87d3db22e9059f68086c15c14e0ca551040c2e4 | Verify07SourceContract COMPLETE_CHILD; freshcompile/JVM82/MySQL44/focused86/fullJS2076/syntax and actual browser/API/SMTP/races passed. O07SC-01 unchanged-cancelled sync guard500/422/SMTP0 remains explicit07 activation handoff; no public enqueue/restart acceptance claimed. |
-| 07-activation | docs/plans/2026-11-04/manual-reply-delay-07-activation.md | commit:45f517a3ee337dfa74eb33cb56cdb14f0ba09d69 | 07-source-contract | 1 | PENDING |  | — | 0 | — | — | — | Impl07Activation pre-edit research found supported no-draft OUTBOUND source gap; no product edits/checks/commit. A24 inserts exact prerequisite; original seven-file activation/full integration remains. Fresh implementer follows its clean checkpoint. |
+| 07-activation | docs/plans/2026-11-04/manual-reply-delay-07-activation.md | commit:7ac03c6e3a0ab9ebf4cf406fbc35af082a472888 | 07-source-contract | 1 | IMPLEMENTING | a9c09c9abf8cf08707d86514b168318341716126 | — | 0 | — | — | — | Impl07FinalActivation resumes after clean prerequisite checkpoint02422a3c8dd696408e637a9298515c9db66c0736. Pre-edit A27/A28 completes exact ten-file response/read-preparation contract under standing A15; same epoch1/fix0. Full60-second/restart/master acceptance remains, no review-fast-p. |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -57,6 +57,8 @@
 | A24 | docs/plans/2026-11-04/manual-reply-delay-07-activation.md | commit:ea61d579425e894ee37c600f599beef1fdb46395 | commit:45f517a3ee337dfa74eb33cb56cdb14f0ba09d69 | A15/O-1/I-6 and required sequential max10 decomposition | Consume new prerequisite after its clean checkpoint; retain seven activation files and all real60-second/restart/A1–A12 gates, add explicit source-contract regression and restored original-anchor enqueue coverage. | HUMAN:2026-11-05「授权本次及同类契约补齐」；「批准后续所有子计划 直到可以执行review-fast-p 不要直接执行review-fast-p」 (same standing authority; no new business or reduced acceptance) |
 | A25 | docs/plans/2026-11-04/manual-reply-delay-master.md | commit:45f517a3ee337dfa74eb33cb56cdb14f0ba09d69 | commit:525aeeb9e97241d5ad044f5662c75194db1a5944 | A5 existing-test compatibility and source-contract S-C2 | Observed fullJS2073/2074 exposes mailboxChatStyle indirectly pinning06 old resource key; allow one existing-test-only exception, source-contract10→11, no production expansion or weakened invariant. | HUMAN:2026-11-05「授权必要测试兼容修订并持续执行」 (standing A5 applied to Resume07SourceContract exact command-5 failure and test598/607–610) |
 | A26 | docs/plans/2026-11-04/manual-reply-delay-07-source-contract.md | commit:45f517a3ee337dfa74eb33cb56cdb14f0ba09d69 | commit:525aeeb9e97241d5ad044f5662c75194db1a5944 | A5/S-C2 required cache cutover compatibility | Add mailboxChatStyle.test.js solely to retire old06-key binding, retain shared version/resource20/real DOM/CSS assertions, never repin new date/plan; include in focused command. | HUMAN:2026-11-05「授权必要测试兼容修订并持续执行」 (same standing A5 authority; no epoch/reset/repair-round increment) |
+| A27 | docs/plans/2026-11-04/manual-reply-delay-master.md | commit:525aeeb9e97241d5ad044f5662c75194db1a5944 | commit:7ac03c6e3a0ab9ebf4cf406fbc35af082a472888 | A15 status/response contract completion and07 I-1/I-3/I-5/I-7/I-11 | Pre-edit producer/caller evidence requires review HTTP revision/status, existing-attempt response identity, and default-strict review read preparation; activation7→10, no new business/schema/dispatch authority or reduced acceptance. | HUMAN:2026-11-05「授权本次及同类契约补齐」；「批准后续所有子计划 直到可以执行review-fast-p 不要直接执行review-fast-p」 (standing A15 applied to Impl07FinalActivation exact pre-edit receipts and read/dispatch matrix) |
+| A28 | docs/plans/2026-11-04/manual-reply-delay-07-activation.md | commit:45f517a3ee337dfa74eb33cb56cdb14f0ba09d69 | commit:7ac03c6e3a0ab9ebf4cf406fbc35af082a472888 | A15 and07 T1a/T2 existing-job and reserved-response contract | Add MailReviewDraftController revision/precise handler, ManualReplySendAttemptService pure identity reader/completed read mode, MailReviewDraftService defaultfalse server-only queued read mode. Only two named readers true; sync claim/UNKNOWN/other guards unchanged; direct E2E evidence required. | HUMAN:2026-11-05「授权本次及同类契约补齐」 (same standing authority; exact ten files, same epoch1/fix0, no A11 generic lookup grant) |
 
 ## Artifact checkpoint corrections
 
