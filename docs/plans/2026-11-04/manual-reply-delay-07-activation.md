@@ -2,6 +2,8 @@
 
 前置01～06及07-source-contract逐项通过。发送入口、发布配置两个子系统，11个文件（A4审核请求字段归03；A24来源恢复前置已完成；A27/A28十文件状态/响应契约；A29/A30单个必要既有Worker测试兼容）。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
 
+A31/A32（2026-11-06用户选择「按总 A-5 补齐」）：本阶段完整产品范围仍十一文件。仅总A-5的前端已开确认修订与native409闭环由后置08-deadline-confirmation承接；本阶段保留其真实失败/服务端409证据，完成其余十一项及全部backend/60秒/重启门禁。07轻核验不代表全功能可发布；08及全部总验收完成前不READY、不启生产。06历史证据不重写，原A5预期不降低。
+
 ## 需求描述
 
 普通人工来信回复、人工跟进编辑器和「发送已审核回复」统一返回60秒等待任务，用户可在邮件底部确认撤回或重发。保持非目标发送路径、旧SENT幂等、权限/证据/附件、成功存证与只读行为。批量发送不接入。
@@ -80,13 +82,13 @@ A28读准备边界：仅在MailReviewDraftService.prepareSend/lockForSend尾部�
 
 ### T3 配置和可回退发布（I-11）
 
-application.yml添加 `talent-introduction.manual-reply-delay.enabled: ${MANUAL_REPLY_DELAY_ENABLED:false}`，先默认false部署01～06；07联调通过后发布环境设置MANUAL_REPLY_DELAY_ENABLED=true，写发布操作记录（运行产物，不在本代码清单中）。不把生产开关自动改为true提交。发布前确认V174（或已核定替代号）应用、worker bean/线程存在、前端统一新资源键、三个入口WAITING、异步任务健康。
+application.yml添加 `talent-introduction.manual-reply-delay.enabled: ${MANUAL_REPLY_DELAY_ENABLED:false}`，仓库和生产默认false；07联调与08收尾、总A-1～A-12全部验收完成后，才由另行发布流程设置MANUAL_REPLY_DELAY_ENABLED=true并写发布记录（不属本fast-p部署权限）。不把生产开关自动改为true提交。发布前确认V174（或已核定替代号）应用、worker bean/线程存在、前端统一新资源键、三个入口WAITING、异步任务健康。
 
 停用新入队时置false，旧任务仍处理；不得直接回滚到不识别delayed表的旧版本同时还有WAITING/SENDING/UNKNOWN。需回滚代码时先停止新入队，让WAITING正常完成或在期限内明确取消，确认SENDING/UNKNOWN人工收敛；历史表/快照保留，不执行drop/删队列。UNKNOWN没有证据证明未发时不重投。
 
 ### T4 完整集成（I-1/I-3/I-5/I-7/I-11）
 
-新增ManualReplyDelayEndToEndIT，使用隔离Testcontainers MySQL、真实Spring事务代理/全部repository、可控SMTP测试替身（验证调用与消息内容，不连生产SMTP）。通过真实controller request+session→prepare→DB queue→worker→finalize→query链路；不mock掉核心事务。使用数据库任务时间fixture/可控Clock适配而非sleep60秒，边界准确到毫秒。最终另在隔离环境真实等待60秒做总A-1～A-12黑盒。
+新增ManualReplyDelayEndToEndIT，使用隔离Testcontainers MySQL、真实Spring事务代理/全部repository、可控SMTP测试替身（验证调用与消息内容，不连生产SMTP）。通过真实controller request+session→prepare→DB queue→worker→finalize→query链路；不mock掉核心事务。使用数据库任务时间fixture/可控Clock适配而非sleep60秒，边界准确到毫秒。另在隔离环境真实等待60秒完成总A-1～A-4/A-6～A-12黑盒；A-5负例及服务器迟到409仍真实记录，前端修订与native闭环按A32移交后置08，非豁免。
 
 矩阵：INBOUND有draft、INBOUND legacy QA/RAG/assembly、OUTBOUND明确anchor、REVIEW有/无context confirmation；每类包含WAITING和成功。异常矩阵包含451、550、DATA断链、取消/claim竞争、数据库finalize回滚、重复POST丢响应、重启、撤权、退订、附件变更、新来信、关闭开关。
 
@@ -118,7 +120,7 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 - I-7 — REVIEW仍来源APPROVED服务端冻结数据；READ普通发送403、FULL可发、审核仅admin；null actor不能入队；已发落库不受事后降权影响。
 - I-11 — false不产生新任务，true产生；false仍处理旧任务；重启WAITING继续；超时SENDING转UNKNOWN不重投；配置只新增目标键。
 - A28/I-3/I-5/I-7 — 真实REVIEW首次仍允许空代次；取消后重排当前正代次可入队、缺失/陈旧409，非空非法类型/范围/非正数400；禁止字段仍拒绝，真实actor不丢。既有任务在flag=false仍过原状态机，跨actor/origin不能接管，FAILED只显式retry/UNKNOWN不能重发，Queued回真实reserved Message-ID且SMTP0；读取helper不claim，审核true读准备ref不能绕过默认同步claim guard或作者权限，重复WAITING/SENDING不重置due。原必跑命令不减，这些直接回归纳入新E2EIT及PendingServiceTest。
-- 同时覆盖总I-2/I-4/I-6/I-8/I-9/I-10以及06 S-1～S-4，以总A-1～A-12逐条人工验收收口。
+- 同时覆盖总I-2/I-4/I-6/I-8/I-9/I-10以及06 S-1～S-4，以总A-1～A-4/A-6～A-12逐条收口；A32明确总A-5前端/native由08独立收口，保留当前真实未通过记录，不以独立API409代替。
 - 编译JDK11；FlywayMigrationIntegrationTest带migrationIt=true；MailboxConversationRepositoryIT带mysqlIt=true且隔离datasource；新Testcontainers IT与原draft/review测试必须实际执行。普通mvn test绿色不等于这些门禁通过。记录命令/环境/用例数/跳过数/失败日志，不能填预期结果冒充运行记录。
 - A30兼容修订仅限既有Worker Runtime的构造器参数映射：override优先，其后ManualReplyDelayProperties使用真实默认实例，其他类型继续Mockito.mock；不改生产类型/默认开关/mock插件，不删断言。必跑命令保持Worker/Snapshot/Controller/Pending/新E2E与mysqlIt及原所有门禁；该单文件例外不授权其他生产或测试编辑。
 
@@ -136,11 +138,11 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 - 预期结果 — 第一封仍按原任务一次完成；第二UNKNOWN，retry409不重复SMTP；原请求回SENT或既有状态，不同步再发。新请求按关闭后的原路径处理。
 - 覆盖 — I-3/I-5/I-11，X-8；总A-8补充真实60秒与恢复证据。
 
-### A-3 最终交付门禁
-- 前置条件 — 01～07自动核验均实际通过，隔离环境与测试账号/SMTP完备。
-- 操作步骤 — 1. 从总计划导出人工验收勾选文件。2. 执行总A-1～A-12。3. 每项填写操作者、日期、结果和截图/接口证据。4. 有失败先修权威plan/对应实现再复验。
-- 预期结果 — 12项都有明确通过证据；未经执行项标未验收；全部通过前不标功能完成、不启生产开关。
-- 覆盖 — 总I-1～I-11、S-1～S-4、所有需求与交互点。
+### A-3 阶段验收与联合交付门禁
+- 前置条件 — 01～06及来源前置已实际完成；07隔离环境、测试账号/SMTP和真实依赖完备，08按新顺序在07终态后执行。
+- 操作步骤 — 1. 从总计划导出验收勾选文件。2. 本阶段完成总A-1～A-4/A-6～A-12，保留A-5真实负例/接口证据并标移交08、未通过。3. 每项填写真实操作者、日期、结果和截图/接口证据。4. 08独立实现/核验原A-5 native409，不重写07历史负例。5. 其余失败仍按原权威要求修正。
+- 预期结果 — 07明确十一项证据与A5移交状态，不声称全部十二项已通过；08收口后十二项均有明确证据。未经执行仍标未验收，联合门禁之前不标功能完成、不启生产，不运行review-fast-p。
+- 覆盖 — 总I-1～I-11、S-1～S-4；唯一执行归属调整是A5 frontend/native到08，不减少master任何验收。
 
 ## 修正记录
 
@@ -152,3 +154,5 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 - A27/A28（适用已批准A15「授权本次及同类契约补齐」）：pre-edit审计发现审核controller漏消费03代次且丢失delayed409；既有SENT-only lookup缺少任务/保留Message-ID响应生产者，审核读准备又提前拦截重复WAITING/SENDING。仅增MailReviewDraftController、ManualReplySendAttemptService、MailReviewDraftService三个现有文件（7→10），分别窄HTTP代次/异常协议、纯身份读取/既有completed读准备模式、默认false的server-only读准备模式。仅两个指定读取调用true，UNKNOWN、严格同步claim、其他权限/来源/context/版本守卫与结果提交不变；读取不授予外发权，不新增HTTP权限flag/公共projection/写路径，不以A11泛授权。原集成/真实60秒/重启/总A-1～A-12全部保留，同epoch实现继续，未发生独立核验修复轮。
 
 - A29/A30（适用已批准A5「授权必要测试兼容修订并持续执行」）：具体必跑失败证明新增Pending构造器依赖与旧Worker反射fixture不兼容，仅授权DelayedManualReplyWorkerTest.kt的真实配置实例兼容，10→11为单个既有测试例外而非生产范围扩张。错误/命令/原文/完整grep见现状审计A30；全部行为断言、原命令与完整集成验收保留。新E2E自身上下文错误在其原授权范围修正，未冒充执行通过；同epoch1/fix0继续，不计独立核验修复轮。
+
+- A31/A32（2026-11-06用户选择「按总 A-5 补齐」）：06到期关闭确认与总A5 late409冲突已用真实native/held-GET和三个源码gate证明。保持本阶段十一文件/全部其余要求，把A5 frontend修订/native闭环明确移交五文件08后置子计划，原A5标准不变；07仍保留实际负例及服务器接口证据。06终态不改，08前不READY/启用。此次新人工裁决后07在epoch2/fix0继续，原epoch1源码/运行/失败记录不重写；未变产品不因分工变更重复运行，独立verifier仍须新鲜执行其必跑门禁。

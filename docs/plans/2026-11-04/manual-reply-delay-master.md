@@ -171,8 +171,11 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 20（A15–A22：11特批＋9既有测试兼容） | 05 |
 | 07a | [无稿会话来源与恢复契约](manual-reply-delay-07-source-contract.md) | 11（A23十文件＋A25/A26单个既有测试兼容） | 06 |
 | 07b | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 11（A27/A28十文件＋A29/A30单个既有测试兼容） | 07a |
+| 08 | [已打开撤回确认跨截止时间闭环](manual-reply-delay-08-deadline-confirmation.md) | 5（A31/A32，独立前端收尾） | 07b |
 
 技术契约与每步具体任务在子计划正文中。共同门禁为 I-1～I-11，子计划不得用测试 mock 覆盖掉真实事务边界。
+
+A31/A32：用户2026-11-06选择「按总 A-5 补齐」。总A-5原验收优先于06历史的到期关闭确认条款；不改06终态计划/证据，以08补齐截止前已合法打开确认的窄例外。07仍完成其余全部集成及实际验收，A5前端修订/native409明确移交08；两个子计划均独立核验，全部九个有序子计划及最终制品门禁通过前不READY、不启生产。不是删减总十二项验收，也不把历史单独API409冒充UI闭环。（来源：K-master-plan-shared-file-sequential-gates）
 
 ## 变更文件清单
 
@@ -228,6 +231,8 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 - 预期结果 — 返回409「已超过撤回期限」，显示实际等待投递/发送中/已发送状态，不出现撤回成功提示。
 - 覆盖 — O-2、I-1/I-2/I-9。
 
+A31/A32执行归属：本项原步骤/409预期不变，由08在07终态后完成。截止前已打开确认不是新的迟到撤回许可；新开仍限期内，权限/owner/status/revision等守卫及服务端截止CAS不放宽。真实GET可以延迟以复现尚未观察到状态变化的用户确认，不伪造DOM/clock/响应；已观察到变化则正确清理，不能把该不同分支记为本项通过。
+
 ### A-6 已审核回复
 - 前置条件 — user1有测试专家READ授权，提交草稿，由admin审核通过。
 - 操作步骤 — 1. admin发送已审核回复。2. 二次确认撤回。3. 再次发送。4. 另一轮等待期间加入真实新来信，再观察投递并在审核面板重新确认上下文。
@@ -280,7 +285,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 
 知识回写：补充RAG提交后写点、出站附件边界，新增reviewContext共用UI union与双submit helper事实；Flyway版本断言条目命中达到10，已向CLAUDE.md提升一行规则。选中条目均已本日复核，无需衰减归档；这些条目各管指纹、投递分类、草稿、附件、样式等不同约束，没有5条相同主题可无损合并。仓库没有agents/*.md或templates/project-CLAUDE.md角色文件，未凭空新建角色配置。现存用户修改保留。
 
-拟采用的设计选择包括数据库队列、服务器截止时间、UNKNOWN禁重发、已审核撤回后仍APPROVED、原内容永久失败禁重发。生产开关在07完整验收后由发布环境显式启用，仓库默认false；实际上线仍按项目发布流程。以上设计不冒充当前已实现行为。
+拟采用的设计选择包括数据库队列、服务器截止时间、UNKNOWN禁重发、已审核撤回后仍APPROVED、原内容永久失败禁重发。生产开关仅在07与08联合验收及原总A-1～A-12全部完成后由发布环境显式启用，仓库默认false；实际上线仍按项目发布流程，本fast-p不部署。以上设计不冒充当前已实现行为。
 
 ## 修正记录
 
@@ -316,3 +321,5 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 - A27/A28（适用已批准A15「授权本次及同类契约补齐」）：07 pre-edit审计证实审核HTTP allowlist漏接03已有代次且局部异常映射丢失delayed409；现SENT-only attempt reader无法提供已排队状态与reserved Message-ID，审核读准备又在进入enqueue前拒绝WAITING/SENDING。仅增三个现有文件：MailReviewDraftController的revision校验/转发/精确delayed handler；ManualReplySendAttemptService的internal纯existing-payload身份读取及既有completed读准备显式模式；MailReviewDraftService的server-only默认false读准备模式。仅两个现有read-preparation调用可显式true放行WAITING/SENDING，UNKNOWN及所有其他校验不变，sync claim默认严格拒绝，最终权限/状态/派发仍由原状态机决定。07文件数7→10，仍两个子系统；这是既有状态/响应合同直接生产者补齐，不是A11任意lookup授权。无新HTTP权限字段、锁写、业务或schema，完整集成/60秒/重启验收不变。精确调用矩阵、LSP不可用回执及必测边界见07 T1a/T2/A28和对应local证据。
 
 - A29/A30（适用已批准A5「授权必要测试兼容修订并持续执行」）：07必跑JVM117/0fail/36error/0skip，其中既有Worker9项的7error由反射fixture对新增final ManualReplyDelayProperties调用Mockito.mock引起。仅增DelayedManualReplyWorkerTest.kt一个既有测试授权，原构造器参数映射仅为该类型使用真实默认false实例、保留override优先级/其余mock/全部行为断言，不改生产配置类或接口。07由十文件主体加一个必要既有测试兼容文件成为11，生产范围不扩。另29个新E2E上下文扫描错误由已授权新IT自行排除其他测试配置解决，不是假冒已运行行为证据。原全部命令和60秒/重启/总A-1～A-12门禁不减；精确命令/错误/源码/grep见07 A30收据。
+
+- A31/A32（2026-11-06用户在冲突裁决中选择「按总 A-5 补齐」）：只读与真实held-GET证据确认06已批准的到期关闭条款使总A5 native409不可达，三个frontend gate分别位于mailbox-chat render/submit/timer。新增五文件08后置子计划，仅改共享确认生命周期、直接回归与index同键；07十一文件产品范围不变，明确把A5 frontend/native收口移交08，其余十一项及所有backend/60秒/重启门禁保留。总十二项不减、06历史不改、已关闭F06-01不重开；当前07经本次人工介入在epoch2/fix0继续，原epoch1证据完整保留且未变产品不因改分工重跑。批准/身份见ledger；不执行review-fast-p。
