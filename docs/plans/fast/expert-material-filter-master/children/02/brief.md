@@ -43,3 +43,12 @@ Read the exact child plan in full from this worktree. Its T1..T4, acceptance mat
 
 ## Baseline evidence
 Baseline command outputs and exact counts are recorded in ledger.md under Baseline before dispatch. Required new Eligibility/SQL IT classes do not exist at the approved master base, so no pre-change pass is claimed for them.
+
+## Predecessor output and dispatch boundary
+- Child 01 terminal verdict: LIGHT_PASS, epoch 2, fix_round=0. Code head: 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a. Evidence commit: 89a56a9ee6d43fb78c9e76440a3d2869c94345b1.
+- Complete-manifest checkpoint through 01 passed in dirty-artifact mode and again cleanly at bdc921e62065cc0bdbac093d716024134233cff5: exit 0, result VALID, validation_scope CHILD_CHECKPOINT, 02/03 still PENDING.
+- The child 02 product base is 51268418bfeb0dd666c1fcc079cbb6f4cb239c4a, not an interleaved docs SHA.
+- Available API: stateless `ExpertMaterialEligibility.isMaterial(fileName: String, contentType: String?): Boolean`, compile-time fixed-alias `MATERIAL_SQL`, and `ERROR_MESSAGE`. Use the exact checked-in implementation; no edit to predecessor product/test files is authorized.
+- Child 01 runtime smoke and fresh independent tests exercised read/ownership/batch guards and dual-version production SQL. These results establish predecessor output only; run every child 02 required command freshly.
+- The former stale-worktree identity-helper prerequisite was resolved with explicit human-authorized metadata-only cleanup; the unmodified identity helper succeeds. No outstanding prerequisite exception or helper bypass is authorized.
+
