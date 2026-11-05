@@ -250,9 +250,10 @@ async function mcHostRestoreDelayedReply(contactId, jobId, accountCode, isCurren
     subject.value = input.subject || "";
     manualReplyQaContext = input.ragFactCodes ? { ragFactCodes: input.ragFactCodes, ragCorpusFingerprint: input.ragCorpusFingerprint, baselineText: input.textBody || "" }
         : { qaRuleIds: input.qaRuleIds || [], suggestedRuleIds: input.suggestedRuleIds || [], baselineText: input.textBody || "" };
-    legacyDelayedReplies.set(`${owner}|${source}`, { input, revision: restore.expectedCancelledRevision, status: "CANCELLED" });
     const disclosure = targetEditor.closest?.("details");
     if (disclosure) disclosure.open = true;
+    legacyDelayedReplies.set(`${owner}|${source}`, { input, revision: restore.expectedCancelledRevision, status: "CANCELLED",
+        renderedBaseline: targetEditor.innerText, renderedBaselineHtml: targetEditor.innerHTML });
     targetEditor.focus?.();
     targetEditor.scrollIntoView?.({ block: "center" });
     return true;
@@ -18486,7 +18487,19 @@ async function handleUnmatchedAction(element) {
         const owner = state.authIdentity, detailSeq = liveDetailLoadSeq;
         const saved = legacyDelayedReplies.get(`${owner}|${recordId}`);
         if (saved && ["WAITING", "SENDING", "UNKNOWN"].includes(saved.status)) return false;
-        if (saved?.status === "CANCELLED") requestBody = { ...saved.input, ...requestBody, delayExpectedRevision: saved.revision };
+        if (saved?.status === "CANCELLED") {
+            const unchanged = lockedEditor
+                && lockedEditor.innerText.trim() === (saved.renderedBaseline ?? saved.input.textBody ?? "").trim()
+                && lockedEditor.innerHTML === (saved.renderedBaselineHtml ?? saved.input.htmlBody ?? "");
+            const currentBody = requestBody;
+            requestBody = { ...saved.input, ...currentBody, delayExpectedRevision: saved.revision };
+            if (!unchanged) {
+                // Omitted raw fields mean the current editor no longer qualifies for the restored adoption.
+                requestBody.templateTextBody = currentBody.templateTextBody;
+                requestBody.templateHtmlBody = currentBody.templateHtmlBody;
+                requestBody.trustReplyAssembly = currentBody.trustReplyAssembly;
+            }
+        }
         let queued = false;
         if (lockedEditor) lockedEditor.setAttribute("contenteditable", "false");
         if (lockedSubject) lockedSubject.readOnly = true;

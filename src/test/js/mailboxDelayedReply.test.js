@@ -155,6 +155,90 @@ test("legacy reload restore uses server processing id, rejects missing id and pr
         await assert.rejects(box.mcHostRestoreDelayedReply(1, 77, "acc1"), /无法恢复/);
     }
 });
+
+for (const evidence of ["QA", "RAG"]) {
+    for (const edit of ["unchanged", "text", "format", "new-adoption"]) {
+        test(`restored ${evidence} ${edit} send preserves current body authority and original context`, async () => {
+            const original = {
+                subject: "Original", textBody: "Rendered original", htmlBody: "<p>Rendered original</p>",
+                templateTextBody: "Raw ${expertName}", trustReplyAssembly: { source: "LIVE_INBOUND", requests: [{ factRuleIds: [9] }] },
+                templateHtmlBody: "<p>Raw ${expertName}</p>",
+                attachmentIds: ["attachment-1"], meetingInput: { title: "Original meeting" },
+                ...(evidence === "QA" ? { qaRuleIds: [9, 4], suggestedRuleIds: [4, 9] }
+                    : { ragFactCodes: ["fact-b", "fact-a"], ragCorpusFingerprint: "corpus" })
+            };
+            let html = "", text = "";
+            const disclosure = { open: false };
+            const editor = {
+                get innerHTML() { return html; },
+                set innerHTML(value) { html = value; text = value.replace(/<[^>]*>/g, ""); },
+                get innerText() { return disclosure.open ? text : ""; },
+                closest: () => disclosure,
+                getAttribute: () => "true", setAttribute() {}, removeAttribute() {}
+            };
+            const subject = {}, posts = [];
+            const box = {
+                id: 100, action: "send-manual-rich-reply", element: {},
+                state: { authIdentity: "admin:admin", mailbox: { detailContext: { id: 100 } } },
+                liveDetailLoadSeq: 1, legacyDelayedReplies: new Map(), aiReplyState: { adoptContext: null },
+                manualReplyQaContext: null, document: {},
+                $: id => id === "#manualRichReplyEditor" ? editor : subject,
+                api: async url => url.endsWith("/restore")
+                    ? { originKind: "LEGACY", inboundProcessingId: 100, expectedCancelledRevision: 7, originalInput: original }
+                    : { record: { expertContactId: 1, senderAccountCode: "acc1" } },
+                window: { MailboxMeeting: { sanitizeDraftHtml: value => value }, localStorage: { getItem: () => "operator" } },
+                showUnmatchedDetail: async () => {}, refreshMailboxAfterPendingAction: async () => {},
+                showStatus() {}, resetPreflightState() {}, alert() {},
+                postManualRichReplySnapshot: async (url, body) => {
+                    posts.push({ url, body: JSON.parse(JSON.stringify(body)) });
+                    return { sendStatus: "SENT" };
+                }
+            };
+            vm.createContext(box);
+            const restoreStart = app.indexOf("async function mcHostRestoreDelayedReply(");
+            vm.runInContext(app.slice(restoreStart, app.indexOf("\nconst preflightState", restoreStart)), box);
+            const start = app.indexOf("    async function submitManualRichReply(recordId");
+            const builder = app.indexOf('\n    if (action === "send-manual-rich-reply")', start);
+            const end = app.indexOf('\n    if (action === "rich-command")', builder);
+            vm.runInContext(app.slice(start, builder) + '\nasync function sendCurrentEditor() {' + app.slice(builder, end) + '\n}', box);
+            assert.equal(await box.mcHostRestoreDelayedReply(1, 77, "acc1"), true);
+            if (edit === "text") editor.innerHTML = "<p>Current operator edited text</p>";
+            if (edit === "format") editor.innerHTML = "<p><b>Rendered original</b></p>";
+            if (edit === "new-adoption") {
+                editor.innerHTML = "<p>New adopted body</p>";
+                box.aiReplyState.adoptContext = { recordId: 100, rawTemplate: "New ${expertName}",
+                    renderedBaseline: editor.innerText, renderedBaselineHtml: editor.innerHTML };
+            }
+            const visible = { text: editor.innerText, html: editor.innerHTML };
+            assert.equal(await box.sendCurrentEditor(), true);
+            assert.equal(posts.length, 1);
+            assert.equal(posts[0].url, "/api/mail/unmatched-inbound/100/manual-rich-reply");
+            const sent = posts[0].body;
+            assert.equal(sent.delayExpectedRevision, 7);
+            assert.equal(sent.textBody, visible.text);
+            assert.equal(sent.htmlBody, visible.html);
+            assert.deepEqual(sent.attachmentIds, original.attachmentIds);
+            assert.deepEqual(sent.meetingInput, original.meetingInput);
+            for (const field of evidence === "QA" ? ["qaRuleIds", "suggestedRuleIds"] : ["ragFactCodes", "ragCorpusFingerprint"]) {
+                assert.deepEqual(sent[field], original[field]);
+            }
+            if (edit === "unchanged") {
+                assert.equal(sent.templateTextBody, original.templateTextBody);
+                assert.equal(sent.templateHtmlBody, original.templateHtmlBody);
+                assert.deepEqual(sent.trustReplyAssembly, original.trustReplyAssembly);
+            } else {
+                assert.equal(sent.templateTextBody, edit === "new-adoption" ? "New ${expertName}" : undefined);
+                assert.equal(sent.templateHtmlBody, undefined, "old raw HTML must not override current formatting");
+                assert.equal(sent.trustReplyAssembly, undefined, "old assembly must not override current editor output");
+            }
+            // The server consumes nonblank templateTextBody before text/html, so inspect the actual POST, not only the editor.
+            const consumedText = sent.templateTextBody || sent.textBody;
+            assert.equal(consumedText, edit === "unchanged" ? original.templateTextBody
+                : edit === "new-adoption" ? "New ${expertName}" : visible.text);
+            assert.equal(original.templateTextBody, "Raw ${expertName}", "restored snapshot remains intact");
+        });
+    }
+}
 test("missing persisted draft remains editable when the real target API returns null", async () => {
     const h = await H.bootChat({ conversations: { items: [H.expertA()], total: 1 }, contact: H.contactA(), messages: H.messagesA(), route(url, method, raw, entry, next) {
         if (url.includes("/drafts/target?")) return Promise.resolve(null);
