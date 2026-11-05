@@ -168,7 +168,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 03 | [事务状态机与草稿](manual-reply-delay-03-lifecycle.md) | 12（A2/A3/A5/A6） | 02 |
 | 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 9（A7/A8/A9/A10） | 03 |
 | 05 | [会话读模型](manual-reply-delay-05-query.md) | 10（A11–A14） | 04 |
-| 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 9 | 05 |
+| 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 11（A15/A16特批） | 05 |
 | 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4） | 06 |
 
 技术契约与每步具体任务在子计划正文中。共同门禁为 I-1～I-11，子计划不得用测试 mock 覆盖掉真实事务边界。
@@ -297,4 +297,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 - 后续同类授权边界（A11）：仅为实现已批准不变量所必需的既有内部方法可见性调整或无副作用批量读取接口，可根据具体源码/调用失配证据更新子计划授权文件、精确接口/调用约束/验收与ledger身份后连续执行，不逐项向用户确认。不得据此新增业务行为、改变兼容语义、修改数据库结构、放宽安全/权限校验或降低验收；不允许未记录的越表编辑。其他生产范围变化仍需明确授权。继续至READY_FOR_HUMAN_REVIEW，不执行review-fast-p。
 
 - A13/A14（适用用户已批准A11「授权本次及同类内部接口修订」）：05当前页能力计算须复用普通/审核草稿canonical行及既有指纹输入，但两个repository只有逐条查询且mapper私有。Impl05Epoch2提供 `MailReplyDraftService:173–202`、`MailReviewDraftService:272–283/306–320`、对应repository mapper与指纹消费证据。仅授权两个既有repository各新增受contact/account/服务端当前页jobIds限定的内部只读批量接口，复用原mapper、无锁/写入/生命周期改动；05文件数8→10，业务/兼容/权限不变量不变。具体接口/验收见05T2b，身份见ledger A13/A14。
+
+- A15/A16（2026-11-05 用户选择「授权本次及同类契约补齐」）：06刷新后恢复LEGACY编辑器需要服务端原processing身份；04现restore仅返回原request，丢弃已持久的inboundProcessingId。授权06增加DelayedManualReplyController.kt及其既有测试，restore-only响应补充并校验原来源，公共只读投影不变；06特批文件数9→11，前端+窄恢复契约两个子系统，已完成04/05计划和证据不重写。审计见06 epoch1 execution.md:17-35，身份见ledger A15/A16。
+- 后续同类授权边界（A15）：仅为已批准验收补齐遗漏来源标识、状态或响应字段及其直接校验/测试，可凭具体生产者→消费者失配证据逐项记录精确文件/契约/验收并提交计划与ledger身份后连续执行，不逐项确认。不得新增业务、破坏兼容、修改数据库结构或放宽安全/权限；不构成任意重构/新功能授权。本次06的11文件例外明确限定上述前端和恢复契约；其他范围仍遵守已有批准边界。持续执行至READY_FOR_HUMAN_REVIEW，不执行review-fast-p。
 

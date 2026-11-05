@@ -1,6 +1,6 @@
 # 06 前端倒计时、异常图标与二次确认
 
-前置05通过。前端工作台一个子系统，9个文件。以下CSS为最终合同，不是示意。未开启后端入队时兼容原SENT响应。
+前置05通过。前端工作台与窄恢复接口契约两个子系统，11个文件（A15/A16特批）。以下CSS为最终合同，不是示意。未开启后端入队时兼容原SENT响应。
 
 ## 需求描述
 
@@ -10,6 +10,7 @@
 
 ### Invariant I-6 — 草稿保留与恢复
 - Rule — WAITING/SENDING不可编辑/放弃，原稿不清；SENT只有owner/target/seq匹配才清当前稿。取消回读普通草稿，审核稿仍APPROVED且只读；LEGACY通过原编辑器恢复完整输入，遇到新内容必须保留新内容。
+- Rule (A16) — 刷新后的LEGACY恢复必须使用服务端restore-only返回并校验的原inboundProcessingId选择编辑器；禁止从job.id、正文、Message-ID或最新来信猜测。公共只读任务投影保持原字段，不增加恢复身份或能力。
 - Applies to — compose、server draft map、legacy host、review panel。
 - Violation consequence — 自动保存覆盖或旧回包清除新稿。
 - 来源 — K-mailbox-draft-cache-owner-capture。
@@ -135,8 +136,15 @@ LEGACY取消卡footer允许`button.mc-text-button[data-action=mc-delay-restore]`
 - `app.js:21180–21230`reader请求白名单。仅放行04的数字ID GET状态与FULL动作路由，不能放行整个delayed-replies前缀任意方法。
 - index基线有19处当前版本引用；08-current-cache-key.txt证明JS测试未写死当前版本串，仍需运行资源引用断言。
 - 本地存储写者仍为原draft map/autosave、review state与本次confirmation/poll state；不新建localStorage邮件副本。服务端数据写者03/04，经05读取。交互X-2草稿、X-3审核、X-6权限、X-7HTTP/poll，全部纳入任务与验收。
+- A16执行前审计：06 epoch1 `../fast/manual-reply-delay-master/children/06-frontend/execution.md:17-35`确认04 Controller:55–67解包originalInput时丢弃已持久的DelayedLegacyRestore.inboundProcessingId；LEGACY originId为空，原request不含路由processingId，05消息id必须仍是job.id且未发送任务无真实mail_record锚点。写链已在快照持久原ID；缺口仅为restore响应→刷新后app原编辑器消费链，不需要改DB/快照schema。
 
 ## 实现方案
+
+### T0 恢复来源契约补全（I-6/I-7，A16）
+
+在新增授权的DelayedManualReplyController.kt给既有DelayedReplyRestoreResponse末尾增加可空默认null的 `inboundProcessingId`，仅LEGACY从已持久restore身份填充。返回前验证正ID、快照内部同语义的processing来源一致、当前inbound_mail_processing的contact/account归属仍匹配job；不得把mail_record.id或source_inbound_id按数值相等当processing身份，不猜替代来源。保持原actor/admin与FULL授权、REVIEW禁止编辑恢复、DRAFT既有来源逻辑。无法恢复/非法快照沿用422 SNAPSHOT_INVALID固定映射，现行403/404/409边界不改变。旧缺originalInput仍422；公共DelayedManualReplyView不变。
+
+在新增授权的DelayedManualReplyControllerTest.kt断言精确原processingId及缺失/不匹配当前来源/快照身份拒绝，保留READ/非owner拒绝、REVIEW不可编辑、完整原输入和历史422。前端T1仅消费该权威字段，刷新后无本地状态也能打开原编辑器；再校验当前宿主user/contact/source后才允许恢复，遇到新内容保留冲突确认。
 
 ### T1 提交响应与草稿（I-6/I-9；S-3/S-4）
 
@@ -177,6 +185,8 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 |7|src/test/js/mailboxServerDrafts.test.js|排队与恢复|
 |8|src/test/js/mailReviewAdmin.test.js|已审核发送排队|
 |9|src/test/js/mailboxChatStyle.test.js|新增CSS/DOM契约断言|
+|10|src/main/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyController.kt|A16：restore-only原processing身份与当前来源校验|
+|11|src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt|A16：原来源精确返回与缺失/错配拒绝，保留原授权断言|
 
 ## 验收标准
 
@@ -189,6 +199,7 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 - S-3 — 新增/修改节点均复用声明class；无新恢复面板；恢复冲突默认保留当前内容。
 - S-4 — 1440px/390px截图和键盘验证，移动44px、无横向溢出；19个资源版本参数一致且数量不变。前端代码无inline style或未声明class。
 - 执行 `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailReviewAdmin.test.js src/test/js/mailboxChatStyle.test.js`，再执行上述既有受影响功能测试。浏览器验收用真实05/04接口及测试SMTP，不能注入假数据宣称集成通过。
+- A16 — 运行JDK11 `mvn test -Dtest=DelayedManualReplyControllerTest`，原及新增控制器断言均实际执行；真实浏览器A-3刷新后从会话撤回恢复到原processing编辑器，使用与job.id不同的源ID，缺失/错配源不能恢复，READ无来源载荷/能力。该命令与Node/浏览器验收均在全部改动完成后执行，不以测试stub代替界面证据。
 
 ## 人工验收清单
 
@@ -209,3 +220,8 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 - 操作步骤 — 1. 发送审核稿并撤回。2. 旧详情发送后刷新，去会话撤回并恢复。3. 已有不同新输入时再尝试恢复。4. READ用户查看相同会话。
 - 预期结果 — 审核仍APPROVED只读；旧输入和附件/证据可恢复且不覆盖新输入；READ仅状态图标，无撤回/重发/附件。待发从未提示「发送成功」。
 - 覆盖 — I-6/I-7/I-9/I-10、S-2/S-3，X-2/X-3/X-6。
+
+## 修正记录
+
+- A16（2026-11-05 用户选择「授权本次及同类契约补齐」）：04的生产restore响应遗漏原processing标识，导致06T1/A-3刷新后无法安全定位原编辑器。新增控制器/测试授权并将06文件数9→11特批，T0补齐读取契约和直接验证；不改公共READ投影/数据库/快照schema/发送权限，不重写完成子计划证据。Master A15同步例外及后续同类遗漏契约补齐的严格边界。证据见06 epoch1报告；修订不代表实现或验收已通过。
+
