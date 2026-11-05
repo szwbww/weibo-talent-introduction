@@ -25,6 +25,16 @@ import java.time.LocalDateTime
 import java.util.concurrent.CancellationException
 
 class DiscoveryPaperReprocessServiceTest {
+    @Test fun `failure receipt preserves cause code but excludes arbitrary exception contents`() {
+        val result = jacksonObjectMapper().createObjectNode()
+        PaperReprocessFailure.record(result, IllegalStateException("secret-token alice@example.com",
+            IllegalArgumentException("SOURCE_IDENTITY_PARTIAL")), 12, 34)
+        assertEquals("12/34", result.path("failure").path("reference").asText())
+        assertEquals("SOURCE_IDENTITY_PARTIAL", result.path("failure").path("causes")[1].path("code").asText())
+        assertFalse(result.toString().contains("secret-token"))
+        assertFalse(result.toString().contains("alice@example.com"))
+    }
+
     @Test fun `readonly preview and detail expose persisted counts units overlap and proposal semantics without parsing`() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
         val repository = Mockito.mock(DiscoveryPaperReprocessRepository::class.java)

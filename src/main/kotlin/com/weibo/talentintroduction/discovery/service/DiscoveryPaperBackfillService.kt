@@ -64,7 +64,8 @@ class ParsedArchivedPaper private constructor(private val metadata: PaperMetadat
             }
             val (metadata, body) = read()
             val parsed = analyzer.parse(body, mapper.valueToTree(metadata)) { repository.requirePermission(parent) }
-            require(parsed.reasons.isEmpty()) {
+            // A coverage warning does not invalidate proven bindings on scanned pages; parse errors still fail.
+            require(parsed.reasons.all { it == "PAGE_NOT_SCANNED" }) {
                 "SOURCE_IDENTITY_PARTIAL"
             }
             val bound = parsed.emails.filter { !it.givenNames.isNullOrBlank() && !it.familyNames.isNullOrBlank() &&

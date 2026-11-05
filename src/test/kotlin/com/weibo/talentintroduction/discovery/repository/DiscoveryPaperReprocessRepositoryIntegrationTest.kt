@@ -57,6 +57,7 @@ internal object ReprocessMysqlFixture {
             ClassPathResource("db/migration/V137__task_execution_interruption_recovery.sql"),
             ClassPathResource("db/migration/V158__create_discovery_verification.sql"),
             ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql"),
+            ClassPathResource("db/migration/V161__discovery_recheck_history.sql"),
             ClassPathResource("db/migration/V163__paper_archive_lookup_indexes.sql"),
             ClassPathResource("db/migration/V173__create_discovery_paper_reprocess.sql")).execute(source)
         // V73's nullable task mapping column; the batch configuration subsystem is not bootstrapped.
@@ -145,6 +146,25 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
     private val f = ReprocessMysqlFixture
     private val repository get() = f.repository()
     @BeforeEach fun clean() = f.clean()
+
+    @Test fun `review groups persist across process recovery and late ready targets do not shift old membership`() {
+        val source = f.task(); f.seedPapers(source, 1)
+        val run = f.create(source)
+        f.jdbc.update("UPDATE discovery_paper_reprocess_run SET mode='ENFORCE' WHERE execution_id=?", run.executionId)
+        val owner = repository.claimRun("worker")!!
+        repository.freezePage(run.executionId, owner.leaseToken!!, owner.generation)
+        repository.setPhase(run.executionId, owner.leaseToken!!, owner.generation, PaperReprocessPhase.APPLY)
+        val parent = repository.find(run.executionId)!!
+        assertTrue(repository.stagedReviews(parent))
+        val first = repository.freezeReviewGroups(parent, (1..101).map { "doc-$it" })
+        assertEquals(listOf(100, 1), first.map { it.size })
+        val resumed = f.repository()
+        assertTrue(resumed.stagedReviews(parent))
+        assertEquals(first, resumed.freezeReviewGroups(parent, (1..101).reversed().map { "doc-$it" }))
+        val extra = resumed.freezeReviewGroups(parent, listOf("a-late-document"))
+        assertEquals(listOf(listOf("a-late-document")), extra)
+        assertEquals(first + extra, resumed.find(run.executionId)!!.scope.path("reviewGroups").map { g -> g.map { it.asText() } })
+    }
 
     @Test fun `V173 actually enforces enums singleton indexes and UTC millisecond storage in MySQL8`() {
         val version = f.jdbc.queryForObject("SELECT VERSION()", String::class.java)!!

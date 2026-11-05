@@ -80,7 +80,7 @@ class DiscoveryPaperReprocessEndToEndTest {
                     clean()
                     `explicit retry resumes cancelled ordinary qualification without duplicating effects`()
                     clean()
-                    `explicit retry resumes a cancelled owned child under the same epoch`()
+                    `legacy parent retry resumes a cancelled owned child under the same epoch`()
                     clean()
                     `sync retry projects admitted ordinary and owned child items without replaying providers`()
                 }
@@ -100,6 +100,43 @@ class DiscoveryPaperReprocessEndToEndTest {
             "discovery_source_cursor", "expert_email_alias", "expert_contact", "discovery_recheck_input",
             "discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
             "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
+    }
+
+    @Test fun `partial page coverage keeps proven author binding and permits new RAW`() {
+        Harness().use { h ->
+            val paper = h.seedPartialPdfSource()
+            val run = h.create(Harness.RECOVERY_SOURCE)
+            h.pump(run.executionId, ReprocessState.COMPLETED)
+            val parsed = h.repository.items(run.executionId, ReprocessKind.PAPER, 0, 20).items.single().result!!
+            assertTrue(parsed.toString().contains("PAGE_NOT_SCANNED"))
+            val target = h.target(run.executionId, paper.email!!)
+            assertEquals(1, target.result!!.path("actualNew").asInt())
+            assertFalse(target.result!!.path("applicationError").asBoolean())
+            assertEquals("Alice", h.readRaw(paper.doc)!!["givenNames"])
+            assertEquals("Smith", h.readRaw(paper.doc)!!["familyNames"])
+        }
+    }
+
+    @Test fun `first ready review starts before last target batch is applied and groups survive retries`() {
+        Harness().use { h ->
+            h.seedBatchedSource()
+            val run = h.create(Harness.CHILD_SOURCE)
+            var pendingAtFirstStart: Long? = null
+            h.apply.afterEffect = { point ->
+                if (point == "AFTER_START" && pendingAtFirstStart == null) {
+                    pendingAtFirstStart = jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_paper_reprocess_item
+                        WHERE execution_id=? AND kind='TARGET' AND result_json IS NULL""", Long::class.java, run.executionId)
+                }
+            }
+            h.pump(run.executionId, ReprocessState.COMPLETED)
+            assertTrue((pendingAtFirstStart ?: 0) > 0, "First child must start before remaining target applications")
+            val parent = h.repository.find(run.executionId)!!
+            assertTrue(parent.scope.path("stagedReviews").asBoolean())
+            assertEquals(1, parent.scope.path("reviewGroups").size())
+            assertEquals(1L, jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_run
+                WHERE recheck_json IS NOT NULL AND JSON_EXTRACT(settings_json,'$.paperReprocessParentId')=?""",
+                Long::class.java, run.executionId))
+        }
     }
 
     @Test fun `partial paper failure admits successful peers and followup adds recovered expert without duplicate RAW`() {
@@ -285,7 +322,7 @@ class DiscoveryPaperReprocessEndToEndTest {
         }
     }
 
-    @Test fun `explicit retry resumes a cancelled owned child under the same epoch`() {
+    @Test fun `legacy parent retry resumes a cancelled owned child under the same epoch`() {
         Harness().use { h ->
             h.seedExistingAuthorSource()
             val run = h.create(Harness.CHILD_SOURCE)
@@ -300,9 +337,15 @@ class DiscoveryPaperReprocessEndToEndTest {
             assertEquals(1, h.f.repository.paperReprocessRuns(run.executionId).count { it.recheckJson != null })
 
             h.cancelOnFirstStart = false
+            // Simulate a parent created before staged grouping existed, retaining its already-owned child.
+            val legacyScope = h.repository.find(run.executionId)!!.scope.deepCopy<ObjectNode>()
+                .also { it.remove(listOf("stagedReviews", "reviewGroups")) }
+            jdbc.update("UPDATE discovery_paper_reprocess_run SET scope_json=? WHERE execution_id=?",
+                legacyScope.toString(), run.executionId)
             val retried = h.service.retry(run.executionId, h.repository.find(run.executionId)!!.revision)
             h.pump(retried.executionId, ReprocessState.COMPLETED)
 
+            assertFalse(h.repository.find(run.executionId)!!.scope.path("stagedReviews").asBoolean())
             val receipt = h.repository.item(run.executionId, target.id)!!.result!!
             assertEquals(childId, receipt.path("childRunId").asLong())
             assertEquals(1, h.f.repository.paperReprocessRuns(run.executionId).count { it.recheckJson != null }, "no second epoch is prepared")
@@ -625,11 +668,26 @@ class DiscoveryPaperReprocessEndToEndTest {
             seedRaw(existingAuthor, complete = true, orcid = null)
         }
 
+        fun seedBatchedSource() {
+            seedExistingAuthorSource()
+            repeat(100) { index ->
+                // No RAW/provider work needed for these unbound contacts; they still are distinct TARGETs.
+                addPaper(CHILD_SOURCE, Paper("unbound-$index", "unbound$index@fixture.edu", "", "", null))
+            }
+        }
+
+        fun seedPartialPdfSource(): Paper {
+            val paper = Paper("partial-pdf", "alice@fixture.edu", "Alice", "Smith", null)
+            val bytes = QualificationFixtures.pdf(4, listOf("Alice Smith: alice@fixture.edu"))
+            addPaper(RECOVERY_SOURCE, paper, bytes)
+            return paper
+        }
+
         private fun seed(sourceId: Long, vararg papers: Paper) {
             papers.forEach { addPaper(sourceId, it) }
         }
 
-        private fun addPaper(sourceId: Long, paper: Paper) {
+        private fun addPaper(sourceId: Long, paper: Paper, pdf: ByteArray? = null) {
             val metadata = PaperMetadata(null, null, "10.fixture/${paper.key}", "Isolated paper ${paper.key}", 2026, null,
                 listOf(PaperAuthor(paper.given, paper.family, paper.orcid, "Example University", true)), "CROSSREF")
             val orcid = paper.orcid?.let {
@@ -644,11 +702,11 @@ class DiscoveryPaperReprocessEndToEndTest {
             val record = archive.beginRecord(sourceId, "CROSSREF", paper.key,
                 mapper.valueToTree<ObjectNode>(metadata).put("schemaVersion", 1))
             val attempt = archive.beginAttempt(record.id, UUID.randomUUID(), 1,
-                ArchiveAttemptKind.PMC_XML, "https://fixture.invalid/${paper.key}.xml")
-            archive.saveBody(attempt.id, xml, "application/xml")
+                if (pdf == null) ArchiveAttemptKind.PMC_XML else ArchiveAttemptKind.PDF_URL, "https://fixture.invalid/${paper.key}")
+            archive.saveBody(attempt.id, pdf ?: xml, if (pdf == null) "application/xml" else "application/pdf")
             archive.finishExtraction(record.id, mapper.createObjectNode().put("schemaVersion", 1))
             paper.recordId = record.id; paper.attemptId = attempt.id
-            paper.bodySha = DiscoveryPaperArchiveService.sha(xml)
+            paper.bodySha = DiscoveryPaperArchiveService.sha(pdf ?: xml)
             paper.doc = docId(paper)
         }
 

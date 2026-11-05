@@ -194,6 +194,34 @@ class DiscoveryPaperReprocessRepository(
         true
     }
 
+    internal fun stagedReviews(parent: ReprocessRun): Boolean = transaction {
+        val run = requirePermission(parent)
+        run.scope.get("stagedReviews")?.let { return@transaction it.asBoolean() }
+        val hasChildren = jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_run
+            WHERE recheck_json IS NOT NULL AND JSON_EXTRACT(settings_json,'$.paperReprocessParentId')=?""",
+            Long::class.java, parent.executionId)!! > 0
+        val scope = run.scope.deepCopy<ObjectNode>().put("stagedReviews", !hasChildren)
+        jdbc.update("UPDATE discovery_paper_reprocess_run SET scope_json=?,revision=revision+1 WHERE execution_id=?",
+            json(scope, "INPUT_TOO_LARGE"), parent.executionId)
+        !hasChildren
+    }
+
+    /** Persist membership before prepare/start; retries append only documents outside existing groups. */
+    internal fun freezeReviewGroups(parent: ReprocessRun, docIds: List<String>): List<List<String>> = transaction {
+        val run = requirePermission(parent)
+        val scope = run.scope.deepCopy<ObjectNode>()
+        val groups = scope.path("reviewGroups").map { group -> group.map { it.asText() } }.toMutableList()
+        val assigned = groups.flatten().toSet()
+        val added = docIds.distinct().sorted().filterNot { it in assigned }.chunked(100)
+        if (added.isNotEmpty()) {
+            groups.addAll(added)
+            scope.set<JsonNode>("reviewGroups", mapper.valueToTree(groups))
+            jdbc.update("UPDATE discovery_paper_reprocess_run SET scope_json=?,revision=revision+1 WHERE execution_id=?",
+                json(scope, "INPUT_TOO_LARGE"), parent.executionId)
+        }
+        groups.filter { group -> group.any { it in docIds } }
+    }
+
     /** true means freezing is complete; each transaction reads at most 100 archive records. */
     fun freezePage(runId: Long, token: String, generation: Long): Boolean {
         var changed = false
@@ -295,7 +323,6 @@ class DiscoveryPaperReprocessRepository(
         jdbc.update("""UPDATE discovery_paper_reprocess_item SET lease_until=?,updated_at=?
             WHERE execution_id=? AND state='RUNNING' AND generation=?""", until, db(time), runId, run.generation)
         if (tasks.heartbeatExecution(runId, token, taskTime(time)) != 1) throw ReprocessException("TASK_OWNERSHIP_LOST", 409)
-        progress(runId, time)
         true
     }
 
@@ -526,6 +553,7 @@ class DiscoveryPaperReprocessRepository(
         } }, key)
         val id = key.key!!.toLong()
         val scope = previous.scope.deepCopy<ObjectNode>().put("retryOf", previous.executionId)
+        scope.remove(listOf("reviewGroups", "stagedReviews"))
         jdbc.update("""INSERT INTO discovery_paper_reprocess_run
             (execution_id,source_execution_id,request_key,request_hash,active_key,mode,state,phase,scope_json,created_at,updated_at)
             VALUES (?,?,?,?,'PAPER_REPROCESS',?,'PREPARING','READ',?,?,?)""",
@@ -568,18 +596,6 @@ class DiscoveryPaperReprocessRepository(
             COALESCE(SUM(CASE WHEN kind='TARGET' THEN COALESCE(JSON_EXTRACT(result_json,'$.actualAdmitted'),0) ELSE 0 END),0) actual_admitted
             FROM discovery_paper_reprocess_item WHERE execution_id=?""", runId)
         fun n(key: String) = (row.getValue(key) as Number).toLong()
-        val business = if (run?.mode == ReprocessMode.ENFORCE) jdbc.queryForMap("""SELECT
-            COALESCE(SUM(COALESCE(JSON_EXTRACT(t.result_json,'$.alreadyAdmitted'),0)=0 AND EXISTS(
-                SELECT 1 FROM discovery_verification_item v JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
-                WHERE JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')=? AND v.admission_revision IS NOT NULL
-                AND v.expert_doc_id=COALESCE(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')),
-                    JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.proposedDocId'))))),0) admitted,
-            COALESCE(SUM(EXISTS(SELECT 1 FROM discovery_verification_item v JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
-                WHERE JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')=? AND
-                v.expert_doc_id=JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')) AND
-                JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='APPLIED' AND
-                JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.repairReceipt.reason'))='REPAIRED')),0) repaired
-            FROM discovery_paper_reprocess_item t WHERE t.execution_id=? AND t.kind='TARGET'""", runId, runId, runId) else null
         // Join only this target's owned verification item. Never count foreign reviews of the same
         // document, and never multiply a target by the number of attempts/reviews for that document.
         val classified = jdbc.queryForMap("""SELECT
@@ -610,6 +626,10 @@ class DiscoveryPaperReprocessRepository(
             COALESCE(SUM(t.kind='TARGET' AND (
                 JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.targetOutcome'))='PROTECTED' OR v.outcome='PROTECTED' OR
                 JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='PROTECTED')),0) protected,
+            COALESCE(SUM(t.kind='TARGET' AND v.admission_revision IS NOT NULL AND
+                COALESCE(JSON_EXTRACT(t.result_json,'$.alreadyAdmitted'),0)=0),0) admitted,
+            COALESCE(SUM(t.kind='TARGET' AND JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='APPLIED'
+                AND JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.repairReceipt.reason'))='REPAIRED'),0) repaired,
             COALESCE(SUM(t.kind='TARGET' AND v.admission_revision IS NOT NULL AND v.projection_state='ERROR'),0) sync_failure,
             COALESCE(SUM(t.kind='TARGET' AND v.qualification='MET'),0) qualification_met,
             COALESCE(SUM(t.kind='TARGET' AND v.qualification='UNKNOWN'),0) qualification_unknown,
@@ -621,14 +641,15 @@ class DiscoveryPaperReprocessRepository(
             LEFT JOIN discovery_verification_item v ON t.kind='TARGET' AND v.id=(
                 SELECT vi.id FROM discovery_verification_item vi
                 JOIN discovery_verification_run vr ON vr.execution_id=vi.owner_execution_id
-                WHERE JSON_EXTRACT(vr.settings_json,'$.paperReprocessParentId')=t.execution_id
+                WHERE vi.owner_execution_id=COALESCE(
+                    JSON_EXTRACT(t.result_json,'$.verificationRunId'),
+                    JSON_EXTRACT(t.result_json,'$.childRunId'),t.execution_id)
+                    AND JSON_EXTRACT(vr.settings_json,'$.paperReprocessParentId')=t.execution_id
                     AND vi.expert_doc_id=COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')),'null'),
                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.proposedDocId')),'null'))
-                    AND CASE WHEN JSON_TYPE(JSON_EXTRACT(t.result_json,'$.verificationItemId'))='INTEGER'
-                        THEN vi.id=JSON_EXTRACT(t.result_json,'$.verificationItemId')
-                            AND vi.owner_execution_id=JSON_EXTRACT(t.result_json,'$.verificationRunId')
-                        ELSE vi.owner_execution_id=COALESCE(
-                            JSON_EXTRACT(t.result_json,'$.childRunId'),t.execution_id) END
+                    AND (JSON_TYPE(JSON_EXTRACT(t.result_json,'$.verificationItemId')) IS NULL
+                        OR JSON_TYPE(JSON_EXTRACT(t.result_json,'$.verificationItemId'))<>'INTEGER'
+                        OR vi.id=JSON_EXTRACT(t.result_json,'$.verificationItemId'))
                 ORDER BY vi.id DESC LIMIT 1)
             WHERE t.execution_id=?""", runId)
         fun c(key: String) = (classified.getValue(key) as Number).toLong()
@@ -640,8 +661,8 @@ class DiscoveryPaperReprocessRepository(
             if (c(known) == n("targets") && (n("targets") > 0 || targetTotalKnown)) c(count) else null
         return ReprocessSummary(n("papers"), n("paper_complete"), n("paper_errors"), n("paper_cancelled"), n("targets"), n("target_complete"), n("target_errors"),
             if (enforce) n("actual_new").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
-            if (enforce) (business?.get("repaired") as? Number)?.toInt() ?: n("actual_updated").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
-            if (enforce) (business?.get("admitted") as? Number)?.toInt() ?: n("actual_admitted").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+            if (enforce) c("repaired").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+            if (enforce) c("admitted").coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
             pendingVerification = if (enforce) c("pending") else 0,
             wouldCreate = proposal("create_known", "would_create"), wouldRepair = proposal("repair_known", "would_repair"),
             unchanged = proposal("outcome_known", "unchanged"), conflict = c("conflict"),
@@ -653,9 +674,12 @@ class DiscoveryPaperReprocessRepository(
     }
 
     private fun progress(runId: Long, time: Instant) {
-        val counts = summary(runId)
-        tasks.updateProgressCounts(runId, (counts.paperComplete + counts.paperErrors + counts.paperSkipped).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-            counts.paperErrors.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), taskTime(time))
+        val counts = jdbc.queryForMap("""SELECT
+            COALESCE(SUM(state IN ('COMPLETE','ERROR','SKIPPED')),0) processed,
+            COALESCE(SUM(state='ERROR'),0) errors
+            FROM discovery_paper_reprocess_item WHERE execution_id=? AND kind='PAPER'""", runId)
+        tasks.updateProgressCounts(runId, (counts.getValue("processed") as Number).toInt(),
+            (counts.getValue("errors") as Number).toInt(), taskTime(time))
     }
 
     /** Validate before bulk mutation, so future/corrupt evidence remains untouched for diagnosis. */

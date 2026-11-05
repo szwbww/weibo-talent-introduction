@@ -307,3 +307,19 @@ test('explicit cancel once, history source-bound and close/Escape/dispose fronte
     h.act('cancel').click(); h.act('cancel').click(); await flush(); assert.equal(h.calls.filter(c => c.url.endsWith('/cancel')).length, 1); resolveCancel(run(7001,9001,'CANCELLING')); await flush();
     h.view.suspend(); assert.equal(h.find('runPanel').hidden, true, 'closing clears the stale run panel'); h.view.dispose(); assert.equal(h.timers.size, 0); assert.equal(h.calls.filter(c => c.url.endsWith('/cancel')).length, 1);
 });
+
+
+test('finished papers do not show 100 percent while expert applications remain pending', async () => {
+    const current = { ...run(), mode: 'ENFORCE', phase: 'APPLY' };
+    const h = harness(url => {
+        if (url.includes('/runs?')) return { items: [current], total: 1 };
+        if (/\/runs\/\d+$/.test(url)) return { run: current, summary: { ...summary,
+            papers: 6700, paperComplete: 6700, targets: 4803, targetComplete: 2987, targetErrors: 70,
+            targetTotalKnown: true, pendingVerification: 610 }, totalKnown: true, progressText: '专家处理阶段' };
+    });
+    h.view.setExecution(9001); h.view.setVisible(true); await flush();
+    assert.equal(h.find('progress').max, 4803);
+    assert.equal(h.find('progress').value, 3057);
+    assert.match(h.find('summary').textContent, /待核验 610/);
+    h.view.dispose();
+});

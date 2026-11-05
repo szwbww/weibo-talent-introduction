@@ -8,7 +8,7 @@
     const steps = ['读取原文', '重新解析', '身份关联', '补录 / 补齐', '资格重审', '保存结果'];
     const reasons = { SOURCE_MISSING: '无可用留存原文（未留存、已删除或保存异常）', SOURCE_CHANGED: '原文或元数据已变化', PARSE_FAILED: '解析失败', PARSED: '解析已完成', CONFLICT: '来源身份冲突', SOURCE_IDENTITY_CONFLICT: '来源身份冲突', IDENTITY_NOT_BOUND: '缺少可核验的姓名与邮箱关联', AUDIT_CANDIDATE: '仅对照候选，未核查档案是否存在', BUSINESS_PROTECTED: '人工、联系或应用档案保护', EXISTING_IDENTITY_CONFLICT: '已有档案身份冲突', EMAIL_MULTIPLE_DOCUMENTS: '邮箱关联多个档案', FOREIGN_DOCUMENT: '档案不属于本任务可续接范围', SOURCE_IDENTITY_NOT_UNIQUE: '原文身份不唯一', NO_ELIGIBLE_EMAIL: '未取得符合现有规则的邮箱', APPLY_FAILED: '补录或登记失败', CANCELLED: '任务已取消', CANCEL_REQUESTED: '已请求取消', WAITING_RECHECK_SLOT: '等待原重审任务槽位', WAITING_VERIFICATION: '等待资格核验', VERSION_CHANGED: '解析版本已变化，请新建任务', EXECUTION_INTERRUPTED: '任务执行中断' };
     const value = v => v == null ? '—' : String(v);
-    const reason = r => [r?.reasonCode && (reasons[r.reasonCode] || r.reasonCode), r?.reason].filter(Boolean).join(' · ') || '尚无处理结论';
+    const reason = r => [r?.reasonCode && (reasons[r.reasonCode] || r.reasonCode), r?.reason, r?.failure && ('诊断 ' + r.failure.type + ' · ' + (r.failure.causes || []).map(c => c.code).filter(Boolean).join(' / ') + ' · 记录 ' + r.failure.reference)].filter(Boolean).join(' · ') || '尚无处理结论';
     function mount({ root, api, makeUrl, openPaper, openVerification, onStatus }) {
         const doc = root.ownerDocument;
         const find = name => root.querySelector('[data-rp="' + name + '"]');
@@ -69,9 +69,13 @@
             const proposal = r.mode === 'AUDIT'
                 ? '拟补录 ' + value(s.wouldCreate) + ' / 拟补齐 ' + value(s.wouldRepair) + '（目标；— 表示未核查档案存在性，候选不等于拟新增）'
                 : '正式补录按实际结果统计；拟变化仅对照模式提供';
-            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 跳过 ' + value(s.paperSkipped) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (s.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
-            const progress = find('progress'); progress.max = snapshot.totalKnown && s.papers > 0 ? s.papers : 1;
-            if (snapshot.totalKnown) progress.value = s.paperComplete + s.paperErrors + s.paperCancelled + (s.paperSkipped || 0); else progress.removeAttribute('value');
+            text('summary', (r.mode === 'AUDIT' ? '仅对照，未应用；实际业务数为0。' : '') + proposal + '。无变化 ' + value(s.unchanged) + ' · 冲突 ' + value(s.conflict) + ' · 保护 ' + value(s.protected) + ' · 资格不满足 ' + value(s.qualification?.notMet) + ' / 未知 ' + value(s.qualification?.unknown) + ' / 冲突 ' + value(s.qualification?.conflict) + ' / 未评估 ' + value(s.qualification?.notEvaluated) + ' / 未取得核验 ' + value(s.qualification?.unavailable) + ' · 专家处理 ' + value(s.targetComplete == null ? null : s.targetComplete + s.targetErrors) + '/' + value(s.targets) + ' · 待核验 ' + value(s.pendingVerification) + ' · 缺源论文 ' + value(s.missingSourcePapers) + ' · 跳过 ' + value(s.paperSkipped) + ' · 论文失败 ' + value(s.paperErrors) + ' / 取消 ' + value(s.paperCancelled) + ' · 目标失败 ' + value(s.targetErrors) + ' · 候选同步失败 ' + value(s.syncFailure) + '。准入按档案计数，不等于去重人数；目标按本批唯一邮箱计数，分类可重叠，不可相加。' + (s.targetTotalKnown ? '目标总量已固定。' : '目标总量仍在形成。') + '未知统计以 — 显示。');
+            const targetPhase = ['APPLY', 'REVIEW', 'SAVE'].includes(r.phase);
+            const progress = find('progress'), total = targetPhase ? s.targets : s.papers;
+            progress.max = total > 0 ? total : 1;
+            const known = targetPhase ? s.targetTotalKnown : snapshot.totalKnown;
+            if (known) progress.value = targetPhase ? (s.targetComplete || 0) + (s.targetErrors || 0) : s.paperComplete + s.paperErrors + s.paperCancelled + (s.paperSkipped || 0);
+            else progress.removeAttribute('value');
             text('phase', snapshot.progressText + ' · 阶段 ' + (reasons[r.scope?.reasonCode] || r.phase));
             action('cancel').hidden = !activeStates.has(r.state) || r.cancelRequested;
             action('cancel').disabled = mutating || authFailed;

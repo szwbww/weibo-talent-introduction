@@ -46,30 +46,47 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
     }
 
     /** false leaves a persisted RUNNING/REVIEW wait. No page or process-local flag is authority. */
-    internal fun apply(parent: ReprocessRun): Boolean {
-        repository.requirePermission(parent)
+    internal fun apply(initialParent: ReprocessRun): Boolean {
+        var parent = repository.requirePermission(initialParent)
         val context = registration.beginFromPaperReprocess(parent)
         resumeOwnedQualification(parent)
-        for (saved in targets(parent.executionId)) {
-            val target = repository.claimTarget(parent, saved.id) ?: continue
-            val result = target.result?.deepCopy<ObjectNode>() ?: result(target)
-            try {
-                if (!result.path("applied").asBoolean()) {
-                    if (result.path("applicationError").asBoolean()) result.remove(listOf("reasonCode", "reason"))
-                    applyTarget(parent, target, result, context)
-                    result.put("applicationError", false).put("retryable", false)
+        val staged = repository.stagedReviews(parent)
+        parent = repository.requirePermission(parent) // Scope changed; retain the full parent-snapshot fence.
+        var waitingSlot = false
+        val roster = targets(parent.executionId).associateBy { it.id }.toMutableMap()
+        for (batch in roster.values.toList().chunked(100)) {
+            for (saved in batch) {
+                val target = repository.claimTarget(parent, saved.id) ?: continue
+                val result = target.result?.deepCopy<ObjectNode>() ?: result(target)
+                try {
+                    if (!result.path("applied").asBoolean()) {
+                        if (result.path("applicationError").asBoolean()) result.remove(listOf("reasonCode", "reason", "failure"))
+                        applyTarget(parent, target, result, context)
+                        result.put("applicationError", false).put("retryable", false)
+                        save(parent, target, result)
+                    }
+                    observe(parent, target, result)
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) {
+                    repository.item(parent.executionId, target.id)?.result?.let { result.setAll<ObjectNode>(it as ObjectNode) }
+                    PaperReprocessFailure.record(result, e, parent.executionId, target.id)
+                    result.put("targetOutcome", "ERROR").put("reasonCode", if (e is ArchiveException) e.code else "APPLY_FAILED")
+                        .put("reason", "补录或登记失败，已生效收据保留；请查看原因并重试")
+                        .put("retryable", true).put("applicationError", true).put("applied", result.path("applied").asBoolean())
+                    trace(result, 4, "ERROR")
                     save(parent, target, result)
+                    complete(parent, target, result, ReprocessItemState.ERROR)
                 }
-                observe(parent, target, result)
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) {
-                repository.item(parent.executionId, target.id)?.result?.let { result.setAll<ObjectNode>(it as ObjectNode) }
-                result.put("targetOutcome", "ERROR").put("reasonCode", if (e is ArchiveException) e.code else "APPLY_FAILED")
-                    .put("reason", "补录或登记失败，已生效收据保留；请查看原因并重试")
-                    .put("retryable", true).put("applicationError", true).put("applied", result.path("applied").asBoolean())
-                trace(result, 4, "ERROR")
-                save(parent, target, result)
-                complete(parent, target, result, ReprocessItemState.ERROR)
+            }
+            if (staged) {
+                for (saved in batch) roster[saved.id] = repository.item(parent.executionId, saved.id)!!
+                val ready = batch.mapNotNull { roster[it.id] }.filter { it.result?.path("needsRecheck")?.asBoolean() == true }
+                val groups = repository.freezeReviewGroups(parent, ready.map { it.result!!.path("docId").asText() })
+                parent = repository.requirePermission(parent)
+                val members = roster.values.filter { it.result?.path("needsRecheck")?.asBoolean() == true }
+                waitingSlot = submitReviews(parent, groups.map { ids ->
+                    members.filter { it.result!!.path("docId").asText() in ids }
+                }) || waitingSlot
             }
         }
         repository.requirePermission(parent)
@@ -82,14 +99,36 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
                 writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId) == null)
                 verification.failReserved(item.id, "[\"REGISTRATION_RAW_MISSING\"]", Instant.now())
         }
+        if (!staged) {
+            val roster = targets(parent.executionId).filter { it.result?.path("needsRecheck")?.asBoolean() == true }
+                .sortedBy { it.result!!.path("docId").asText() }
+            waitingSlot = submitReviews(parent, roster.chunked(100)) || waitingSlot
+        }
+        val owned = verification.paperReprocessRuns(parent.executionId)
+        val allTerminal = owned.all { run ->
+            if (run.recheckJson != null) verification.reconcileRecheck(run.executionId, Instant.now())
+            val current = verification.findRun(run.executionId) ?: return@all false
+            val count = verification.recheckCounts(run.executionId)
+            if (current.recheckJson == null) current.inputClosed && count.queued == 0L else
+                verification.recheck(current).control.phase in setOf(RecheckPhase.COMPLETED, RecheckPhase.CANCELLED,
+                    RecheckPhase.FAILED, RecheckPhase.INTERRUPTED) && count.queued == 0L
+        }
+        val unfinished = targets(parent.executionId).any { it.state in setOf(ReprocessItemState.PENDING, ReprocessItemState.RUNNING) }
+        if (waitingSlot || unfinished || !allTerminal) {
+            repository.waitForReview(parent, if (waitingSlot) "WAITING_RECHECK_SLOT" else "WAITING_VERIFICATION")
+            return false
+        }
+        return true
+    }
+
+    private fun submitReviews(parent: ReprocessRun, groups: List<List<ReprocessItem>>): Boolean {
         var waitingSlot = false
-        // The roster includes completed members too: a restart cannot shift the stable 100-document groups.
-        val roster = targets(parent.executionId).filter { it.result?.path("needsRecheck")?.asBoolean() == true }
-            .sortedBy { it.result!!.path("docId").asText() }
-        for (group in roster.chunked(100)) {
+        for (group in groups) {
+            if (group.all { it.state in setOf(ReprocessItemState.COMPLETE, ReprocessItemState.SKIPPED) }) continue
             repository.requirePermission(parent)
-            val docIds = group.map { it.result!!.path("docId").asText() }
-            val refs = group.associate { it.result!!.path("docId").asText() to sourceRefs(it.input) }
+            val docIds = group.map { it.result!!.path("docId").asText() }.distinct().sorted()
+            val refs = group.groupBy { it.result!!.path("docId").asText() }
+                .mapValues { (_, items) -> items.flatMap { sourceRefs(it.input) }.distinct() }
             val child = try { rechecks.prepareFromPaperReprocess(parent, docIds, refs) }
             catch (e: ResponseStatusException) {
                 if (e.reason?.startsWith("ACTIVE_RECHECK_EXISTS") == true || e.reason == "PREPARE_BUSY") {
@@ -123,19 +162,7 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
                 observe(parent, target, target.result!!.deepCopy<ObjectNode>())
             }
         }
-        val owned = verification.paperReprocessRuns(parent.executionId)
-        val allTerminal = owned.all { run ->
-            val count = verification.recheckCounts(run.executionId)
-            if (run.recheckJson == null) run.inputClosed && count.queued == 0L else
-                verification.recheck(run).control.phase in setOf(RecheckPhase.COMPLETED, RecheckPhase.CANCELLED,
-                    RecheckPhase.FAILED, RecheckPhase.INTERRUPTED) && count.queued == 0L
-        }
-        val unfinished = targets(parent.executionId).any { it.state in setOf(ReprocessItemState.PENDING, ReprocessItemState.RUNNING) }
-        if (waitingSlot || unfinished || !allTerminal) {
-            repository.waitForReview(parent, if (waitingSlot) "WAITING_RECHECK_SLOT" else "WAITING_VERIFICATION")
-            return false
-        }
-        return true
+        return waitingSlot
     }
 
     private fun applyTarget(parent: ReprocessRun, target: ReprocessItem, result: ObjectNode,

@@ -36,6 +36,8 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
         { task -> Thread(task, "paper-reprocess-audit").apply { isDaemon = true } }, ThreadPoolExecutor.AbortPolicy())
     @Volatile private var live: ReprocessRun? = null
     @Volatile private var lastHeartbeat = 0L
+    private var lastPublishedId = -1L
+    private var lastPublishedAt = 0L
     internal var parseBudgetMillis: Long = 15 * 60 * 1000L
     internal var beforeParse: (ReprocessItem) -> Unit = {}
 
@@ -78,8 +80,12 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
         val run = requireRun(id)
         val summary = repository.summary(id)
         val frozen = summary.totalKnown
-        return ReprocessDetail(run, summary, if (!frozen) "已固定${run.scope.path("frozenCount").asLong()}篇，统计中"
-            else "已处理${summary.paperComplete + summary.paperErrors + summary.paperCancelled + summary.paperSkipped}/${summary.papers}篇，失败${summary.paperErrors}篇", frozen)
+        val papersDone = summary.paperComplete + summary.paperErrors + summary.paperCancelled + summary.paperSkipped
+        val message = if (!frozen) "已固定${run.scope.path("frozenCount").asLong()}篇，统计中"
+            else "论文 ${papersDone}/${summary.papers}篇（失败${summary.paperErrors}、跳过${summary.paperSkipped}）；" +
+                "专家处理 ${summary.targetComplete + summary.targetErrors}/${summary.targets}个；" +
+                "待核验 ${summary.pendingVerification}，实际准入 ${summary.actualAdmitted}"
+        return ReprocessDetail(run, summary, message, frozen)
     }
     fun runs(sourceId: Long?, active: Boolean?, requestKey: String?, page: Int, size: Int): ReprocessPage<ReprocessRun> {
         paging(page, size); sourceId?.let(::positive)
@@ -257,6 +263,7 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                     val code = when (e) { is ReprocessException -> e.code; is ArchiveException -> e.code; else -> "PARSE_FAILED" }
                     val failure = resultNode(code, listOf(ReprocessTraceState.ERROR, ReprocessTraceState.ERROR,
                         ReprocessTraceState.NOT_STARTED, ReprocessTraceState.SKIPPED, ReprocessTraceState.SKIPPED, ReprocessTraceState.SUCCESS))
+                    PaperReprocessFailure.record(failure, e, id, item.id)
                     failure.set<JsonNode>("attempts", mapper.valueToTree(item.input.path("bodies").map {
                         it.deepCopy<ObjectNode>().put("reasonCode", code)
                     }))
@@ -356,6 +363,12 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                 "state" to state.name, "step" to listOf("READ", "PARSE", "BIND", "APPLY", "REVIEW", "SAVE")[index]) }))
         }
     private fun publish(id: Long) {
+        val run = requireRun(id)
+        val now = System.nanoTime()
+        if (run.state in setOf(ReprocessState.PREPARING, ReprocessState.RUNNING) &&
+            lastPublishedId == id && now - lastPublishedAt < TimeUnit.SECONDS.toNanos(5)) return
+        lastPublishedId = id
+        lastPublishedAt = now
         val detail = detail(id)
         val summary = detail.summary
         val status = when (detail.run.state) {
@@ -364,9 +377,13 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
             ReprocessState.COMPLETED_WITH_ERRORS, ReprocessState.FAILED -> "FAILED"
             else -> detail.run.state.name
         }
+        val targetPhase = detail.run.phase in setOf(PaperReprocessPhase.APPLY, PaperReprocessPhase.REVIEW, PaperReprocessPhase.SAVE)
         progress.update(TASK_TYPE, TaskProgress(taskType = TASK_TYPE, status = status, batchNumber = 0,
-            processedCount = summary.paperComplete + summary.paperErrors + summary.paperCancelled + summary.paperSkipped,
-            totalCount = if (detail.totalKnown) summary.papers else 0, message = detail.progressText, executionId = id), id)
+            processedCount = if (targetPhase)
+                summary.targetComplete + summary.targetErrors else
+                summary.paperComplete + summary.paperErrors + summary.paperCancelled + summary.paperSkipped,
+            totalCount = if (targetPhase) { if (summary.targetTotalKnown) summary.targets else 0 }
+                else if (detail.totalKnown) summary.papers else 0, message = detail.progressText, executionId = id), id)
     }
     @PreDestroy fun shutdown() { stopping.set(true); pool.shutdownNow() }
     companion object {
