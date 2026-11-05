@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.config.ManualReplyDelayProperties
 import com.weibo.talentintroduction.mail.controller.ConversationManualRichReplyRequest
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
@@ -100,8 +101,16 @@ class PendingMailOperationService(
     // 携带附件的入口在 claim 之前用 requireNotNull 防御性校验，绝不静默放行。
     private val outboundAttachmentService: OutboundAttachmentService? = null,
     private val mailReplyDraftService: MailReplyDraftService? = null,
-    private val mailReviewDraftService: MailReviewDraftService? = null
+    private val mailReviewDraftService: MailReviewDraftService? = null,
+    private val manualReplyDelayProperties: ManualReplyDelayProperties? = null,
+    private val delayedManualReplyService: DelayedManualReplyService? = null
 ) {
+    init {
+        check(manualReplyDelayProperties?.enabled != true || delayedManualReplyService != null) {
+            "Delayed manual replies are enabled but not wired"
+        }
+    }
+
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
         const val AI_REPLY_PREFLIGHT_SOURCE_CHANGED = "AI_REPLY_PREFLIGHT_SOURCE_CHANGED"
@@ -196,8 +205,10 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftRef: MailReplyDraftRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
+        reviewSendRef: MailReviewSendRef? = null,
+        delayExpectedRevision: Long? = null
     ): PendingMailSendResult {
+        require(delayExpectedRevision == null || delayExpectedRevision > 0) { "Invalid delayExpectedRevision" }
         if (draftRef != null && reviewSendRef != null)
             throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
@@ -385,6 +396,7 @@ class PendingMailOperationService(
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft,
             reviewSendRef = reviewSendRef,
+            delayExpectedRevision = delayExpectedRevision,
             originalInput = PendingManualRichReplyRequest(
                 senderAccountCode, subject, htmlBody, textBody, operatorName,
                 qaRuleIds, suggestedRuleIds, ackSnippetId, edited, freeTextPreview, useVariants,
@@ -420,8 +432,10 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftRef: MailReplyDraftRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
+        reviewSendRef: MailReviewSendRef? = null,
+        delayExpectedRevision: Long? = null
     ): PendingMailSendResult {
+        require(delayExpectedRevision == null || delayExpectedRevision > 0) { "Invalid delayExpectedRevision" }
         if (draftRef != null && reviewSendRef != null)
             throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val contact = expertContactRepository.findById(contactId)
@@ -525,6 +539,7 @@ class PendingMailOperationService(
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft,
             reviewSendRef = reviewSendRef,
+            delayExpectedRevision = delayExpectedRevision,
             originalConversationInput = ConversationManualRichReplyRequest(
                 requestId, accountScope, anchorMailRecordId, subject, htmlBody, textBody,
                 operatorName, safetyWarningConfirmed, strongConfirmationText, attachmentIds, draftRef
@@ -902,12 +917,7 @@ class PendingMailOperationService(
         )
     }
 
-    /**
-     * 同步入口（fast-p 02 T1/T2）：冻结准备 → 既有幂等 claim → 投递。
-     *
-     * 与抽取前的 `executeManualRichSend` 行为逐字一致：所有校验/渲染/安全确认/抑制/
-     * 完成收敛仍在 claim 之前，claim 结果分类与 SMTP/落库/审计/归档顺序不变。
-     */
+    /** Canonical preparation precedes either queue admission or the legacy synchronous claim. */
     private fun executeManualRichSend(
         source: ManualRichSendSource,
         rawSubject: String,
@@ -924,7 +934,8 @@ class PendingMailOperationService(
         draftSendRef: ValidatedDraftSendRef? = null,
         reviewSendRef: MailReviewSendRef? = null,
         originalInput: PendingManualRichReplyRequest? = null,
-        originalConversationInput: ConversationManualRichReplyRequest? = null
+        originalConversationInput: ConversationManualRichReplyRequest? = null,
+        delayExpectedRevision: Long? = null
     ): PendingMailSendResult {
         val outcome = prepareManualRichSend(
             source = source,
@@ -948,7 +959,52 @@ class PendingMailOperationService(
             is PreparedManualReplyOutcome.Completed -> return outcome.result
             is PreparedManualReplyOutcome.Ready -> outcome.prepared
         }
-        return deliverPrepared(prepared, manualReplySendAttemptService.prepareAndClaim(prepared.payload))
+        val existing = manualReplySendAttemptService.findExistingByPayload(prepared.payload)
+        val queued = existing?.id?.let(manualReplySendAttemptService::delayedJobFor)
+        if (manualReplyDelayProperties?.enabled == true || queued != null) {
+            return enqueuePrepared(prepared, existing, delayExpectedRevision)
+        }
+        val claim = manualReplySendAttemptService.prepareAndClaim(prepared.payload)
+        // A concurrent enabled process may have queued after the read. The synchronous
+        // attempt guard still owns that race; converge through the same lifecycle, not SMTP.
+        if (claim.result != ManualReplySendAttemptService.ClaimResult.CLAIMED &&
+            claim.result != ManualReplySendAttemptService.ClaimResult.SAFE_RETRY_CLAIMED &&
+            manualReplySendAttemptService.delayedJobFor(claim.attemptId) != null) {
+            return enqueuePrepared(prepared, existing, delayExpectedRevision)
+        }
+        return deliverPrepared(prepared, claim)
+    }
+
+    private fun enqueuePrepared(
+        prepared: PreparedManualReply,
+        existing: com.weibo.talentintroduction.campaign.domain.MailSendAttempt?,
+        expectedRevision: Long?
+    ): PendingMailSendResult {
+        val lifecycle = checkNotNull(delayedManualReplyService) { "Delayed manual replies are not wired" }
+        val actor = prepared.authenticatedUsername?.takeIf { it.isNotBlank() }
+            ?: throw DelayedManualReplyException(401, "UNAUTHORIZED", "请先登录")
+        expertMailPermissionGuard.requireDelayedActor(actor)
+        return when (val outcome = lifecycle.enqueue(
+            DelayedManualReplySnapshotFactory.fromPrepared(prepared), actor, expectedRevision)) {
+            is DelayedEnqueueOutcome.AlreadySent -> completedDraftResult(
+                prepared.source.contactId,
+                checkNotNull(manualReplySendAttemptService.findCompletedAttempt(outcome.attemptId)))
+            is DelayedEnqueueOutcome.Queued -> {
+                val attempt = existing
+                    ?: checkNotNull(manualReplySendAttemptService.findExistingByPayload(prepared.payload)) {
+                        "Queued reply has no durable attempt"
+                    }
+                PendingMailSendResult(
+                    contactId = prepared.source.contactId,
+                    senderAccountCode = prepared.source.accountCode,
+                    mailType = "MANUAL_RICH_REPLY",
+                    subject = prepared.renderedSubject,
+                    sendStatus = outcome.job.status.name,
+                    messageId = attempt.messageId,
+                    delayedReply = outcome.job
+                )
+            }
+        }
     }
 
     /**
@@ -2256,7 +2312,8 @@ data class PendingMailSendResult(
     val messageId: String?,
     val unsupportedAnswerArchiveStatus: UnsupportedAnswerArchiveStatus = UnsupportedAnswerArchiveStatus.NOT_APPLICABLE,
     val unsupportedAnswerArchivedCount: Int = 0,
-    val unsupportedAnswerArchiveFailedCount: Int = 0
+    val unsupportedAnswerArchiveFailedCount: Int = 0,
+    val delayedReply: DelayedManualReplyView? = null
 )
 
 data class PendingQaReplyRequest(
@@ -2293,7 +2350,8 @@ data class PendingManualRichReplyRequest(
     // 06 (T1/I-1): 通用附件 id（用户选择顺序，04 上传产物）。默认空 = 既有无附件形态逐字
     // 不变；非空时服务端按 (专家 + 会话身份) 重读 04 元数据与原件，越权/缺失在 claim 前失败。
     val attachmentIds: List<String> = emptyList(),
-    val draftRef: MailReplyDraftRef? = null
+    val draftRef: MailReplyDraftRef? = null,
+    val delayExpectedRevision: Long? = null
 )
 
 data class ComposedReplyRequest(

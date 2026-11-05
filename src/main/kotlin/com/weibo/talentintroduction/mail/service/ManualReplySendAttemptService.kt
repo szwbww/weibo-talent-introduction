@@ -411,10 +411,19 @@ class ManualReplySendAttemptService(
         return CompletedOutboundReply(attemptId,attempt.messageId,attempt.accountCode,record)
     }
 
+    /** Identity-checked read only; queue lifecycle admission remains the dispatch authority. */
+    internal fun findExistingByPayload(payload: SendPayload): MailSendAttempt? {
+        val fingerprint = computeFingerprint(payload)
+        val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)
+            ?: return null
+        requireFingerprintIdentity(attempt, payload, fingerprint)
+        return attempt
+    }
+
     /** Exact completed-payload lookup only: never reserves an attempt or touches draft state. */
     @Transactional
     fun findCompletedByPayload(payload: SendPayload): CompletedOutboundReply? {
-        val review = payload.reviewSendRef?.let { reviewService().lockForSend(it) }
+        val review = payload.reviewSendRef?.let { reviewService().lockForSend(it, allowQueuedResult = true) }
         validateReviewPayload(payload)
         val fingerprint = computeFingerprint(payload)
         val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)

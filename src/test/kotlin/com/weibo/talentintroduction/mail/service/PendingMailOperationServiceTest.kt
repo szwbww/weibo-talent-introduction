@@ -100,6 +100,7 @@ class PendingMailOperationServiceTest {
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val manualReplySendAttemptService = Mockito.mock(ManualReplySendAttemptService::class.java)
+    private val delayService = Mockito.mock(DelayedManualReplyService::class.java)
     private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
@@ -124,7 +125,10 @@ class PendingMailOperationServiceTest {
         MailContentService(),
         mailVariableService
     )
-    private val service = PendingMailOperationService(
+    private fun createService(
+        enabled: Boolean = false,
+        delays: DelayedManualReplyService? = null
+    ) = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
         expertOperatorStatusService,
@@ -152,8 +156,11 @@ class PendingMailOperationServiceTest {
         Mockito.mock(ExpertMailPermissionGuard::class.java),
         ragKnowledgeBase = ragKnowledgeBase,
         outboundAttachmentService = outboundAttachmentService,
-        mailReplyDraftService = draftService
+        mailReplyDraftService = draftService,
+        manualReplyDelayProperties = com.weibo.talentintroduction.config.ManualReplyDelayProperties(enabled = enabled),
+        delayedManualReplyService = delays
     )
+    private val service = createService()
 
     private val contact = ExpertContact(
         id = 1,
@@ -1790,5 +1797,119 @@ class PendingMailOperationServiceTest {
             htmlBody="<p>Test</p>",textBody="Test",operatorName="op",authenticatedUsername="op",draftRef=MailReplyDraftRef(20,1)).sendStatus)
         assertFalse(hasInvocation(mailDeliveryService,"send"))
         assertFalse(hasInvocation(manualReplySendAttemptService,"prepareAndClaim"))
+    }
+
+    private fun reservedAttempt() = com.weibo.talentintroduction.campaign.domain.MailSendAttempt(
+        id = 31, orcidId = contact.orcidId, mailType = "MANUAL_RICH:reserved",
+        accountCode = "sender-1", messageId = "<reserved@fixture.test>", status = "PREPARED")
+
+    private fun waitingView() = DelayedManualReplyView(41, 1, DelayedManualReplyStatus.WAITING,
+        1000, 61000, 1001, DelayedManualReplyOriginKind.LEGACY, null, null, true, false, null, null, null)
+
+    private fun existingJob() = DelayedManualReplyRow(41, 31, 1, "sender-1", "admin",
+        DelayedManualReplyOriginKind.LEGACY, null, null, 1, DelayedManualReplyStatus.WAITING,
+        61000, null, null, "Re: Test", "Test", "{}", null, 1000, 1000)
+
+    private fun stubEnqueue(revision: Long? = null) {
+        Mockito.`when`(manualReplySendAttemptService.findExistingByPayload(anyValue(sendPayload())))
+            .thenReturn(reservedAttempt())
+        Mockito.`when`(delayService.enqueue(
+            anyValue(DelayedWorkerFixture.snapshot(null)), eqValue("admin"), Mockito.eq(revision)))
+            .thenReturn(DelayedEnqueueOutcome.Queued(waitingView()))
+    }
+
+    @Test fun `enabled inbound returns reserved waiting without delivery or premature archive`() {
+        stubEnqueue()
+        val result = createService(true, delayService).sendManualRichReply(
+            100, null, "Re: Test", "<p>Test</p>", "Test", "forged", authenticatedUsername = "admin")
+        assertEquals("WAITING", result.sendStatus)
+        assertEquals("<reserved@fixture.test>", result.messageId)
+        assertEquals(waitingView(), result.delayedReply)
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
+        assertEquals(0, result.unsupportedAnswerArchivedCount)
+        assertEquals(0, result.unsupportedAnswerArchiveFailedCount)
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+        val call = Mockito.mockingDetails(delayService).invocations.single { it.method.name == "enqueue" }
+        assertEquals("admin", call.arguments[1])
+        val snapshot = call.arguments[0] as DelayedManualReplySnapshot
+        assertEquals(100L, snapshot.payload.inboundProcessingId)
+        assertEquals("Test", (snapshot.restore as DelayedLegacyRestore).originalInput?.textBody)
+    }
+
+    @Test fun `enabled draftless outbound preserves nullable original source and forwards cancellation revision`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationRequestCanonical()
+        stubEnqueue(2)
+        val result = createService(true, delayService).sendConversationManualRichReply(
+            1, conversationRequestId, null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "forged", authenticatedUsername = "admin", delayExpectedRevision = 2)
+        assertEquals("WAITING", result.sendStatus)
+        val call = Mockito.mockingDetails(delayService).invocations.single { it.method.name == "enqueue" }
+        assertEquals(2L, call.arguments[2])
+        val snapshot = call.arguments[0] as DelayedManualReplySnapshot
+        val original = (snapshot.restore as DelayedLegacyRestore).originalConversationInput!!
+        assertNull(original.draftRef)
+        assertNull(original.anchorMailRecordId)
+        assertNull(original.accountScope)
+        assertNull(original.delayExpectedRevision, "Lifecycle revision must not become original source identity")
+        assertEquals(77L, snapshot.source.anchorMailRecordId)
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+    }
+
+    @Test fun `disabled flag still submits existing job to authoritative lifecycle without synchronous claim`() {
+        stubEnqueue()
+        Mockito.`when`(manualReplySendAttemptService.delayedJobFor(31)).thenReturn(existingJob())
+        val disabled = createService(false, delayService)
+        val first = disabled.sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "op",
+            authenticatedUsername = "admin")
+        val again = disabled.sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "op",
+            authenticatedUsername = "admin")
+        assertEquals(first.delayedReply?.dueAtMs, again.delayedReply?.dueAtMs)
+        assertEquals(first.messageId, again.messageId)
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+        Mockito.verify(manualReplySendAttemptService, Mockito.times(2)).findExistingByPayload(anyValue(sendPayload()))
+    }
+
+    @Test fun `enabled missing dependency and absent actor never fall back to synchronous delivery`() {
+        assertThrows(IllegalStateException::class.java) { createService(true) }
+        val failure = assertThrows(DelayedManualReplyException::class.java) {
+            createService(true, delayService).sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "admin")
+        }
+        assertEquals(401, failure.status)
+        assertFalse(hasInvocation(delayService, "enqueue"))
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+    }
+
+    @Test fun `nonpositive revision is rejected at both ordinary entrypoints before preparation`() {
+        for (revision in listOf(0L, -1L)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                service.sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "op",
+                    delayExpectedRevision = revision)
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                service.sendConversationManualRichReply(1, conversationRequestId, null, subject = "Re: Test",
+                    htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op", delayExpectedRevision = revision)
+            }
+        }
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+    }
+
+    @Test fun `enabled completed conversation remains old sent dedup with no queue lookup`() {
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(completedConversationReply())
+        val result = createService(true, delayService).sendConversationManualRichReply(
+            1, conversationRequestId, null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op", authenticatedUsername = "admin")
+        assertEquals("SENT", result.sendStatus)
+        assertNull(result.delayedReply)
+        assertFalse(hasInvocation(delayService, "enqueue"))
+        assertFalse(hasInvocation(manualReplySendAttemptService, "findExistingByPayload"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
     }
 }

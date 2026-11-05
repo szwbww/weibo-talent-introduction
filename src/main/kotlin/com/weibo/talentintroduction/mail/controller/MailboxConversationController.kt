@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.TagView
 import com.weibo.talentintroduction.mail.service.MailReplyDraftRef
 import com.weibo.talentintroduction.mail.service.MailReplyDraftException
+import com.weibo.talentintroduction.mail.service.DelayedManualReplyException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -143,7 +144,8 @@ data class ConversationManualRichReplyRequest(
      * 之前以 400/404/409/413 返回。同一 requestId 重提时附件语义必须与原记录一致。
      */
     val attachmentIds: List<String> = emptyList(),
-    val draftRef: MailReplyDraftRef? = null
+    val draftRef: MailReplyDraftRef? = null,
+    val delayExpectedRevision: Long? = null
 )
 
 data class ConversationListResponse(
@@ -447,12 +449,17 @@ class MailboxConversationController(
         // 06 (I-1/I-2)：附件 id 与会话身份；identity 绝不取请求体 operatorName。
         attachmentIds = body.attachmentIds,
         authenticatedUsername = servletRequest?.let { sessionUsername(it) },
-        draftRef = body.draftRef
+        draftRef = body.draftRef,
+        delayExpectedRevision = body.delayExpectedRevision
     )
 
     @ExceptionHandler(MailReplyDraftException::class)
     fun draftError(ex: MailReplyDraftException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
         mapOf("code" to ex.code,"message" to ex.message,"currentVersion" to ex.currentVersion,"currentState" to ex.currentState))
+
+    @ExceptionHandler(DelayedManualReplyException::class)
+    fun delayedError(ex: DelayedManualReplyException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
+        mapOf("code" to ex.code, "message" to ex.message))
 
     @DeleteMapping("/{contactId}/follow")
     fun unfollow(

@@ -63,6 +63,8 @@ talent-introduction:
     exclude-chinese-nationality: ${CANDIDATE_EXCLUDE_CHINESE_NATIONALITY:true}
     enable-age-filter: ${CANDIDATE_ENABLE_AGE_FILTER:false}
     max-age-exclusive: ${CANDIDATE_MAX_AGE_EXCLUSIVE:70}
+  manual-reply-delay:
+    enabled: ${MANUAL_REPLY_DELAY_ENABLED:false}
   mail-queue:
     enabled: ${MAIL_QUEUE_ENABLED:false}
     exchange: ${MAIL_QUEUE_EXCHANGE:talent.mail.exchange}

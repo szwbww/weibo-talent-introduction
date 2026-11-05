@@ -180,7 +180,7 @@ class MailReviewDraftService(
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    fun prepareSend(actor: String?, id: Long, request: MailReviewSendRequest): MailReviewSendRef {
+    fun prepareSend(actor: String?, id: Long, request: MailReviewSendRequest, allowQueuedResult: Boolean = false): MailReviewSendRef {
         val username = requireAdmin(actor)
         if (request.delayExpectedRevision != null && request.delayExpectedRevision <= 0)
             throw MailReviewDraftException(400, "INVALID_REQUEST", "非法 delayExpectedRevision")
@@ -190,15 +190,15 @@ class MailReviewDraftService(
         val delayed = row.sendAttemptId?.let { repository.lockDelayedPreparation(it) }
         if (delayed?.first == "CANCELLED" && request.delayExpectedRevision != delayed.second)
             throw MailReviewDraftException(409, "DELAYED_REPLY_REVISION_CONFLICT", "任务代次已变化，请重新读取最新状态")
-        validateSendRow(row, request.expectedVersion)
+        validateSendRow(row, request.expectedVersion, allowQueuedResult)
         return MailReviewSendRef(row, username, request.confirmationEventId)
     }
 
     /** Called within the attempt transaction; review row is always locked before attempt. */
-    fun lockForSend(ref: MailReviewSendRef): MailReviewDraftRow {
+    fun lockForSend(ref: MailReviewSendRef, allowQueuedResult: Boolean = false): MailReviewDraftRow {
         requireAdmin(ref.actor)
         val row = access(ref.actor, ref.draft.id, true)
-        validateSendRow(row, ref.draft.version)
+        validateSendRow(row, ref.draft.version, allowQueuedResult)
         if (row.copy(sendAttemptId = null) != ref.draft.copy(sendAttemptId = null))
             throw MailReviewDraftException(409, "REVIEW_CONTENT_CHANGED", "Approved content changed")
         return row
@@ -216,13 +216,14 @@ class MailReviewDraftService(
         return row
     }
 
-    private fun validateSendRow(row: MailReviewDraftRow, expectedVersion: Long) {
+    private fun validateSendRow(row: MailReviewDraftRow, expectedVersion: Long, allowQueuedResult: Boolean) {
         if (row.deletedAt != null) conflictState()
         version(row, expectedVersion)
         state(row, MailReviewDraftState.APPROVED)
-        // fast-p 03 (T3/I-10)：排队中/结果未知的审核任务不可再走发送入口（同为服务端闸门，
-        // 不只依赖前端按钮）；CANCELLED 释放发送锁后允许重新准备。
-        if (queuedStatus(row) in SEND_BLOCKING) {
+        // Read preparation may converge an existing queue result, never authorize a claim.
+        val queued = queuedStatus(row)
+        if (queued in SEND_BLOCKING &&
+            !(allowQueuedResult && (queued == "WAITING" || queued == "SENDING"))) {
             throw MailReviewDraftException(409, "REVIEW_SEND_QUEUED", "回复已加入发送队列，请先撤回或等待完成")
         }
         grant(row.ownerUsername, row.contactId, false)

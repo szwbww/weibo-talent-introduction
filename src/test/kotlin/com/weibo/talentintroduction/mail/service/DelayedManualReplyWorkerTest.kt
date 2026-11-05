@@ -57,7 +57,7 @@ internal object DelayedWorkerFixture {
             val constructor = PendingMailOperationService::class.java.declaredConstructors.single {
                 it.parameterTypes.last().name != "kotlin.jvm.internal.DefaultConstructorMarker"
             }
-            val args = constructor.parameterTypes.map { type -> (overrides[type] ?: Mockito.mock(type)).also { dependencies[type] = it } }
+            val args = constructor.parameterTypes.map { type -> (overrides[type] ?: if (type == com.weibo.talentintroduction.config.ManualReplyDelayProperties::class.java) com.weibo.talentintroduction.config.ManualReplyDelayProperties() else Mockito.mock(type)).also { dependencies[type] = it } }
             pending = constructor.newInstance(*args.toTypedArray()) as PendingMailOperationService
             Mockito.`when`(dependency(ExpertContactRepository::class.java).findById(1L)).thenReturn(Optional.of(contact))
             Mockito.`when`(dependency(InboundMailProcessingRepository::class.java).findById(100L)).thenReturn(Optional.of(inbound))

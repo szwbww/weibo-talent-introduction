@@ -9,17 +9,17 @@ class MailReviewSendService(
     private val pending: PendingMailOperationService
 ) {
     fun send(actor: String?, id: Long, request: MailReviewSendRequest): PendingMailSendResult {
-        val ref = drafts.prepareSend(actor, id, request)
+        val ref = drafts.prepareSend(actor, id, request, allowQueuedResult = true)
         val row = ref.draft
         return if (row.targetKind == "INBOUND") {
             pending.sendManualRichReply(row.targetId, row.accountCode, row.subject, row.html, row.text, ref.actor,
                 safetyWarningConfirmed = request.safetyWarningConfirmed, strongConfirmationText = request.strongConfirmationText,
-                authenticatedUsername = ref.actor, reviewSendRef = ref)
+                authenticatedUsername = ref.actor, reviewSendRef = ref, delayExpectedRevision = request.delayExpectedRevision)
         } else {
             pending.sendConversationManualRichReply(row.contactId, requireNotNull(row.sendRequestId), row.accountCode,
                 row.targetId, row.subject, row.html, row.text, ref.actor,
                 safetyWarningConfirmed = request.safetyWarningConfirmed, strongConfirmationText = request.strongConfirmationText,
-                authenticatedUsername = ref.actor, reviewSendRef = ref)
+                authenticatedUsername = ref.actor, reviewSendRef = ref, delayExpectedRevision = request.delayExpectedRevision)
         }
     }
 }
