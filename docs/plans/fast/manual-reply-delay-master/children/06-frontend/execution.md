@@ -55,3 +55,8 @@ All shell commands ran in the target worktree.
 - Only this execution report was appended; no product/test/CSS/DOM files edited.
 - Fresh plan/worktree identity confirmed; required implementation verification not reached.
 - Next action: controller resolves the upstream restore identity contract and records authorization before implementation resumes. This report is not READY_FOR_VERIFICATION and does not claim 07 end-to-end activation.
+
+## Epoch 2 — Controller authority resume
+
+- User selected 「授权本次及同类契约补齐」. A15/A16 plan-only commitc4bea7830eacbaafdd933de5461c05de53066997 resolves restore source contract and authorizes06's11files/controller regression.
+- Productbase223b8e4aed8852734552ef662c3b732c90e60e42 unchanged; epoch1noedits. Newepoch counter0, freshimplementation/tests/browserrequired. No runtime evidence claimed by this resume.
