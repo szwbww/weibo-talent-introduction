@@ -18,6 +18,7 @@ const { describe, it } = require("node:test");
 const ROOT = path.join(__dirname, "..", "..", "main", "resources", "static");
 const cssPath = path.join(ROOT, "mailbox-chat.css");
 const cssSource = fs.readFileSync(cssPath, "utf-8");
+const consoleStyles = fs.readFileSync(path.join(ROOT, "console-shell.css"), "utf-8");
 const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
 const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
@@ -163,14 +164,15 @@ describe("S-6: DOM class 白名单与模板卫生", () => {
         return out;
     }
 
-    it("模板字面量 class 全部命中 mailbox-chat.css 或既有 styles.css", () => {
+    it("模板字面量 class 全部命中已注册的 mailbox-chat.css / console-shell.css 或既有 styles.css", () => {
+        assert.ok(indexSource.includes('href="console-shell.css?v='), "the theme must be registered in the real entry");
         const classes = literalClasses(chatSource);
         assert.ok(classes.size > 0, "must find template classes to audit");
         const unknown = [];
         classes.forEach((cls) => {
             if (/\$/.test(cls)) return;
             if (cls.startsWith("mc-") || cls === "mail-chat") {
-                if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(cssSource)) unknown.push(`${cls} (mc-* 未在 mailbox-chat.css 声明)`);
+                if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(cssSource + "\n" + consoleStyles)) unknown.push(`${cls} (mc-* 未在 mailbox-chat.css / console-shell.css 声明)`);
                 return;
             }
             if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource)) unknown.push(`${cls} (复用类未在 styles.css 声明)`);

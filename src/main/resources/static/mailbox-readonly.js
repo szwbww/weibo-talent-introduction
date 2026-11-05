@@ -233,13 +233,24 @@
         var conversation = makeNode(doc, "section", "mc-conversation");
         conversation.setAttribute("aria-label", "往来邮件");
         var header = makeNode(doc, "header", "mc-header");
+        var headerMain = makeNode(doc, "div", "mc-header-main");
         var identity = makeNode(doc, "div", "mc-identity");
         var identityName = makeNode(doc, "h2");
         identity.appendChild(identityName);
         var readOnlyBadge = makeNode(doc, "span", "mc-badge");
         setText(readOnlyBadge, "可读 · 提交草稿");
-        header.appendChild(identity);
-        header.appendChild(readOnlyBadge);
+        headerMain.appendChild(identity);
+        var headerActions = makeNode(doc, "div", "mc-actions");
+        headerActions.appendChild(readOnlyBadge);
+        var profileToggle = buttonNode(doc, "reader-toggle-profile", "专家资料", "button mc-profile-toggle");
+        profileToggle.setAttribute("aria-expanded", "true");
+        headerActions.appendChild(profileToggle);
+        headerMain.appendChild(headerActions);
+        var profile = makeNode(doc, "aside", "mc-header-meta mc-profile");
+        profile.setAttribute("aria-label", "专家资料");
+        var profileCollapsed = false;
+        header.appendChild(headerMain);
+        header.appendChild(profile);
         var scroll = makeNode(doc, "div", "mc-scroll");
         var messages = makeNode(doc, "div");
         scroll.appendChild(messages);
@@ -885,18 +896,27 @@
         function renderIdentity() {
             setText(identityName, selected ? ((selected.name || "").trim() || "未填写姓名") : "");
             identity.replaceChildren(identityName);
+            profile.replaceChildren();
+            profile.hidden = !selected || profileCollapsed;
+            profileToggle.hidden = !selected;
+            profileToggle.setAttribute("aria-expanded", String(!profile.hidden));
             if (selected) {
+                appendText(profile, "专家资料", "mc-profile-title");
+                var person = makeNode(doc, "div", "mc-profile-person");
+                appendText(person, Array.from(selected.name || "?")[0], "mc-profile-avatar");
+                appendText(person, (selected.name || "").trim() || "未填写姓名");
+                profile.appendChild(person);
                 appendText(identity, "账号 " + (selected.accountCodes || []).join("、"));
                 appendText(identity, "专家上次回复 " + (selected.latestInbound && selected.latestInbound.receivedAt ? formatTime(selected.latestInbound.receivedAt) + " 北京时间" : "暂无回复"), "mc-reader-reply-time");
                 appendText(identity, scheduleText(selected.contactId), "mc-reader-schedule");
-                var badges = makeNode(doc, "div", "mc-reader-badges"); identity.appendChild(badges);
+                var badges = makeNode(doc, "div", "mc-reader-badges"); profile.appendChild(badges);
                 [catalogLabel(global.operatorStatusOptions, selected.operatorStatus), catalogLabel(global.indexLevelOptions, selected.currentIndexLevel),
                     { NONE: "未标记", FOLLOWING: "跟进中", PROVIDED: "已提供" }[selected.progressStatus]].filter(Boolean).forEach(function (text) { appendText(badges, text, "mc-badge"); });
                 appendExpertTags(doc, badges, selected.expertTags);
-                appendText(identity, pendingText(selected));
+                appendText(profile, pendingText(selected));
                 if (readInfo.contactId === String(selected.contactId)) {
-                    appendText(identity, "备注：" + readInfo.note, "mc-reader-note");
-                    appendText(identity, readInfo.timing);
+                    appendText(profile, "备注：" + readInfo.note, "mc-reader-note");
+                    appendText(profile, readInfo.timing);
                 }
             }
         }
@@ -1173,6 +1193,12 @@
             var actionNode = target && typeof target.closest === "function" ? target.closest("[data-action]") : null;
             if (!actionNode || !actionNode.dataset) return;
             var action = actionNode.dataset.action;
+            if (action === "reader-toggle-profile") {
+                profileCollapsed = !profileCollapsed;
+                profile.hidden = !selected || profileCollapsed;
+                profileToggle.setAttribute("aria-expanded", String(!profile.hidden));
+                return;
+            }
             if (action === "reader-open-draft") {
                 return selectExpert(actionNode.dataset.contactId, { id: Number(actionNode.dataset.draftId), kind: actionNode.dataset.draftKind });
             }

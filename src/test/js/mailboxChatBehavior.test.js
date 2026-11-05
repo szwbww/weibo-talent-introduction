@@ -7040,3 +7040,36 @@ describe("08 final expert scope and independent pending mail badge", () => {
         assert.equal(ctx.host.innerHTML, "");
     });
 });
+
+// Crisp layout: presentation toggles cannot replace the conversation or write data.
+describe("Crisp native expert profile", () => {
+    it("opens by default, keeps editor and target through toggles, and replaces profile on expert change", async () => {
+        const ctx = await bootChat({ conversations: {items:[expertA(),expertB()],total:2}, messages:messagesA(), contact:contactA() });
+        click(personButtons(ctx.host)[0]); await flush();
+        const profile = ctx.host.querySelector('.mc-profile');
+        const toggle = ctx.host.querySelector('[data-action="mc-toggle-profile"]');
+        const editor = ctx.host.querySelector('[contenteditable="true"]');
+        const scroll = ctx.host.querySelector('.mc-scroll');
+        assert.ok(profile.textContent.includes('专家A'));
+        assert.strictEqual(profile.hidden, false);
+        assert.strictEqual(toggle.getAttribute('aria-expanded'), 'true');
+        assert.ok(editor, 'native composer is mounted');
+        setEditorContent(editor, '<p>保留草稿</p>', '保留草稿');
+        scroll.scrollTop = 128;
+        const before = ctx.calls.api.length;
+        click(toggle);
+        assert.strictEqual(profile.hidden, true);
+        assert.strictEqual(toggle.getAttribute('aria-expanded'), 'false');
+        click(toggle);
+        assert.strictEqual(profile.hidden, false);
+        assert.strictEqual(ctx.host.querySelector('[contenteditable="true"]'), editor);
+        assert.strictEqual(editor.innerHTML, '<p>保留草稿</p>');
+        assert.strictEqual(ctx.host.querySelector('.mc-scroll'), scroll);
+        assert.strictEqual(scroll.scrollTop, 128);
+        assert.strictEqual(ctx.calls.api.length, before, 'profile toggles make no requests');
+        click(personButtons(ctx.host)[1]); await flush();
+        assert.ok(ctx.host.querySelector('.mc-profile').textContent.includes('专家B'));
+        assert.ok(!ctx.host.querySelector('.mc-profile-person').textContent.includes('专家A'));
+        ctx.api.unmount();
+    });
+});
