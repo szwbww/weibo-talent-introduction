@@ -1,6 +1,6 @@
 # 05 会话时间线、列表和状态投影
 
-前置04通过。会话查询子系统，7个文件。前端尚未展示新动作，但旧响应字段保持兼容。
+前置04通过。会话查询子系统，8个文件（A11/A12）。前端尚未展示新动作，但旧响应字段保持兼容。
 
 ## 需求描述
 
@@ -41,6 +41,7 @@
 - `:550`游标以contact/account/time/rank/id编码并验证rank，新增3但继续接受旧1/2。`ConversationMessageItemResponse:163`和summary DTO在MailboxConversationController文件内。
 - `OperatorStatusWriteSeamGuardTest.kt:74/255`固定引用service行号；本次插入DTO逻辑会移动行号，需要更新实际允许行，不放宽守卫。源码证据07。
 - 数据写者为03 enqueue/cancel/retry/claim/finalize和旧mail_record/inbound写者；所有读写/schema继承总计划与证据01/02/07。交互X-3 reviewContext，X-4结果→查询，X-5附件投影，X-6权限，X-7增量刷新。
+- A12执行前审计：05 epoch1 `../fast/manual-reply-delay-master/children/05-query/execution.md:33-85`记录当前OutboundAttachmentService的无SQL完整性校验在private `readVerifiedFile`，公共resolveForMessageDownload/resolveForSend均先查元数据；整页合并调用resolveForSend又会把每封MAX_FILES/MAX_TOTAL_BYTES限制误用于整页。复用原安全方法比复制真实路径/size/SHA代码更安全，所需最小授权是该文件的内部可见性，不改变方法体。READ一词指权限级别；FULL/admin可读文件保持04能力语义，但SQL仍须按页批量。
 
 ## 实现方案
 
@@ -62,6 +63,12 @@ latestMessage可返回job；latestInbound仍只取真实processing；真实发�
 
 新增Repository批量投影方法限制输入当前页ids并核对contact/account，不让客户端无限传入查询集合。能力计算采用03/04相同规则，过期截止或源失效不展示可执行动作；动作API仍最终重验。
 
+### T2a 复用无SQL附件校验（I-7/I-10，A12）
+
+在新增授权的 `OutboundAttachmentService.kt` 仅将 `private fun readVerifiedFile(attachment: OutboundMailAttachment): OutboundMailFile` 改为internal，方法体、公共上传/发送/下载API、路径/文件存在与regular-file/size/SHA校验保持原样。不得复制一套路径安全实现或添加绕过校验参数。
+
+已授权DelayedManualReplyRepository仅按服务端选出的当前页job/contact/account批量取元数据；MailboxConversationService在调用内部方法前维持每个job的actor/contact归属、附件顺序、去重、每封数量/总大小限制，返回快照与该job冻结快照比较。不接受HTTP传入的实体对象，不把admin身份替换原actor的上传归属。READ不执行附件元数据批量查询、不取私有附件快照、不调用磁盘校验；FULL/admin保留03/04当前完整性/源有效性规则，不能用metadata-only canRetry替代。动作API仍最终重验。
+
 ### T3 游标与回归（I-7/I-8/I-8b/I-10）
 
 MailboxConversationService支持rank3编码/解码；同毫秒三类source/id可碰撞但复合键不同；失败→WAITING→SENT不改createdAt。旧cursor继续有效。更新OperatorStatusWriteSeamGuardTest中被移动的精确行号，并核对该行仍为原operatorStatus写点。
@@ -79,6 +86,7 @@ MailboxConversationService支持rank3编码/解码；同毫秒三类source/id可
 |5|src/test/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyQueryIT.kt|新增真实SQL测试|
 |6|src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt|筛选/清理回归|
 |7|src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt|精确行号更新|
+|8|src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt|A12：仅readVerifiedFile的private→internal，方法体不变|
 
 ## 验收标准
 
@@ -87,6 +95,7 @@ MailboxConversationService支持rank3编码/解码；同毫秒三类source/id可
 - I-7 — READ不查询附件快照、不返回恢复/操作能力；NONE拒绝；列表和详情账户范围一致；页级固定次数查询、无按消息N+1。
 - I-10 — job与真实mail_record id刻意相同时下载URL仍引用正确记录；历史FAILED无delayedReply；错误原因来自固定映射。
 - 运行新增IT、现有MailboxConversationRepositoryIT（mysqlIt=true且隔离数据源）、SqlCompatTest、OperatorStatusWriteSeamGuardTest和现有附件/只读测试。记录测试实际执行数，不以跳过充通过。
+- A12 — 新QueryIT覆盖页大小/附件数增长时SQL次数固定、每封附件限额不跨job聚合、合法/删除/大小变化/hash变化文件的FULL重试能力、跨contact/原actor归属拒绝，以及READ零私有附件查询/零文件校验/空附件/动作false。既有OutboundAttachmentServiceTest仍必跑，保持原安全断言。
 
 ## 人工验收清单
 
@@ -101,3 +110,14 @@ MailboxConversationService支持rank3编码/解码；同毫秒三类source/id可
 - 操作步骤 — 1. 读取reviewContext。2. enqueue再读取。3. 新增真实来信再读取。4. 降user1为READ并GET消息。
 - 预期结果 — 第2步token不变，第3步变化；READ仍见正文和状态但附件集合空、操作false；FULL下载地址使用真实mailRecordId。
 - 覆盖 — I-7/I-8b/I-10，X-3/X-5/X-6。
+
+### A-3 批量能力与附件完整性（A12）
+- 前置条件 — 隔离库同页有多封临时失败任务，各自附件满足单封限制但合计超过单封限制；原actor具有FULL权限，另有READ身份。
+- 操作步骤 — 1. FULL读取消息页。2. 删除或改写其中一份实际测试附件，再读同页。3. READ读取同页。4. 以带跨contact或跨上传者附件的隔离任务读取能力。
+- 预期结果 — 第1步不误用整页限制，合法任务能力遵循04规则；第2步受影响任务canRetry=false，其他不受影响；READ附件空且动作false、不访问私有附件或磁盘；跨归属不能获得重发能力。页级SQL次数不随任务/附件数量逐条增长。
+- 覆盖 — I-7/I-10，T2/T2a；复用既有路径/size/SHA安全检查而不放宽。
+
+## 修正记录
+
+- A12（2026-11-05 用户选择「授权本次及同类内部接口修订」）：新增OutboundAttachmentService.kt内部可见性单点授权，解决固定页级SQL与复用原文件安全校验的调用边界缺口。文件数7→8，READ/FULL权限语义未改变；详见T2a和05 epoch1审计。Master A11同步计数并记录后续同类内部接口修订的严格授权边界。无生产实现或测试结果随本计划修订产生。
+
