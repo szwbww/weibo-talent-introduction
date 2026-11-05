@@ -85,3 +85,8 @@ No build, compilation, test, formatter, SMTP, database or runtime smoke command 
 - Historical test evidence used as current proof: NO.
 - Remaining blocker: explicit production scope/snapshot compatibility amendment for original LEGACY input persistence.
 - Next action: controller persists PLAN_CONFLICT pause and obtains exact authority. Resume execution against newly approved immutable plan bytes; do not mark this epoch READY_FOR_VERIFICATION.
+
+## Epoch 2 — Controller authority resume
+
+- User selected 「补齐原输入并继续」; A7/A8 plan commit d57b856427a83a6ccf23c60e58df9d92db9f266d resolves the original-input Models scope conflict and fixes compatibility semantics. Production base remains9bbb3b050f533a0010d48d545b4756abc8aa7e82; epoch1 implementation range was empty.
+- Fresh isolated implementer will implement amended04 in the retained worktree; fix counter0. No test execution/result is claimed by this resume record.

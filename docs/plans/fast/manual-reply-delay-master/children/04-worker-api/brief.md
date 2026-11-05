@@ -16,8 +16,9 @@
 5. src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyWorkerTest.kt (new)
 6. src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt (new)
 7. src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt
+8. src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt (A8, restore-input model/factory/codec only)
 
-No product/test changes outside these paths. Never edit applied migrations, plans, config, shared models or lifecycle files. If an exact requirement cannot be implemented inside this set, report PLAN_CONFLICT with smallest required amendment; do not silently widen scope. Controller owns fast-p evidence except your execution report.
+No product/test changes outside these paths. Never edit applied migrations, plans, config, unlisted shared models or lifecycle files. A8 explicitly permits the Models path above for original-input restoration and compatibility only. If another exact requirement cannot be implemented inside this set, report PLAN_CONFLICT with smallest required amendment; do not silently widen scope. Controller owns fast-p evidence except your execution report.
 
 ## Required implementation
 Implement T1–T4 and all child acceptance criteria, preserving master I-1/I-4/I-5/I-7/I-10/I-11.
@@ -45,4 +46,12 @@ Read skill://execute-p first. One writer only; no push/merge/rebase/amend/reset 
 - Review request `delayExpectedRevision` and CANCELLED prepareSend guard are already implemented by approved A3; final public-send propagation remains07.
 - Required historical note: MailReviewQueryIT:239 is a classified baseline failure, not a repair item. Child03 lifecycle40/40 and RepositoryIT8/8 passed; no SMTP integration proof is inherited from them.
 - Human approved necessary existing-test compatibility amendments with concrete failure evidence only; report them to controller for exact plan/ledger recording before editing an unlisted test. No production scope expansion or weakened invariants is authorized.
+
+
+## Epoch 2 — Approved restoration scope resume
+
+- User selected 「补齐原输入并继续」. A7/A8 master and child identity: d57b856427a83a6ccf23c60e58df9d92db9f266d. Product base unchanged9bbb3b050f533a0010d48d545b4756abc8aa7e82; epoch1 had no product changes.
+- Implement the complete child, including new I-6/T1a/A4. Preserve original assembly request/frame/requestFactSelections and MeetingInput as bounded restore-only data. No UTC/ICS inference or verified-result substitution. Retain schemaVersion, old decode/frozen delivery/fingerprint semantics; old LEGACY missing full original input returns422 SNAPSHOT_INVALID on restore only.
+- Add round-trip/new-input and historical compatibility assertions inside the already-authorized Worker/Controller tests. This amendment does not authorize lifecycle or later-child production changes.
+- Same required commands and runtime smoke. Append epoch2 execution report after historical epoch1; do not overwrite it. Use a fresh independent verifier afterward. Continue automatically through later children after clean evidence checkpoints; never run review-fast-p.
 

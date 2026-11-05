@@ -1,6 +1,6 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: RUNNING
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
 - Current/final code head: 9bbb3b050f533a0010d48d545b4756abc8aa7e82
 - Branch/worktree: fast/manual-reply-delay-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
@@ -11,7 +11,7 @@
 | 01-storage | LIGHT_PASS | 05342b4be63bbc7d9b30416ae73ada2d44b562df..d57026edc072b5469f08e8642c8c771acbd894e9 | 0 | 322495454e9a62d22c3739a5cfe09750e2941207 |
 | 02-preparation | LIGHT_PASS_WITH_NOTES | d57026edc072b5469f08e8642c8c771acbd894e9..72906c0c5e36393429320817ea0de4f7d6f3ff05 | 0 | bdda233d1a376bc2ea01f61f8540545a833f18c8 |
 | 03-lifecycle | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 2 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 |
-| 04-worker-api | PAUSED_FOR_HUMAN | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 0 | a0633e8fd51c47a6444c44ad000870da8d11f25b |
+| 04-worker-api | IMPLEMENTING | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 0 | a0633e8fd51c47a6444c44ad000870da8d11f25b |
 | 05-query | PENDING | N/A | 0 | — |
 | 06-frontend | PENDING | N/A | 0 | — |
 | 07-activation | PENDING | N/A | 0 | — |
@@ -39,3 +39,8 @@
 - Later05–07 briefs exist but are not implementation evidence and have not been dispatched.
 
 No whole-system verification was performed. review-fast-p was not invoked.
+
+## Current resume — A7/A8
+
+The preceding pause is historical. User selected 「补齐原输入并继续」. Master/04 amendment d57b856427a83a6ccf23c60e58df9d92db9f266d authorizes Models and the explicit original-input/old-snapshot policy. Ledger is RUNNING,04 epoch2; fresh implementation and verification remain required. This is not a terminal review handoff.
+
