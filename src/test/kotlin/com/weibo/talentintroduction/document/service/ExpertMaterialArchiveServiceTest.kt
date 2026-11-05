@@ -71,6 +71,30 @@ class ExpertMaterialArchiveServiceTest {
     @TempDir lateinit var root: Path
 
     @Test
+    fun `historical signature rejects mixed ZIP in both orders before any output`() {
+        val f = MaterialArchiveFixture(root)
+        val ordinary = f.file(1, "cv.pdf")
+        val signature = f.file(2, " SMIME.P7S ")
+        val service = Mockito.spy(f.archive)
+        for (ids in listOf(listOf(1L, 2L), listOf(2L, 1L))) {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                service.withArchive(7, ids) { fail<Unit>("must not consume archive") }
+            }
+            assertEquals("所选文件包含邮件数字签名，不属于专家材料", error.message)
+            // Invalid ordinary PDF bytes detect any premature attempt at content extraction.
+            assertEquals("所选文件包含邮件数字签名，不属于专家材料",
+                assertThrows(IllegalArgumentException::class.java) {
+                    DocumentTextExtractor(f.material).extract(7, ids)
+                }.message)
+        }
+        Mockito.verify(service, Mockito.never()).createArchiveFile()
+        assertEquals("body-1", Files.readString(ordinary))
+        assertEquals("body-2", Files.readString(signature))
+        assertEquals(2L, Files.list(root).use { it.count() })
+        f.assertNoWritesOrTransfers()
+    }
+
+    @Test
     fun `all owner types keep exact bytes names zero length and deduplicate IDs`() {
         val f = MaterialArchiveFixture(root)
         f.file(1, "简历.pdf", byteArrayOf(0, 1, 2), "record")

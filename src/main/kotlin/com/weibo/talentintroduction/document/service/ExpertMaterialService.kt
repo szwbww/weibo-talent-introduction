@@ -116,6 +116,9 @@ class ExpertMaterialService(
         require(ownerContactId == null || ownerContactId == contactId) {
             "Attachment $attachmentId does not belong to expert contact $contactId"
         }
+        require(ExpertMaterialEligibility.isMaterial(attachment.fileName, attachment.contentType)) {
+            ExpertMaterialEligibility.ERROR_MESSAGE
+        }
         return resolveFileReady(attachment)
     }
 
@@ -127,6 +130,9 @@ class ExpertMaterialService(
     fun resolveReadyFileUnscoped(attachmentId: Long): ReadyFile {
         val attachment = mailAttachmentRepository.findById(attachmentId)
             .orElseThrow { NoSuchElementException("Attachment not found: $attachmentId") }
+        require(ExpertMaterialEligibility.isMaterial(attachment.fileName, attachment.contentType)) {
+            ExpertMaterialEligibility.ERROR_MESSAGE
+        }
         return resolveFileReady(attachment)
     }
 
@@ -308,7 +314,8 @@ class ExpertMaterialService(
         sourceId: Long?,
         state: String?
     ): ExpertMaterialPage {
-        val resolved = rows.map { row -> resolveItem(contactId, row, candidates) }
+        val eligibleRows = rows.filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+        val resolved = eligibleRows.map { row -> resolveItem(contactId, row, candidates) }
 
         val query = q?.trim()?.takeIf { it.isNotEmpty() }?.lowercase(Locale.ROOT)
         val filtered = resolved.filter { entry ->
@@ -609,6 +616,13 @@ class ExpertMaterialService(
         require(foreignIds.isEmpty()) {
             "Attachments ${foreignIds.sorted()} are not materials of expert contact $contactId"
         }
+        val attachments = distinct.map { attachmentId ->
+            mailAttachmentRepository.findById(attachmentId)
+                .orElseThrow { NoSuchElementException("Attachment not found: $attachmentId") }
+        }
+        require(attachments.all { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }) {
+            ExpertMaterialEligibility.ERROR_MESSAGE
+        }
         if (mailAttachmentTransferRepository.countQueued() >= AttachmentTransferService.MAX_QUEUED_ROWS) {
             throw AttachmentTransferQueueFullException(
                 "Attachment transfer queue is full (>= ${AttachmentTransferService.MAX_QUEUED_ROWS}); try again later"
@@ -698,13 +712,19 @@ class ExpertMaterialService(
     // ------------------------------------------------------------------
 
     /**
-     * INBOUND_PROCESSING：直接 owner 附件 + transfer 桥接附件；两者皆无且该
+     * INBOUND_PROCESSING：按原始集合依次选择直接 owner、transfer 桥接、唯一
+     * 历史 mail_record，选择完成后再过滤材料，不能因签名被排除而回退。
      * processing 有 messageId 时，按 同账号+同专家+INBOUND+非空 messageId 严格
      * 唯一匹配历史 mail_record，恰好 1 条才回退其附件；0/多条一律拒绝（空列表，
      * 绝不展示其它账号/其它邮件的文件）。
      * MAIL_RECORD：该 record 的直接附件（调用方已按 scope 校验归属）。
      */
     fun resolveMessageAttachments(source: String, id: Long): List<MailAttachment> {
+        return resolveRawMessageAttachments(source, id)
+            .filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+    }
+
+    private fun resolveRawMessageAttachments(source: String, id: Long): List<MailAttachment> {
         return when (source) {
             SOURCE_TYPE_MAIL_RECORD -> {
                 val record = mailRecordRepository.findByIdOrNull(id)
@@ -864,6 +884,7 @@ class ExpertMaterialService(
              WHERE a.inbound_processing_id IN (
                      SELECT p.id FROM inbound_mail_processing p
                       WHERE p.expert_contact_id = :contactId)
+               AND ${ExpertMaterialEligibility.MATERIAL_SQL}
                AND NOT EXISTS (
                      SELECT 1 FROM expert_document d
                       WHERE d.mail_attachment_id = a.id)
@@ -876,6 +897,7 @@ class ExpertMaterialService(
              WHERE a.inbound_processing_id IN (
                      SELECT p.id FROM inbound_mail_processing p
                       WHERE p.expert_contact_id = :contactId)
+               AND ${ExpertMaterialEligibility.MATERIAL_SQL}
                AND NOT EXISTS (
                      SELECT 1 FROM expert_document d
                       WHERE d.mail_attachment_id = a.id)

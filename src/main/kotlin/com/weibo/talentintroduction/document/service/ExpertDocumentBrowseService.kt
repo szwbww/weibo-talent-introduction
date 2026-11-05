@@ -46,7 +46,7 @@ class ExpertDocumentBrowseService(
     fun listDocuments(contactId: Long): List<ExpertDocumentFile> {
         val documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
 
-        return documents.map { doc ->
+        return documents.mapNotNull { doc ->
             val attachment = mailAttachmentRepository.findById(doc.mailAttachmentId)
                 .orElseThrow { error("Attachment not found: ${doc.mailAttachmentId}") }
 
@@ -59,6 +59,9 @@ class ExpertDocumentBrowseService(
                 require(mailRecord.expertContactId == contactId) {
                     "Mail record $mailRecordId does not belong to expert contact $contactId"
                 }
+            }
+            if (!ExpertMaterialEligibility.isMaterial(attachment.fileName, attachment.contentType)) {
+                return@mapNotNull null
             }
 
             val contentType = resolveContentType(attachment)

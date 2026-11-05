@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.repository
 
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -515,10 +516,12 @@ class MailboxConversationRepository(
     fun materialCountByContacts(contactIds: List<Long>): Map<Long, Long> {
         if (contactIds.isEmpty()) return emptyMap()
         val sql = """
-            SELECT expert_contact_id AS expert_contact_id, COUNT(*) AS material_count
-              FROM expert_document
-             WHERE expert_contact_id IN (:contactIds)
-             GROUP BY expert_contact_id
+            SELECT d.expert_contact_id AS expert_contact_id, COUNT(*) AS material_count
+              FROM expert_document d
+              JOIN mail_attachment a ON a.id = d.mail_attachment_id
+             WHERE d.expert_contact_id IN (:contactIds)
+               AND ${ExpertMaterialEligibility.MATERIAL_SQL}
+             GROUP BY d.expert_contact_id
         """.trimIndent()
         return jdbcTemplate.query(sql, MapSqlParameterSource("contactIds", contactIds)) { rs, _ ->
             rs.getLong("expert_contact_id") to rs.getLong("material_count")

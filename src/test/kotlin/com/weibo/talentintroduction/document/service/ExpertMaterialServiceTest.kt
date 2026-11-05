@@ -742,6 +742,8 @@ class ExpertMaterialServiceTest {
     fun `requestTransfers enqueues only owned attachments and maps the batch`() {
         Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(document(1, 1, 1))
         Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(2L)).thenReturn(document(2, 1, 2))
+        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(attachment(1, 100)))
+        Mockito.`when`(mailAttachmentRepository.findById(2L)).thenReturn(Optional.of(attachment(2, 100)))
         Mockito.`when`(mailAttachmentTransferRepository.countQueued()).thenReturn(0L)
         Mockito.`when`(attachmentTransferService.enqueueMaterial(1L, listOf(1L, 2L), "admin"))
             .thenReturn(
@@ -792,6 +794,7 @@ class ExpertMaterialServiceTest {
     @Test
     fun `requestTransfers throws queue-full exception when queue is at capacity`() {
         Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(document(1, 1, 1))
+        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(attachment(1, 100)))
         Mockito.`when`(mailAttachmentTransferRepository.countQueued())
             .thenReturn(AttachmentTransferService.MAX_QUEUED_ROWS)
 
@@ -952,6 +955,97 @@ class ExpertMaterialServiceTest {
 
         assertEquals(listOf(5L), result.map { it.id })
     }
+    @Test
+    fun `signatures are removed before pagination summary search and state filters`() {
+        val rows = (1L..25L).map { id ->
+            metadataRow(id, id, id, id, LocalDateTime.of(2026, 9, 1, 10, 0),
+                if (id <= 12) " SMIME.P7S " else "cv-$id.pdf")
+        }
+        fun page(index: Int, q: String? = null, state: String? = null) =
+            service.assemblePage(1, rows, emptyList(), index, 10, q, null, null, state)
+        assertEquals(10, page(0).items.size)
+        assertEquals(3, page(1).items.size)
+        assertEquals(13L, page(0).total)
+        assertEquals(13L, page(0).summary.total)
+        assertEquals(0L, page(0, "smime").total)
+        assertEquals(page(0).summary, page(0, "smime", "STORED").summary)
+        val empty = service.assemblePage(1, rows.take(12), emptyList(), 0, 10, null, null, null, null)
+        assertTrue(empty.items.isEmpty())
+        assertEquals(0L, empty.total)
+        assertEquals(0L, empty.summary.total)
+    }
+
+    @Test
+    fun `historical five rows become two stored materials without changing review state`() {
+        val file = writeFile("empty.pdf", content = "")
+        val normal = metadataRow(4, 4, 4, 4, LocalDateTime.of(2026, 9, 1, 10, 0))
+            .copy(fileSize = 0, storagePath = file.toString(), documentStatus = "APPROVED",
+                transferState = MailAttachmentTransfer.STATE_STORED)
+        val rows = (1L..3L).map {
+            metadataRow(it,it,it,it,LocalDateTime.of(2026, 9, 1, 10, 0), "smime.p7s")
+        } + normal + normal.copy(documentId = 5, attachmentId = 5, fileName = "manual.pdf",
+            manualUploadId = 5, mailRecordId = null, muExpertContactId = 1, muUploadedBy = "operator")
+        val result = service.assemblePage(1,rows,emptyList(),0,10,null,null,null,null)
+        assertEquals(setOf(4L,5L),result.items.map { it.attachmentId }.toSet())
+        assertEquals(2L,result.summary.total)
+        assertEquals(2L,result.summary.stored)
+        assertEquals(0L,result.summary.metadataOnly)
+        assertTrue(result.items.all { it.documentStatus == "APPROVED" && it.actualSize == 0L })
+    }
+
+    @Test
+    fun `signature file guards precede readiness but follow ownership`() {
+        for (path in listOf(null, writeFile("signature"))) {
+            val signature = attachment(1, 100, fileName = "smime.p7s", path = path)
+            stubDocAttachment(1, signature, 1)
+            Mockito.`when`(mailRecordRepository.findByIdOrNull(100)).thenReturn(mailRecord(100, 1))
+            assertEquals("所选文件包含邮件数字签名，不属于专家材料",
+                assertThrows(IllegalArgumentException::class.java) { service.resolveReadyFile(1, 1) }.message)
+            assertEquals("所选文件包含邮件数字签名，不属于专家材料",
+                assertThrows(IllegalArgumentException::class.java) { service.resolveReadyFileUnscoped(1) }.message)
+            assertTrue(assertThrows(IllegalArgumentException::class.java) {
+                service.resolveReadyFile(2, 1)
+            }.message!!.contains("does not belong"))
+        }
+        Mockito.verifyNoInteractions(mailAttachmentTransferRepository)
+    }
+
+    @Test
+    fun `mixed transfer rejects whole batch before queue inspection in either order`() {
+        stubDocAttachment(1, attachment(1, 100), 1)
+        stubDocAttachment(2, attachment(2, 100, fileName = "smime.p7s"), 1)
+        for (ids in listOf(listOf(1L, 2L), listOf(2L, 1L))) {
+            assertEquals("所选文件包含邮件数字签名，不属于专家材料",
+                assertThrows(IllegalArgumentException::class.java) {
+                    service.requestTransfers(1, ids, "operator")
+                }.message)
+        }
+        Mockito.verifyNoInteractions(mailAttachmentTransferRepository, attachmentTransferService)
+    }
+
+    @Test
+    fun `raw direct selection prevents bridge fallback even when all signatures`() {
+        Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(200))
+            .thenReturn(listOf(attachment(1, null, 200, "smime.p7s")))
+        assertTrue(service.resolveMessageAttachments("INBOUND_PROCESSING", 200).isEmpty())
+        Mockito.verifyNoInteractions(jdbc)
+        Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(200))
+            .thenReturn(listOf(attachment(2, null, 200)))
+        assertEquals(listOf(2L), service.resolveMessageAttachments("INBOUND_PROCESSING", 200).map { it.id })
+        Mockito.verifyNoInteractions(jdbc)
+    }
+
+    @Test
+    fun `raw bridge selection prevents legacy fallback even when all signatures`() {
+        Mockito.`when`(jdbc.queryForList(Mockito.contains("mail_attachment_transfer"),
+            Mockito.any(MapSqlParameterSource::class.java), Mockito.eq(Long::class.java)))
+            .thenReturn(listOf(5L))
+        Mockito.`when`(mailAttachmentRepository.findById(5))
+            .thenReturn(Optional.of(attachment(5, 100, fileName = "smime.p7s")))
+        assertTrue(service.resolveMessageAttachments("INBOUND_PROCESSING", 200).isEmpty())
+        Mockito.verifyNoInteractions(inboundMailProcessingRepository, mailRecordRepository)
+    }
+
 }
 
 /**
@@ -1123,6 +1217,22 @@ class ExpertMaterialControllerHttpTest {
         )
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest)
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BAD_REQUEST"))
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `historical signature rejection is JSON BAD_REQUEST with fixed business message`() {
+        Mockito.`when`(materialService.requestTransfers(1L, listOf(1L, 2L), "admin"))
+            .thenThrow(IllegalArgumentException(ExpertMaterialEligibility.ERROR_MESSAGE))
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/api/expert-contacts/1/materials/transfers")
+                .sessionAttr("AUTH_USERNAME", "admin")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("""{"attachmentIds":[1,2]}""")
+        )
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest)
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BAD_REQUEST"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.message").value(ExpertMaterialEligibility.ERROR_MESSAGE))
     }
 
     @org.junit.jupiter.api.Test

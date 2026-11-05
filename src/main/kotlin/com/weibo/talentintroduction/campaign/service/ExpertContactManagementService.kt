@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+import com.weibo.talentintroduction.document.service.ExpertMaterialEligibility
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.domain.MailAttachment
@@ -72,13 +73,22 @@ class ExpertContactManagementService(
         val attachments = mails
             .mapNotNull { it.id }
             .flatMap(mailAttachmentRepository::findAllByMailRecordIdOrderByCreatedAtAsc)
+            .filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+        val documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+        val documentAttachments = mailAttachmentRepository
+            .findAllById(documents.map { it.mailAttachmentId }).associateBy { it.id }
+        val materialDocuments = documents.filter { document ->
+            val attachment = documentAttachments[document.mailAttachmentId]
+                ?: error("Attachment not found: ${document.mailAttachmentId}")
+            ExpertMaterialEligibility.isMaterial(attachment.fileName, attachment.contentType)
+        }
         val latestManualMailProcessing = inboundMailProcessingRepository
             .findFirstByExpertContactIdAndProcessStatusOrderByReceivedAtDesc(contactId, "MANUAL_REVIEW")
         return ExpertContactDetail(
             contact = contact,
             mails = mails,
             attachments = attachments,
-            documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
+            documents = materialDocuments,
             latestHandoff = manualHandoffRepository.findFirstByExpertContactIdAndHandoffStatusInOrderByUpdatedAtDesc(
                 contactId, listOf("PENDING", "ASSIGNED")
             ),
