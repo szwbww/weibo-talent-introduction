@@ -43,3 +43,11 @@ Read the exact child plan in full from this worktree. Its T1..T4, acceptance mat
 
 ## Baseline evidence
 Baseline command outputs and exact counts are recorded in ledger.md under Baseline before dispatch. Required new Eligibility/SQL IT classes do not exist at the approved master base, so no pre-change pass is claimed for them.
+
+## Epoch 2 resume directive
+- Epoch 1 completed no product work; preserve its historical BLOCKED report and pause evidence b4d10ff50863cba54211d3e064b441df29d6aa05.
+- Human selected “清理失效登记并继续” on 2026-11-05, specifically authorizing only the stale publish registration cleanup and continuous child execution without review-fast-p.
+- Controller repeated prune dry-run (exactly one stale registration), ran `git worktree prune --verbose`, then the unmodified mandatory execute-p identity helper with expected root/branch/git-dir; all exited 0. No extant worktree directory, branch, or commit was deleted.
+- Resume epoch: 2; fix_round=0; exact plan SHA-256 and product base unchanged. All T1–T4 are still pending. Do not replay baseline tests as implementation evidence.
+- A fresh implementer must execute the exact approved child, append its epoch 2 report, and make the authorized local implementation commit. Prior helper failure is resolved, not a plan amendment.
+

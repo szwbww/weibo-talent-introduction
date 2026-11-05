@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-11-05/expert-material-filter-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-11-05/expert-material-filter-master.md (sha256 344158c4a2d30f05e7141544a7d4de64d3b33435752f322651ca861ec0f801fd)
 - Amendments: N/A
 - Master base: 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b
@@ -13,13 +13,13 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Mandatory execute-p worktree_identity.py fails on unrelated stale publish registration; deleting that registration requires human authorization.
-- Resume from: 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 1 | PAUSED_FOR_HUMAN | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | — | 0 | — | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | b4d10ff50863cba54211d3e064b441df29d6aa05 | Identity prerequisite failed before product changes; child T1–T4 unimplemented |
+| 01 | docs/plans/2026-11-05/expert-material-filter-01-read.md | sha256:96f08c602083fe57d1c20815a37589014499cdca6bc39553e4d77e960717278b | none | 2 | WAITING_FOR_AGENT | 71bb4879c77c9fcb69f1688e7192ad9aea5c0c4b | — | 0 | — | — | — | Epoch 1 prerequisite pause preserved; authorized stale-registration cleanup resolved identity gate |
 | 02 | docs/plans/2026-11-05/expert-material-filter-02-ingress.md | sha256:1d1792fabfafe46b3be0f5bc728d8b24c712eb0690a713d4f75a34140b5460e1 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 | 03 | docs/plans/2026-11-05/expert-material-filter-03-projections.md | sha256:ef85056d991448e846a729ca2fdff8d8ab83869cfc645ee36181d5d72abca2ed | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered execution |
 
@@ -50,3 +50,9 @@
 - Read-only `git worktree prune --dry-run --verbose` exited 0 and selected exactly that stale publish registration. No existing worktree directory would be removed by the proposed metadata cleanup, but authorization has not been assumed.
 - No product/test/helper/Git-metadata modifications; no implementation commit; all child 02/03 work remains PENDING.
 - Required resolution: authorize removal of only the stale registration, then rerun the mandatory identity helper and resume child 01 in epoch 2 with fix_round=0. Do not replay baseline or perform review-fast-p.
+
+## Resume record
+- Human administrative authorization on 2026-11-05: selected “清理失效登记并继续” after disclosure of the exact stale registration and metadata-only cleanup scope. This does not change approved product plans or their identities.
+- Fresh `git worktree prune --dry-run --verbose` selected exactly the disclosed stale publish registration. Authorized `git worktree prune --verbose` removed only that registration, exit 0.
+- Unmodified execute-p `worktree_identity.py` with expected root, branch, and git-dir then exited 0 at HEAD 7ea167a377943e2e347db208dcba770592bf3128.
+- Resumed child 01 in epoch 2, product base unchanged, fix_round=0; preceding pause evidence remains b4d10ff50863cba54211d3e064b441df29d6aa05 and recovery state 7ea167a377943e2e347db208dcba770592bf3128.
