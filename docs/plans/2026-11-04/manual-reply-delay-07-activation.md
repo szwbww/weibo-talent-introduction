@@ -1,6 +1,6 @@
 # 07 人工入口接通与完整集成门禁
 
-前置01～06逐项通过。发送入口、发布配置两个子系统，7个文件（A4：审核请求字段已提前到03）。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
+前置01～06及07-source-contract逐项通过。发送入口、发布配置两个子系统，7个文件（A4：审核请求字段已提前到03；A24：无稿会话来源元数据与恢复契约由十文件07-source-contract前置补齐）。此阶段才切换新请求行为；本计划不包含直接部署生产或发送真实外部联系人邮件。
 
 ## 需求描述
 
@@ -45,6 +45,7 @@
 - PendingManualRichReplyRequest和PendingMailSendResult定义在PendingMailOperationService文件尾；会话request和DTO在MailboxConversationController；MailReviewSendRequest在MailReviewDraftModels。精确修改这些声明，不新增平行API。
 - 现有application.yml已存在用户未提交修改，本计划实施时只增manual-reply-delay配置项，不覆盖文件。worker先例、数据库、附属表完整证据见总计划。
 - 交互X-1旧claim兼容、X-2草稿、X-3审核、X-4成功事实、X-5附件、X-6权限、X-7前端、X-8重启、X-9新来信均由本阶段完整链路验收。它不增加新的存储写者，调用03/04。
+- A24实证补齐：`sendConversationManualRichReply`原有null draftRef/optional anchor请求必须保留支持；旧LEGACY只接受inboundId的缺口由07-source-contract先行解决。原始nullable输入与actual anchor分别存储，恢复使用既有anchor参数明确原冻结线程；本阶段消费其契约，不重新设计来源或强制draft。完整grep与transport证据见`local://07-source-contract-amendment-evidence.md`。
 
 ## 实现方案
 
@@ -75,6 +76,8 @@ application.yml添加 `talent-introduction.manual-reply-delay.enabled: ${MANUAL_
 矩阵：INBOUND有draft、INBOUND legacy QA/RAG/assembly、OUTBOUND明确anchor、REVIEW有/无context confirmation；每类包含WAITING和成功。异常矩阵包含451、550、DATA断链、取消/claim竞争、数据库finalize回滚、重复POST丢响应、重启、撤权、退订、附件变更、新来信、关闭开关。
 
 PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配置不能使旧构造的测试无意走新链。真实IT执行与前端contract测试输出一起保存验收证据；验证不过只修本子计划范围或回到对应子计划，不临时扩大功能。
+
+复用已通过07-source-contract的准备/restore契约；接通后必须额外证明：无draftRef且未指定anchor的首次conversation请求先WAITING；取消后原输入恢复再提交显式原actual anchor/当前revision而非较新邮件；不创建伪普通draft、不改旧正文指纹。新DTO的delayExpectedRevision与持久原输入分工保持前置C-1～C-7。必跑回归同时包含DelayedManualReplySnapshotTest、DelayedManualReplyControllerTest、DelayedManualReplyLifecycleIT（mysqlIt=true）及mailboxDelayedReply，前置通过不替代本阶段集成证据。
 
 ## 变更文件清单
 
@@ -122,3 +125,5 @@ PendingServiceTest新增开关分支测试；原测试默认关闭，依赖配�
 
 - A4（2026-11-05 用户批准，与总计划A2/子计划03 A3同一决定）：`MailReviewDraftModels.kt` 请求字段归属提前到03，本阶段删去该文件修改授权，仅在发送适配器传递现有 `delayExpectedRevision` 并完成全链路验收；文件数由8改7，其他要求不变。连续执行到可进行 review-fast-p，但不直接调用该技能。
 
+
+- A24（适用用户已批准A15及后续子计划连续执行授权）：无稿OUTBOUND来源/恢复缺口在任何07产品编辑前发现，按文件上限拆出07-source-contract十文件前置；本计划仍仅七文件，前置完成后再按其终态Code head开始新实施，原pre-edit研究保留。所有三入口/60秒/重启/总A-1～A-12验收不降级，不静默要求draftRef，不在enabled=true时回落同步。此修订不重开已完成01～06，不执行review-fast-p。

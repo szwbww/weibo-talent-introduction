@@ -169,7 +169,8 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 9（A7/A8/A9/A10） | 03 |
 | 05 | [会话读模型](manual-reply-delay-05-query.md) | 10（A11–A14） | 04 |
 | 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 20（A15–A22：11特批＋9既有测试兼容） | 05 |
-| 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4） | 06 |
+| 07a | [无稿会话来源与恢复契约](manual-reply-delay-07-source-contract.md) | 10（A23，适用A15） | 06 |
+| 07b | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4/A24） | 07a |
 
 技术契约与每步具体任务在子计划正文中。共同门禁为 I-1～I-11，子计划不得用测试 mock 覆盖掉真实事务边界。
 
@@ -307,3 +308,5 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 
 - A21/A22（适用已批准A5）：必跑Maven的controller13/13通过，但全JS2054项/2037通过/17失败（artifact2339）；authFlow既有extractFn sandbox缺新增legacyDelayedReplies Map产生15项ReferenceError，mailReviewReader旧focus“只请求access”断言与T3矛盾。仅新增两测试文件授权：前者补Map依赖并保留auth断言，后者删除过时唯一请求断言/专用start变量且保留编辑器身份/正文/CAS/reload断言；不改生产范围或重钉请求数。其余一项为新增自有样式测试重复key literal，在原授权文件内纠正，taskActivityCenter.test.js不扩围。06文件数18→20，仍只增加既有测试兼容；最终新鲜全部检查与浏览器证据不可豁免。
 
+
+- A23/A24（适用用户已批准A15「授权本次及同类契约补齐」及后续子计划连续执行授权）：Impl07Activation在任何产品编辑前证实，既有无draftRef/optional anchor的conversation入口无法表示为要求positive inboundId的LEGACY快照，restore消费者也仅支持来信。完整源码/grep/transport回执在`local://07-source-contract-amendment-evidence.md`及07 execution.md。为遵守≤10文件边界，插入十文件`07-source-contract`前置（准备原始来源元数据、严格兼容codec/源锁、restore-only响应、既有编辑器的窄source消费和直接回归），再执行原七文件`07-activation`；不是将07特批扩为十五文件。新前置保持schemaVersion/旧指纹/权限/事务/公共投递行为和默认关闭开关，原始nullable输入与已验证actual anchor分开，恢复提交用既有普通anchor参数防止换线程。无新业务/迁移/编辑器/样式，既有01～06计划与日志不改；07仍承担全部三入口、真实60秒、重启及总A-1～A-12集成证据。新增计划初始身份和既有计划Before/After由ledger/完整manifest记录；持续至READY_FOR_HUMAN_REVIEW，不执行review-fast-p。
