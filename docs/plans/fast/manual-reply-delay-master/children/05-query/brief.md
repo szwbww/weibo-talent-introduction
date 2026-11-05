@@ -21,7 +21,7 @@ No changes outside these product/test paths; no applied migration edits. Tests n
 ## Fixed gates and downstream contracts
 - Master/child I-8: DELAYED_MANUAL_REPLY source/id=job.id/rank3/time=first createdAt remains stable through all states; exclude linked mail_record from UI union but preserve it as transactional/statistical fact. SENT success1; FAILED/UNKNOWN failure1; WAITING/SENDING/CANCELLED neither. No fake inbound/pending. Preserve existing all-history summary semantics and membership filters on the same matching message.
 - I-8b: split rawMailUnionSql (reviewContext) from uiMessageUnionSql, no boolean default choice. Preserve original context hash bytes on original data; job queue/cancel/retry cannot invalidate itself. Real inbound/successful outbound still changes context. Real anchors remain processing/mail_record ids, never job ids.
-- I-7/I-10: batch current-page sanitized projections with contact/account restriction. READ never queries private attachment snapshots or returns actions/restoration. Use real sentMailRecordId for sent attachments; job.id must not reach legacy attachment APIs. Pending attachment metadata respects original actor/admin; no disk reads during read-only projection. Historical failed mail has no synthetic job or retry.
+- I-7/I-10: batch current-page sanitized projections with contact/account restriction. READ-permission users never query private attachment snapshots, read disk or receive actions/restoration. FULL/admin capability projection may verify file integrity to preserve03/04 eligibility, but SQL remains fixed-page/batched with no per-job queries. Use real sentMailRecordId for sent attachments; job.id must not reach legacy attachment APIs. Pending attachment metadata respects original actor/admin. Historical failed mail has no synthetic job or retry.
 - DTO additions nullable/defaulted at end, delayedPendingCount default0, serverNowMs and delayedReply per approved protocol. Keep original rank1/2 cursors valid, add rank3, prove same-time pagination and UTC/Asia-Shanghai SQL sessions.
 - Update only moved exact line numbers in OperatorStatusWriteSeamGuardTest; do not broaden exclusions or change snippets.
 
@@ -35,3 +35,9 @@ Record exact commands/counts/skips and isolated connection environment. Exercise
 
 ## Reporting
 Use execute-p; one writer, no push/merge/rebase/amend/reset. Commit authorized implementation files only, exclude docs/plans/fast/**. Append full execution result with base/head, agent, commands, runtime proof and blockers to docs/plans/fast/manual-reply-delay-master/children/05-query/execution.md. Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit SHA, command summary and report path.
+
+## Dispatch binding and literal role clarification
+
+- Product base9cebea6d41cc3b749382deb7691ba704471b131e; clean04 checkpoint3c681a44f6911e28c637451e3ee7610c9b9fea9d. Approved05 identity is `commit:05342b4be63bbc7d9b30416ae73ada2d44b562df` plus exact plan path, not a blob hash. Implementer confirmed current plan bytes match that commit.
+- Child05T2:61 says `READ两者均隐藏，磁盘不读取`; I-7 acceptance says `READ不查询附件快照`. READ is the permission level, not a ban on every GET reading files. FULL/admin may perform required file-integrity verification; their canRetry must retain03/04 semantics. This literal clarification does not authorize metadata-only weakening, per-job SQL, or extra production paths. Implementer reported authorized repository/service can implement batched current-source metadata with full-access integrity checks.
+
