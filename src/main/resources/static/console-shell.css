@@ -124,30 +124,27 @@ body.console-ui .app-shell,body.console-ui .app-shell:has(#view-meeting-calendar
 .console-ui #view-mailbox.mc-refined .mail-chat .mc-filter-popover{background:#fff}
 .console-ui #view-mailbox.mc-refined .mail-chat.mc-delegated-conversation{display:block;height:100%}
 .console-ui #view-mailbox.mc-refined .mail-chat .mc-delegated-host{min-height:0}
-.console-ui #view-mailbox.mc-refined .mc-conversation:has(>.mc-header>.mc-header-main){display:grid;grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:auto auto auto minmax(0,1fr);position:relative}
-.console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-profile[hidden]){grid-template-columns:minmax(0,1fr)}
-.console-ui #view-mailbox.mc-refined .mc-header:has(>.mc-header-main){display:contents}
-.console-ui .mc-header-main{grid-column:1;grid-row:1;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:16px 20px;min-width:0;border-bottom:1px solid #e9edf3;background:#fff}
+.console-ui .mc-header-main{display:flex;flex-wrap:wrap;align-items:center;gap:10px;width:100%;min-width:0}
+.console-ui #view-mailbox.mc-refined .mail-chat .mc-header:has(>.mc-header-main){flex-shrink:0;max-height:45dvh;overflow:auto}
 .console-ui #view-mailbox.mc-refined .mail-chat .mc-header-main .mc-actions{gap:6px}
-.console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-header-main)>.mailbox-suspend-banner{grid-column:1;grid-row:2}
-.console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-header-main)>.mc-timeline-head{grid-column:1;grid-row:3}
-.console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-header-main)>.mc-scroll{grid-column:1;grid-row:4;min-width:0}
-.console-ui #view-mailbox.mc-refined .mail-chat .mc-header-meta.mc-profile{grid-column:2;grid-row:1 / 5;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;flex-wrap:nowrap;gap:16px;padding:16px;border-left:1px solid #e9edf3;background:#fff;min-height:0;min-width:0;overflow:auto;color:#526174;animation:console-enter 180ms var(--console-ease)}
-.console-ui .mc-profile-title{font-size:12px;font-weight:600;color:#344154}
-.console-ui .mc-profile-person{text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0 18px;border-bottom:1px solid #e9edf3;overflow-wrap:anywhere}
-.console-ui .mc-profile-avatar{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#eef4ff;color:#246aeb;font-size:16px}
-.console-ui .mc-profile-person strong{font-size:13px;color:#273446}
-.console-ui .mc-profile-person p{font-size:11px;color:#7b8797;max-width:100%;overflow-wrap:anywhere}
-.console-ui .mc-profile .mc-note-tags{display:flex;flex-wrap:wrap;gap:6px;overflow-wrap:anywhere}
-.console-ui .mc-profile>*{flex-shrink:0}
-.console-ui .mc-profile .mc-note-row{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:16px}
-.console-ui .mc-profile .mc-note-row .mc-note-slot{flex:0 0 auto;width:100%}
-.console-ui .mc-profile .mc-note-row .contact-timing{margin:0;white-space:normal}
-.console-ui .mc-profile .mc-note-trigger{width:100%;height:auto;align-items:flex-start;line-height:1.6;white-space:normal;overflow-wrap:anywhere}
-.console-ui .mc-profile .mc-note-text{white-space:normal;overflow-wrap:anywhere}
-.console-ui .mc-profile-toggle[aria-expanded=true]{color:#246aeb;background:#eef4ff;border-color:#dce7fb}
+.console-ui #view-mailbox.mc-refined .mail-chat .mc-header-meta.mc-inline-info{display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:10px;padding:12px 0 0;margin-top:4px;border-top:1px solid #e9edf3;color:#526174;width:100%;min-width:0}
+.console-ui .mc-inline-info .mc-note-tags{overflow-wrap:anywhere}
+.console-ui .mc-inline-info .mc-note-row{flex-wrap:wrap;align-items:flex-start;gap:12px}
+.console-ui .mc-inline-info .mc-note-row .mc-note-slot{flex:1 1 280px}
+.console-ui .mc-inline-info .mc-note-row .contact-timing{margin:0;white-space:normal}
+.console-ui .mc-inline-info .mc-note-trigger{width:100%;height:auto;align-items:flex-start;line-height:1.7;white-space:normal}
+.console-ui .mc-inline-info .mc-note-text,.console-ui .mc-inline-info .mc-reader-note{white-space:pre-wrap;overflow-wrap:anywhere;text-overflow:clip}
 .console-ui details[open]>.mc-section-content,.console-ui .mc-filter-popover:not([hidden]){animation:console-enter 150ms var(--console-ease)}
 @keyframes console-enter{from{opacity:.5}to{opacity:1}}
+/* The list keeps its width and scroll area while the current request settles. */
+.console-ui .mc-list-viewport{display:flex;flex-direction:column;flex:1;min-height:0;position:relative}
+.console-ui .console-load-host{position:relative}
+.console-ui .console-loading{position:absolute;inset:0;z-index:8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(248,250,253,.87);color:#61728b;font-size:13px;backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);animation:console-enter 140ms ease-out}
+.console-ui .console-loading-indicator{width:22px;height:22px;border:2px solid #dce7fa;border-top-color:#246aeb;border-radius:50%;animation:console-loading-spin 650ms linear infinite}
+.console-ui .mc-filter{transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease}
+.console-ui .mc-filter:not(:disabled):active{transform:translateY(1px)}
+.console-ui .mc-header .mc-identity>.mailbox-reply-detail,.console-ui .mc-header .mc-identity>.calendar-summary,.console-ui .mc-header .mc-reader-reply-time,.console-ui .mc-header .mc-reader-schedule{display:none!important}
+@keyframes console-loading-spin{to{transform:rotate(360deg)}}
 @media(min-width:761px) and (max-width:1100px){
     .console-ui #view-mailbox.mc-refined .mail-chat{grid-template-columns:360px minmax(0,1fr)}
     .console-ui #view-mailbox.mc-refined .mail-chat .mc-scroll{padding:15px}
@@ -155,13 +152,6 @@ body.console-ui .app-shell,body.console-ui .app-shell:has(#view-meeting-calendar
 }
 @media(min-width:761px) and (max-width:900px){
     .console-ui #view-mailbox.mc-refined .mail-chat{grid-template-columns:320px minmax(0,1fr)}
-}
-@media(max-width:900px){
-    .console-ui #view-mailbox.mc-refined .mc-conversation:has(>.mc-header>.mc-header-main){grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto minmax(0,1fr)}
-    .console-ui #view-mailbox.mc-refined .mail-chat .mc-header-meta.mc-profile{grid-column:1;grid-row:2;max-height:220px;border-left:0;border-bottom:1px solid #e9edf3}
-    .console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-header-main)>.mailbox-suspend-banner{grid-row:3}
-    .console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-header-main)>.mc-timeline-head{grid-row:4}
-    .console-ui #view-mailbox.mc-refined .mc-conversation:has(.mc-header-main)>.mc-scroll{grid-row:5}
 }
 @media(max-width:760px){
     body.console-ui{overflow:auto}
@@ -191,7 +181,7 @@ body.console-ui .app-shell,body.console-ui .app-shell:has(#view-meeting-calendar
     .console-ui #view-mailbox.mc-refined .mail-chat .mc-conversation{min-height:0}
     .console-ui #view-mailbox.mc-refined .mail-chat .mc-scroll{height:65dvh;min-height:240px;overflow:auto;padding:12px}
     .console-ui #view-mailbox.mc-refined .mail-chat .mc-message{width:96%;max-width:96%;min-width:0;padding:12px}
-    .console-ui .mc-header-main{padding:14px}
+    .console-ui #view-mailbox.mc-refined .mail-chat .mc-header:has(>.mc-header-main){max-height:none}
     .console-ui .mobile-mailbox-back{margin:10px;align-self:flex-start}
     .console-ui #view-mailbox.mc-refined .mail-chat[data-mobile-pane=detail]>.mc-experts{display:none}
     .console-ui #view-mailbox.mc-refined .mail-chat[data-mobile-pane=list]>.mc-conversation{display:none}
@@ -199,4 +189,4 @@ body.console-ui .app-shell,body.console-ui .app-shell:has(#view-meeting-calendar
     .console-ui #view-mailbox.mc-refined .mail-chat :is(input,select,textarea,[contenteditable=true]){font-size:16px}
     .console-ui .world-clock-panel{left:12px;right:12px;bottom:12px;width:auto;max-height:calc(100dvh - 24px)}
 }
-@media(prefers-reduced-motion:reduce){.console-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media(prefers-reduced-motion:reduce){.console-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}.console-ui .mc-filter:active{transform:none}}

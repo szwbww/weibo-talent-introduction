@@ -502,7 +502,7 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
             if (expertTags === null) {
                 assert.ok(notes.every((node) => node.tagName === "P"));
                 assert.ok(findOne(harness.root, "mc-person-main").children.includes(notes[0]));
-                assert.ok(allNodes(findOne(harness.root, "mc-profile")).includes(notes[1]));
+                assert.ok(allNodes(findOne(harness.root, "mc-inline-info")).includes(notes[1]));
             }
             harness.handle.unmount();
         }
@@ -550,15 +550,15 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
         await flush();
         clickAction(harness, "select-expert");
         await flush();
-        assert.ok(findOne(harness.root, "mc-profile").textContent.includes("旧标签"));
+        assert.ok(findOne(harness.root, "mc-inline-info").textContent.includes("旧标签"));
         expertTags = ["新标签"];
         await harness.handle.refresh();
-        assert.ok(findOne(harness.root, "mc-profile").textContent.includes("新标签"));
+        assert.ok(findOne(harness.root, "mc-inline-info").textContent.includes("新标签"));
         assert.ok(!harness.root.textContent.includes("旧标签"));
         expertTags = null;
         await harness.handle.refresh();
         assert.strictEqual(rows(harness.root, "readonly-expert-tags").length, 0);
-        assert.ok(findOne(harness.root, "mc-profile").textContent.includes("标签暂不可用"));
+        assert.ok(findOne(harness.root, "mc-inline-info").textContent.includes("标签暂不可用"));
         harness.handle.unmount();
     });
 
@@ -800,7 +800,7 @@ describe("I-3 失权/失败/竞态", () => {
         assert.strictEqual(findOne(harness.root, "mc-identity").children[0].textContent, "李教授");
         assert.strictEqual(findOne(harness.root, "mc-body").textContent, "B 的正文");
         assert.strictEqual(findAll(harness.root, "mc-message").length, 1);
-        const identity = findOne(harness.root, "mc-profile");
+        const identity = findOne(harness.root, "mc-inline-info");
         assert.ok(identity.textContent.includes("B标签"));
         assert.ok(harness.root.textContent.includes("B邮件标签"));
         assert.ok(!identity.textContent.includes("A标签"));
@@ -1041,7 +1041,7 @@ it("READ 显示共享摘要和纯文本备注；FULL 列表显示邮箱，READ �
         : path.includes("/timing") ? {location:{configured:true,countryLabel:"英国"},recommendation:{beijingStart:"2026-11-01T17:00:00+08:00",beijingEnd:"2026-11-02T01:00:00+08:00"}}
         : metadata(path);
     h.mount();await flush();clickAction(h,"select-expert");await flush();
-    const identity=findOne(h.root,"mc-profile"),card=findOne(h.root,"mc-person-main");
+    const identity=findOne(h.root,"mc-inline-info"),card=findOne(h.root,"mc-person-main");
     ["acc1","2026-10-31 10:30","收 2 · 发 3","4 条待处理","等待材料"].forEach(text=>assert.ok(card.parentNode.textContent.includes(text),text));
     ["已回复","有效","跟进中","英国","17:00","01:00","<img src=x>合作说明"].forEach(text=>assert.ok(identity.textContent.includes(text),text));
     assert.ok(!h.root.textContent.includes(EXPERT_A.email));assert.ok(h.root.textContent.includes("writable@example.test"));
@@ -1049,23 +1049,20 @@ it("READ 显示共享摘要和纯文本备注；FULL 列表显示邮箱，READ �
     assert.ok(h.calls.every(c=>c.options.method==="GET"));h.handle.unmount();
 });
 
-it("READ profile defaults open; toggling preserves composer, messages and request count", async () => {
+it("READ information stays in the header without a profile toggle or extra privilege", async () => {
     const h = createHarness();
     h.responder = async path => path.startsWith(`${LIST_PATH}?`) ? listResponse([EXPERT_A]) : detailResponse([{source:'INBOUND_PROCESSING',id:41,direction:'INBOUND',cleanedBody:'保留正文',eventAt:'2026-11-05T10:00:00'}]);
+    h.metadataResponder = async path => path.includes('contact-notes/') ? {note:'只读备注\n第二行'} : {};
     h.mount(); await flush(); clickAction(h,'select-expert'); await flush();
-    const profile = findOne(h.root,'mc-profile');
-    const compose = allNodes(h.root).find(n => n.dataset.role === 'review-compose');
-    const message = findOne(h.root,'mc-message');
-    assert.strictEqual(profile.hidden,false);
-    assert.ok(compose);
-    assert.ok(!profile.textContent.includes(EXPERT_A.email));
-    const requests = h.calls.length;
-    clickAction(h,'reader-toggle-profile');
-    assert.strictEqual(profile.hidden,true);
-    clickAction(h,'reader-toggle-profile');
-    assert.strictEqual(profile.hidden,false);
-    assert.strictEqual(findOne(h.root,'mc-message'),message);
-    assert.strictEqual(allNodes(h.root).find(n => n.dataset.role === 'review-compose'),compose);
-    assert.strictEqual(h.calls.length,requests);
+    const info = findOne(h.root,'mc-inline-info');
+    assert.strictEqual(info.hidden,false);
+    assert.strictEqual(info.parentNode,findOne(h.root,'mc-header'));
+    assert.ok(info.textContent.includes('只读备注\n第二行'));
+    assert.ok(!info.textContent.includes(EXPERT_A.email));
+    assert.ok(!allNodes(info).some(n=>['BUTTON','INPUT','TEXTAREA'].includes(n.tagName)));
+    assert.ok(!allNodes(h.root).some(n=>n.dataset.action === 'reader-toggle-profile'));
+    assert.ok(allNodes(h.root).find(n => n.dataset.role === 'review-compose'));
+    assert.ok(findOne(h.root,'mc-message'));
+    assert.ok(h.calls.every(c=>c.options.method==='GET'));
     h.handle.unmount();
 });

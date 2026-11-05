@@ -7041,35 +7041,73 @@ describe("08 final expert scope and independent pending mail badge", () => {
     });
 });
 
-// Crisp layout: presentation toggles cannot replace the conversation or write data.
-describe("Crisp native expert profile", () => {
-    it("opens by default, keeps editor and target through toggles, and replaces profile on expert change", async () => {
-        const ctx = await bootChat({ conversations: {items:[expertA(),expertB()],total:2}, messages:messagesA(), contact:contactA() });
+// Inline metadata uses native state and must never remount the draft editor.
+describe("Crisp inline expert information", () => {
+    it("shows tags and notes in the header, preserves the editor on late note load, and switches owners", async () => {
+        const note = {};
+        note.promise = new Promise(resolve => { note.resolve = resolve; });
+        const ctx = await bootChat({
+            conversations: {items:[expertA(),expertB()],total:2}, messages:messagesA(), contact:contactA(),
+            contactNotes: {2:{contactId:2,note:"B 的备注"}},
+            route: (url, method, body, entry, next) => url === '/api/mail/contact-notes/1' && method === 'GET' ? note.promise : next(url, method, body)
+        });
         click(personButtons(ctx.host)[0]); await flush();
-        const profile = ctx.host.querySelector('.mc-profile');
-        const toggle = ctx.host.querySelector('[data-action="mc-toggle-profile"]');
+        const info = ctx.host.querySelector('.mc-inline-info');
         const editor = ctx.host.querySelector('[contenteditable="true"]');
         const scroll = ctx.host.querySelector('.mc-scroll');
-        assert.ok(profile.textContent.includes('专家A'));
-        assert.strictEqual(profile.hidden, false);
-        assert.strictEqual(toggle.getAttribute('aria-expanded'), 'true');
-        assert.ok(editor, 'native composer is mounted');
+        assert.strictEqual(info.parentNode, ctx.host.querySelector('.mc-header'));
+        assert.ok(info.textContent.includes('学术科研'));
+        assert.ok(info.textContent.includes('ORCID'));
+        assert.ok(info.querySelector('[data-action="mc-open-expert"]'));
+        assert.strictEqual(ctx.host.querySelector('.mc-profile'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-toggle-profile"]'), null);
+        assert.ok(editor);
         setEditorContent(editor, '<p>保留草稿</p>', '保留草稿');
         scroll.scrollTop = 128;
-        const before = ctx.calls.api.length;
-        click(toggle);
-        assert.strictEqual(profile.hidden, true);
-        assert.strictEqual(toggle.getAttribute('aria-expanded'), 'false');
-        click(toggle);
-        assert.strictEqual(profile.hidden, false);
+        note.resolve({contactId:1,note:'A 的备注\n第二行 <b>保留为文本</b>'}); await flush();
+        assert.ok(info.textContent.includes('A 的备注\n第二行 <b>保留为文本</b>'));
+        assert.strictEqual(info.querySelector('.mc-note-slot b'), null);
         assert.strictEqual(ctx.host.querySelector('[contenteditable="true"]'), editor);
         assert.strictEqual(editor.innerHTML, '<p>保留草稿</p>');
         assert.strictEqual(ctx.host.querySelector('.mc-scroll'), scroll);
         assert.strictEqual(scroll.scrollTop, 128);
-        assert.strictEqual(ctx.calls.api.length, before, 'profile toggles make no requests');
         click(personButtons(ctx.host)[1]); await flush();
-        assert.ok(ctx.host.querySelector('.mc-profile').textContent.includes('专家B'));
-        assert.ok(!ctx.host.querySelector('.mc-profile-person').textContent.includes('专家A'));
+        assert.ok(ctx.host.querySelector('.mc-inline-info').textContent.includes('B 的备注'));
+        assert.ok(!ctx.host.querySelector('.mc-inline-info').textContent.includes('A 的备注'));
         ctx.api.unmount();
     });
+});
+
+it("list loading follows real request settlement, latest request wins, and unmount cancels it", async () => {
+    let hold = false;
+    const pending = [];
+    const ctx = await bootChat({
+        conversations: { items: [expertA()], total: 1 },
+        route(url, method, body, entry, fallback) {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?')
+                && new URL(url, 'http://test').searchParams.get('size') !== '1') {
+                return new Promise((resolve, reject) => pending.push({resolve, reject}));
+            }
+            return fallback(url, method, body);
+        }
+    });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'console-shell.js'), 'utf8'), ctx.sandbox);
+    const viewport = ctx.host.querySelector('.mc-list-viewport');
+    const list = ctx.host.querySelector('.mc-expert-list');
+    hold = true;
+    const older = ctx.api.refresh();
+    const newer = ctx.api.refresh();
+    assert.equal(viewport.getAttribute('aria-busy'), 'true');
+    assert.equal(list.inert, true);
+    pending[0].resolve({items: [], total: 0}); await older;
+    assert.equal(viewport.getAttribute('aria-busy'), 'true', 'old response must not dismiss current loading');
+    pending[1].reject(new Error('offline')); await newer;
+    assert.equal(viewport.getAttribute('aria-busy'), null);
+    assert.notEqual(list.inert, true);
+    assert.match(list.textContent, /加载失败|重试/);
+    const leaving = ctx.api.refresh();
+    ctx.sandbox.MailboxChat.unmount(ctx.host);
+    assert.equal(viewport.getAttribute('aria-busy'), null);
+    pending[2].resolve({items: [expertA()], total: 1}); await leaving;
+    assert.equal(ctx.host.textContent, '');
 });

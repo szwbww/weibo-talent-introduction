@@ -4,7 +4,7 @@ function monitoringToday() {
 
 const state = {
     lastEmailProvidersLevel: null,
-    view: "accounts",
+    view: "mailbox",
     accounts: [],
     categories: [],
     qaRules: [],
@@ -5255,6 +5255,8 @@ function setView(view) {
     if (!Object.prototype.hasOwnProperty.call(viewMeta, view)) return;
     const sequence = setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
     const applyView = () => {
+        const motion = typeof window !== "undefined" && window.ConsoleMotion;
+        if (motion) motion.cancel($("#view-" + state.view));
         if (view !== "mailbox" && typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
         if (view !== "contacts") {
             ++mobileContactPresentation.generation;
@@ -5331,6 +5333,9 @@ async function refreshCurrentView() {
         if (handle && typeof handle.refresh === "function") await handle.refresh();
         return;
     }
+    const motion = typeof window !== "undefined" && window.ConsoleMotion;
+    const finishLoading = motion
+        ? motion.begin($("#view-" + state.view), null, "正在加载…") : () => {};
     try {
         if (state.view === "accounts") await loadAccounts();
         if (state.view === "mail-templates") await loadMailTemplatesView();
@@ -5348,6 +5353,8 @@ async function refreshCurrentView() {
         if (state.view === "monitoring") await loadMonitoring();
     } catch (error) {
         showStatus(error.message, "error");
+    } finally {
+        finishLoading();
     }
 }
 
@@ -21399,6 +21406,7 @@ function startAuthenticatedApp(username, mailReadOnly) {
 }
 
 function stopAuthenticatedApp() {
+    if (typeof window !== "undefined" && window.ConsoleMotion) window.ConsoleMotion.cancelAll();
     // 最前停止观察器：之后到达的 active/详情响应一律失效（I-5）。
     stopTaskActivityPolling();
     if (typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();

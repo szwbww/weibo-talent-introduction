@@ -214,7 +214,9 @@
         scopes.appendChild(allButton); scopes.appendChild(draftsButton); scopes.appendChild(readButton); scopes.appendChild(fullButton); scopes.appendChild(pendingButton);
         tools.appendChild(scopes);
 
+        var listViewport = makeNode(doc, "div", "mc-list-viewport");
         var expertList = makeNode(doc, "div", "mc-expert-list");
+        listViewport.appendChild(expertList);
 
         var pager = makeNode(doc, "div", "mc-pager");
         var previousButton = buttonNode(doc, "previous", "上一页");
@@ -227,7 +229,7 @@
         pager.appendChild(nextButton);
 
         aside.appendChild(tools);
-        aside.appendChild(expertList);
+        aside.appendChild(listViewport);
         aside.appendChild(pager);
 
         var conversation = makeNode(doc, "section", "mc-conversation");
@@ -242,15 +244,11 @@
         headerMain.appendChild(identity);
         var headerActions = makeNode(doc, "div", "mc-actions");
         headerActions.appendChild(readOnlyBadge);
-        var profileToggle = buttonNode(doc, "reader-toggle-profile", "专家资料", "button mc-profile-toggle");
-        profileToggle.setAttribute("aria-expanded", "true");
-        headerActions.appendChild(profileToggle);
         headerMain.appendChild(headerActions);
-        var profile = makeNode(doc, "aside", "mc-header-meta mc-profile");
-        profile.setAttribute("aria-label", "专家资料");
-        var profileCollapsed = false;
+        var inlineInfo = makeNode(doc, "div", "mc-header-meta mc-inline-info");
+        inlineInfo.setAttribute("aria-label", "专家信息");
         header.appendChild(headerMain);
-        header.appendChild(profile);
+        header.appendChild(inlineInfo);
         var scroll = makeNode(doc, "div", "mc-scroll");
         var messages = makeNode(doc, "div");
         scroll.appendChild(messages);
@@ -816,7 +814,7 @@
             var previousScroll = expertList.scrollTop;
             expertList.replaceChildren();
             if (listLoading) {
-                expertList.appendChild(statusNode(doc, "mc-empty", COPY.loading));
+                if (!global.ConsoleMotion) expertList.appendChild(statusNode(doc, "mc-empty", COPY.loading));
                 updatePager();
                 return;
             }
@@ -896,27 +894,20 @@
         function renderIdentity() {
             setText(identityName, selected ? ((selected.name || "").trim() || "未填写姓名") : "");
             identity.replaceChildren(identityName);
-            profile.replaceChildren();
-            profile.hidden = !selected || profileCollapsed;
-            profileToggle.hidden = !selected;
-            profileToggle.setAttribute("aria-expanded", String(!profile.hidden));
+            inlineInfo.replaceChildren();
+            inlineInfo.hidden = !selected;
             if (selected) {
-                appendText(profile, "专家资料", "mc-profile-title");
-                var person = makeNode(doc, "div", "mc-profile-person");
-                appendText(person, Array.from(selected.name || "?")[0], "mc-profile-avatar");
-                appendText(person, (selected.name || "").trim() || "未填写姓名");
-                profile.appendChild(person);
                 appendText(identity, "账号 " + (selected.accountCodes || []).join("、"));
                 appendText(identity, "专家上次回复 " + (selected.latestInbound && selected.latestInbound.receivedAt ? formatTime(selected.latestInbound.receivedAt) + " 北京时间" : "暂无回复"), "mc-reader-reply-time");
                 appendText(identity, scheduleText(selected.contactId), "mc-reader-schedule");
-                var badges = makeNode(doc, "div", "mc-reader-badges"); profile.appendChild(badges);
+                var badges = makeNode(doc, "div", "mc-reader-badges"); inlineInfo.appendChild(badges);
                 [catalogLabel(global.operatorStatusOptions, selected.operatorStatus), catalogLabel(global.indexLevelOptions, selected.currentIndexLevel),
                     { NONE: "未标记", FOLLOWING: "跟进中", PROVIDED: "已提供" }[selected.progressStatus]].filter(Boolean).forEach(function (text) { appendText(badges, text, "mc-badge"); });
                 appendExpertTags(doc, badges, selected.expertTags);
-                appendText(profile, pendingText(selected));
+                appendText(inlineInfo, pendingText(selected));
                 if (readInfo.contactId === String(selected.contactId)) {
-                    appendText(profile, "备注：" + readInfo.note, "mc-reader-note");
-                    appendText(profile, readInfo.timing);
+                    appendText(inlineInfo, "备注：" + readInfo.note, "mc-reader-note");
+                    appendText(inlineInfo, readInfo.timing);
                 }
             }
         }
@@ -1003,6 +994,10 @@
             listLoading = !background || !listItems.length;
             listFailed = false;
             if (listLoading) renderList();
+            // A new request replaces any previous overlay, including a quiet refresh.
+            if (global.ConsoleMotion) global.ConsoleMotion.cancel(listViewport);
+            var finishLoading = listLoading && global.ConsoleMotion
+                ? global.ConsoleMotion.begin(listViewport, expertList, "正在加载会话…") : function () {};
             return requestJson(listUrl()).then(function (data) {
                 if (isStale(gen, seq, currentListSeq)) return;
                 var normalized = normalizeList(data);
@@ -1031,7 +1026,7 @@
                 listTotal = 0;
                 listFailed = failureKind(error) !== "session";
                 renderList();
-            });
+            }).finally(finishLoading);
         }
 
         function loadSelectedDetail() {
@@ -1193,12 +1188,6 @@
             var actionNode = target && typeof target.closest === "function" ? target.closest("[data-action]") : null;
             if (!actionNode || !actionNode.dataset) return;
             var action = actionNode.dataset.action;
-            if (action === "reader-toggle-profile") {
-                profileCollapsed = !profileCollapsed;
-                profile.hidden = !selected || profileCollapsed;
-                profileToggle.setAttribute("aria-expanded", String(!profile.hidden));
-                return;
-            }
             if (action === "reader-open-draft") {
                 return selectExpert(actionNode.dataset.contactId, { id: Number(actionNode.dataset.draftId), kind: actionNode.dataset.draftKind });
             }
@@ -1286,6 +1275,7 @@
             if (destroyed) return;
             restoreReadDetail();
             destroyed = true;
+            if (global.ConsoleMotion) global.ConsoleMotion.cancel(listViewport);
             generation += 1;
             inflight.forEach(function (controller) {
                 try {

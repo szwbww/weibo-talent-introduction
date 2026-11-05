@@ -915,7 +915,6 @@
             /** 当前承载 #unmatchedDetailPanel 的 .mc-scroll 宿主；null = 未持有 lease（I-5）。 */
             unmatchedDetailHost: null,
             mobilePane: "list",
-            profileCollapsed: false,
             paneEpoch: 0,
             focusPaneEpoch: null,
             listScrollTop: 0,
@@ -1700,7 +1699,7 @@
                             </div>
                             <div class="mc-filter-summary" hidden></div>
                         </div>
-                        <div class="mc-expert-list" aria-live="polite"></div>
+                        <div class="mc-list-viewport"><div class="mc-expert-list" aria-live="polite"></div></div>
                         <div class="mc-pager"></div>
                     </aside>
                     <button type="button" class="button mobile-mailbox-back" data-action="mobile-mailbox-back">返回会话列表</button>
@@ -2481,9 +2480,11 @@
                 if (!instance.disposed && instance.options.onChanged) instance.options.onChanged();
                 return Promise.resolve(null);
             }
+            const finishLoading = global.ConsoleMotion
+                ? global.ConsoleMotion.begin(host.querySelector(".mc-list-viewport"), expertsRoot(), "正在加载会话…") : () => {};
             const options = extra || {};
             const page = options.page != null ? options.page : instance.list.page;
-            if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page);
+            if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page).finally(finishLoading);
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
             instance.list.loading = true;
@@ -2559,7 +2560,7 @@
                     renderUnmatchedEmpty();
                 }
                 return null;
-            });
+            }).finally(finishLoading);
         }
 
         function loadList() {
@@ -3789,7 +3790,6 @@
                     <button class="button" type="button" data-action="mc-edit-schedule">变更日期</button>
                     <button class="button danger" type="button" data-action="mc-cancel-schedule">取消排期</button>
                     ${readAccessNodesHtml(contactId)}
-                    <button class="button mc-profile-toggle" type="button" data-action="mc-toggle-profile" aria-expanded="${!instance.profileCollapsed}">专家资料</button>
                 `;
             }
             renderHeaderMeetingSummary();
@@ -3976,21 +3976,9 @@
             const orcid = (contact && contact.orcidId) || summary.orcid || "";
             const expertTagSpans = headerExpertTagSpans();
             metaEl.innerHTML = `
-                <h3 class="mc-profile-title">专家资料</h3>
-                <div class="mc-profile-person"><span class="mc-profile-avatar" aria-hidden="true">${escapeText(Array.from(summary.name || "?")[0])}</span><strong>${escapeText(summary.name || "未填写姓名")}</strong><p>${escapeText(conversationSummaryInfo())}</p></div>
                 <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${!delegated && orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}${delegated ? "" : `<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button>`}</div>
                 <div class="mc-note-row"><section class="mc-note-slot" aria-label="专家备注">${noteMarkup()}</section>${contactTimingMarkup()}</div>
             `;
-            syncProfileVisibility();
-        }
-
-        function syncProfileVisibility() {
-            const body = conversationBody();
-            if (!body) return;
-            const profile = body.querySelector(".mc-profile");
-            const toggle = body.querySelector('[data-action="mc-toggle-profile"]');
-            if (profile) profile.hidden = instance.profileCollapsed;
-            if (toggle) toggle.setAttribute("aria-expanded", String(!instance.profileCollapsed));
         }
 
         function invalidateExpertNote() {
@@ -5287,7 +5275,7 @@
             const header = `
                 <header class="mc-header">
                     <div class="mc-header-main"><div class="mc-identity"></div><div class="mc-actions"></div></div>
-                    <aside class="mc-header-meta mc-profile" aria-label="专家资料"></aside>
+                    <div class="mc-header-meta mc-inline-info" aria-label="专家信息"></div>
                 </header>
             `;
             const timelineHead = `
@@ -9730,11 +9718,6 @@
                 : null;
             const data = button ? (button.dataset || {}) : {};
             const action = button ? data.action : "";
-            if (action === "mc-toggle-profile") {
-                instance.profileCollapsed = !instance.profileCollapsed;
-                syncProfileVisibility();
-                return;
-            }
             if (action === "mc-open-draft") { openServerDraft(data.draftId); return; }
             if (action === "mc-retry-draft") { retryDraft(); return; }
             if (action === "mc-reload-draft") { reloadDraft(); return; }
@@ -10487,6 +10470,7 @@
             // 04（I-3）：unmount 后迟到回包不得再写 DOM（applyReadAccessView 亦被 disposed 拦下）。
             instance.readAccess = nextReadAccessState(0, "idle", null);
             instance.disposed = true;
+            if (global.ConsoleMotion) global.ConsoleMotion.cancel(host.querySelector(".mc-list-viewport"));
             if (delegated) {
                 draftSaves.forEach((rec, key) => {
                     if (rec.user === instance.user && Number(rec.target.contactId) === fixedContactId) {
