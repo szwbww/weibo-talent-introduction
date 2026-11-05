@@ -1,7 +1,7 @@
 # Child Brief — 07-source-contract
 
 ## Identity and authority
-Worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master`; branch `fast/manual-reply-delay-master`. Product base `4e64c1f4da4eb5acdac282731f58f2798ab9ff5d`, not evidence HEAD. Exact master `docs/plans/2026-11-04/manual-reply-delay-master.md` and child `docs/plans/2026-11-04/manual-reply-delay-07-source-contract.md`, both approved identity `commit:45f517a3ee337dfa74eb33cb56cdb14f0ba09d69`. A23 applies prior user A15 source-contract authority; A24 makes this a prerequisite of the still-seven-file07 activation. Read the full exact plan and its source receipts before implementation. Epoch1/fix_round0. No human intervention or repair round is being invented.
+Worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master`; branch `fast/manual-reply-delay-master`. Product base `4e64c1f4da4eb5acdac282731f58f2798ab9ff5d`, not evidence HEAD. Exact master `docs/plans/2026-11-04/manual-reply-delay-master.md` and child `docs/plans/2026-11-04/manual-reply-delay-07-source-contract.md`, both approved identity `commit:525aeeb9e97241d5ad044f5662c75194db1a5944`. A23 applies prior user A15 source-contract authority; A24 precedes seven-file activation; A25/A26 adds one necessary existing-test compatibility under A5, without changing product scope. Read full current plan/receipts. Same epoch1/fix_round0; no human-intervention reset or product repair round.
 
 ## Authorized files
 1. src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt — preparation original-conversation metadata only, no activation.
@@ -14,6 +14,7 @@ Worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-
 8. src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt.
 9. src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyLifecycleIT.kt.
 10. src/test/js/mailboxDelayedReply.test.js.
+11. src/test/js/mailboxChatStyle.test.js — A26 only: retire old06-plan cache-key binding, keep shared-version/resource20/dialog DOM/CSS assertions, never repin a new literal or plan.
 No other files, CSS, database migration, permanent product class/API/editor, worker delivery change or plan edit. Additional concrete mismatch must be reported before editing outside scope; controller records any standing-authority amendment. Do not rewrite completed child logs or silently widen the file count.
 
 ## Contract and prior evidence
@@ -33,3 +34,7 @@ Run actual isolated browser and real API/MySQL/SMTP-path smoke for A-C1–A-C3, 
 
 ## Delivery
 Use execute-p; one writer and retained worktree. Commit only authorized product/tests as `feat(fast-p): implement 07-source-contract`, excluding fast-p artifacts. Append full execution to `docs/plans/fast/manual-reply-delay-master/children/07-source-contract/execution.md` (agent, product base, full implementation/code SHA, requirements, exact commands/env/counts/skips, runtime evidence, cleanup and limits). Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, SHA, command summary and report path. Fresh distinct verifier follows. No review-fast-p/verify-p/repair-p, push/merge/rebase/amend/reset/new worktree or final whole-plan PASS.
+
+## Approved compatibility amendment A26
+
+The observed fullJS2073/2074 failure reads its expected old cache key dynamically from06 plan (test598/607–610), so the earlier empty literal-key search did not prove no dependency. Authority is the existing A5 approval, recorded before touching this eleventh file. Product scope remains the original ten-file contract. Updated focused command: `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxChatStyle.test.js`; all other required commands/runtime remain mandatory after final edits. Preserve previous failed command receipts; do not relabel them as passes or weaken actual uniformity/resource/DOM assertions.
