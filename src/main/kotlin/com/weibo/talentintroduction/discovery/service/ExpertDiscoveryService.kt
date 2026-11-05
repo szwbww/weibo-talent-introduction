@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.weibo.talentintroduction.discovery.domain.PaperReprocessFailure
+
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
@@ -424,6 +426,16 @@ class ExpertDiscoveryService(
         executionId: Long?,
         includeRawScan: Boolean = discoveryProperties.includeRawScan
     ): DiscoveryResult {
+        val deadline = timeSource.now().plus(discoveryProperties.timeBudget)
+        return DiscoveryEsRetry.withContext(timeSource, { requestStop(deadline) != null }) {
+            discoverWithEsRetry(criteria, triggeredBy, executionId, includeRawScan, deadline)
+        }
+    }
+
+    private fun discoverWithEsRetry(
+        criteria: PaperSearchCriteria, triggeredBy: String, executionId: Long?,
+        includeRawScan: Boolean, deadline: Instant
+    ): DiscoveryResult {
         val stats = DiscoveryStats()
         val trafficSession = DiscoveryTrafficMeter.newSession()
         val execId = executionId
@@ -432,7 +444,6 @@ class ExpertDiscoveryService(
         // 不静默饿死后来源，也不把 0 当成无限量。
         validateRunQuota(sources, criteria)
         // I-3（09）：运行级 deadline。请求前与每页内检查，到点按 TIME_BUDGET 停止并保留进入页的检查点。
-        val deadline = timeSource.now().plus(discoveryProperties.timeBudget)
         val startTime = System.currentTimeMillis()
         // I-3: 结果与进度共用的终态；仅在正常路径赋值（异常路径由 catch 记录 FAILED 后重抛）。
         var terminalStatusOfRun = DiscoveryTerminalStatus.SUCCESS
@@ -2360,6 +2371,15 @@ class ExpertDiscoveryService(
         envelope: QueuedItemEnvelope,
         extractionJson: String,
         verification: DiscoveryVerificationExecution
+    ): QueuedItemConsumption = DiscoveryEsRetry.withContext(timeSource, {
+        verificationRegistration?.requirePaperPermission(verification)
+        verification.executionId?.let { progressStore.isCancelled("EXPERT_DISCOVERY", it) } == true
+    }) { consumeQueuedItemWithEsRetry(envelope, extractionJson, verification) }
+
+    private fun consumeQueuedItemWithEsRetry(
+        envelope: QueuedItemEnvelope,
+        extractionJson: String,
+        verification: DiscoveryVerificationExecution
     ): QueuedItemConsumption {
         if (envelope.payloadVersion != QUEUED_PAYLOAD_VERSION_V1) {
             return QueuedItemConsumption(unrecoverableReason = QUEUE_UNKNOWN_PAYLOAD_VERSION)
@@ -3726,7 +3746,9 @@ class ExpertDiscoveryService(
     private fun existsInRawIndexByOrcid(orcid: String): DedupResult {
         val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_doc/$orcid"
         return try {
-            restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
+            DiscoveryEsRetry.execute("RAW_EXISTS") {
+                restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
+            }
             DedupResult.Exists(orcid)
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error(false)
@@ -3745,7 +3767,10 @@ class ExpertDiscoveryService(
             "size" to 1,
             "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
         )
-        for (attempt in 1..OPENALEX_MAX_PAGE_ATTEMPTS) {
+        // A single loop owns the request budget: 403 gets three retries; existing transient
+        // failures retain their three-attempt policy. Never wrap this loop in another retry.
+        var sawForbidden = false
+        for (attempt in 1..4) {
             if (deadline != null && requestStop(deadline) != null) return DedupResult.Error(false)
             val started = timeSource.now()
             try {
@@ -3753,6 +3778,7 @@ class ExpertDiscoveryService(
                 com.fasterxml.jackson.databind.JsonNode::class.java).body
             val hits = response?.path("hits")
             val total = hits?.path("total")?.path("value")?.asInt(0) ?: 0
+            if (attempt > 1) log.info("event=DISCOVERY_ES_RETRY_RECOVERED operation=DEDUP attempts={}", attempt)
             return if (total > 0) {
                 DedupResult.Exists(hits?.path("hits")?.firstOrNull()?.path("_id")?.asText()?.takeIf { it.isNotBlank() }, hits?.path("hits")?.firstOrNull()?.path("_source"))
             } else {
@@ -3760,10 +3786,28 @@ class ExpertDiscoveryService(
             }
             } catch (e: Exception) {
                 if (e is HttpClientErrorException && e.statusCode == HttpStatus.NOT_FOUND) return DedupResult.NotFound
-                val retryable = (e is HttpStatusCodeException && (e.statusCode.value() == 429 || e.statusCode.value() in 500..599)) ||
+                val forbidden = DiscoveryEsRetry.isForbidden(e)
+                sawForbidden = sawForbidden || forbidden
+                val transientFailure = (e is HttpStatusCodeException && (e.statusCode.value() == 429 || e.statusCode.value() in 500..599)) ||
                     isRetryableOpenAlexFailure(e)
+                // A later 5xx must not restart a fresh deferred retry budget after a 403 episode.
+                val retryable = if (forbidden) attempt < 4 else
+                    transientFailure && (!sawForbidden || attempt < OPENALEX_MAX_PAGE_ATTEMPTS)
                 recordRequestFailure(sourceStats, "DEDUP", e, started, batchNumber, attempt, retryable)
-                if (!retryable || attempt == OPENALEX_MAX_PAGE_ATTEMPTS) return DedupResult.Error(retryable)
+                if (forbidden) {
+                    PaperReprocessFailure.log("DISCOVERY_ES_FORBIDDEN_DEDUP", e)
+                    if (attempt == 4) {
+                        log.warn("event=DISCOVERY_ES_RETRY_EXHAUSTED operation=DEDUP attempts=4 status=403")
+                        return DedupResult.Error(false)
+                    }
+                    try {
+                        DiscoveryEsRetry.waitAfterForbidden("DEDUP", attempt, timeSource) {
+                            requestStop(deadline ?: Instant.MAX) != null
+                        }
+                    } catch (_: DiscoveryEsRetryStoppedException) { return DedupResult.Error(false) }
+                    continue
+                }
+                if (!retryable || attempt >= OPENALEX_MAX_PAGE_ATTEMPTS) return DedupResult.Error(retryable)
                 val stop = waitForOpenAlexRetry(attempt, deadline ?: Instant.MAX)
                 if (stop != null) return DedupResult.Error(false)
             }

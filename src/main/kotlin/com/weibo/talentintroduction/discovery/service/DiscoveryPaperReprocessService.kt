@@ -343,7 +343,7 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                 if (cancelled) "CANCELLED" else "LEASE_LOST")
             publish(id)
         } catch (e: Exception) {
-            log.warn("Paper reprocess execution {} stopped ({})", id, e.javaClass.simpleName)
+            PaperReprocessFailure.log("PAPER_REPROCESS_STOPPED", e, id)
             repository.finish(id, token, run.generation, ReprocessState.FAILED,
                 if (e is ReprocessException) e.code else "EXECUTION_FAILED")
             publish(id)

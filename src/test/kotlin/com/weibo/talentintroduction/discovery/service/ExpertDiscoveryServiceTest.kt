@@ -2849,6 +2849,112 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `ES forbidden recovery keeps same query and consumes page once`() {
+        val time = FakeTime()
+        val svc = createService(timeSource = time)
+        val p = paper("PMC403", "Forbidden recovery")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        installInMemoryCursorStore()
+        val requests = mutableListOf<Any?>()
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument<HttpEntity<*>>(2).body
+            if (requests.size < 4) throw HttpClientErrorException(HttpStatus.FORBIDDEN)
+            ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}"""))
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
+        assertEquals(4, requests.size)
+        assertEquals(1, requests.distinct().size)
+        assertEquals(17_000L, time.sleeps.sum())
+        assertEquals(1, result.stats.indexed)
+        assertEquals(0, result.stats.bySource["EUROPE_PMC"]!!.dedupErrors)
+        assertTrue(storedCheckpointFor("EUROPE_PMC").exhausted)
+        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    @Test
+    fun `persistent ES forbidden stops after four requests without deferred retries or cursor advance`() {
+        val time = FakeTime()
+        val svc = createService(timeSource = time)
+        val p = paper("PMC403", "Forbidden exhaustion")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p), "NEXT", 2))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        installInMemoryCursorStore()
+        var calls = 0
+        Mockito.doAnswer {
+            calls++; throw HttpClientErrorException(HttpStatus.FORBIDDEN)
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
+        val source = result.stats.bySource["EUROPE_PMC"]!!
+        assertEquals(4, calls); assertEquals(17_000L, time.sleeps.sum())
+        assertEquals(0, result.stats.indexed)
+        assertEquals(1, source.dedupErrors)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+        assertFalse(source.lastFailure!!.retryable)
+        assertNull(source.retry)
+        assertEquals(CheckpointState.ACTIVE, storedCheckpointFor("EUROPE_PMC").state)
+        assertNull(storedCheckpointFor("EUROPE_PMC").cursor)
+    }
+
+    @Test
+    fun `ES retry cancellation and deadline prevent a second query and preserve checkpoint`() {
+        for (deadline in listOf(false, true)) {
+            setUp()
+            val time = FakeTime()
+            val props = if (deadline) discoveryProperties.copy(timeBudget = java.time.Duration.ofMillis(500)) else discoveryProperties
+            val svc = createService(props, timeSource = time)
+            DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC403", "Cancel")), "NEXT", 2))
+            DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+                listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+            DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+            if (!deadline) Mockito.doAnswer { time.sleeps.sum() >= 500L }.`when`(progressStore).isCancelled(Mockito.anyString())
+            installInMemoryCursorStore()
+            var calls = 0
+            Mockito.doAnswer { calls++; throw HttpClientErrorException(HttpStatus.FORBIDDEN) }.`when`(restTemplate)
+                .exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
+            assertEquals(1, calls)
+            assertEquals(500L, time.sleeps.sum())
+            assertEquals(0, result.stats.indexed)
+            assertFalse(storedCheckpointFor("EUROPE_PMC").exhausted)
+            assertNull(storedCheckpointFor("EUROPE_PMC").cursor)
+        }
+    }
+
+    @Test
+    fun `ES mixed forbidden and server failure cannot start a deferred retry budget`() {
+        val time = FakeTime()
+        val svc = createService(timeSource = time)
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC403", "Mixed")), "NEXT", 2))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        installInMemoryCursorStore()
+        var calls = 0
+        Mockito.doAnswer {
+            calls++
+            throw HttpClientErrorException(if (calls < 4) HttpStatus.FORBIDDEN else HttpStatus.SERVICE_UNAVAILABLE)
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
+        val source = result.stats.bySource["EUROPE_PMC"]!!
+        assertEquals(4, calls); assertEquals(17_000L, time.sleeps.sum())
+        assertEquals(0, result.stats.indexed)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+        assertFalse(source.lastFailure!!.retryable)
+        assertNull(source.retry)
+        assertFalse(storedCheckpointFor("EUROPE_PMC").exhausted)
+    }
+
+    @Test
     fun `dedup failure keeps active entering cursor for every page cursor combination`() {
         val observations = mutableListOf<Map<String, Any?>>()
         for (entering in listOf(null, "ENTERING-PAGE")) {

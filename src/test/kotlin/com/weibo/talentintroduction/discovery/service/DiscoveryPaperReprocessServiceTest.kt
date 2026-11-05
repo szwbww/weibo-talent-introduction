@@ -35,6 +35,25 @@ class DiscoveryPaperReprocessServiceTest {
         assertFalse(result.toString().contains("alice@example.com"))
     }
 
+    @Test fun `HTTP failure receipt records safe status and gateway markers without response secrets`() {
+        val headers = org.springframework.http.HttpHeaders().also {
+            it.add("Server", "qcloud"); it.add("X-Request-Id", "req-123"); it.add("Set-Cookie", "secret-cookie")
+        }
+        val error = org.springframework.web.client.HttpClientErrorException.create(
+            org.springframework.http.HttpStatus.FORBIDDEN, "secret-status", headers,
+            "{\"error\":{\"type\":\"security_exception\",\"reason\":\"secret-email@example.com\"}}".toByteArray(), Charsets.UTF_8)
+        val result = jacksonObjectMapper().createObjectNode()
+        PaperReprocessFailure.record(result, error, 12, 34)
+        val cause = result.path("failure").path("causes")[0]
+        assertEquals(403, cause.path("httpStatus").asInt())
+        assertEquals("qcloud", cause.path("server").asText())
+        assertEquals("req-123", cause.path("requestId").asText())
+        assertEquals("security_exception", cause.path("esErrorType").asText())
+        listOf("secret-cookie", "secret-status", "secret-email@example.com").forEach {
+            assertFalse(result.toString().contains(it))
+        }
+    }
+
     @Test fun `readonly preview and detail expose persisted counts units overlap and proposal semantics without parsing`() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
         val repository = Mockito.mock(DiscoveryPaperReprocessRepository::class.java)

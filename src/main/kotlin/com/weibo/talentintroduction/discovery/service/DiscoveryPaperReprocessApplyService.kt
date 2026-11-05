@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.weibo.talentintroduction.discovery.archive.*
+import com.weibo.talentintroduction.config.PolicyTimeSource
 import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.repository.*
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.client.RestClientException
 import java.time.Instant
 import java.util.concurrent.CancellationException
 
@@ -47,6 +49,13 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
 
     /** false leaves a persisted RUNNING/REVIEW wait. No page or process-local flag is authority. */
     internal fun apply(initialParent: ReprocessRun): Boolean {
+        return DiscoveryEsRetry.withContext(PolicyTimeSource.SYSTEM, {
+            repository.requirePermission(initialParent)
+            false
+        }) { applyCurrent(initialParent) }
+    }
+
+    private fun applyCurrent(initialParent: ReprocessRun): Boolean {
         var parent = repository.requirePermission(initialParent)
         val context = registration.beginFromPaperReprocess(parent)
         resumeOwnedQualification(parent)
@@ -278,6 +287,25 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
     }
 
     private fun observe(parent: ReprocessRun, target: ReprocessItem, result: ObjectNode) {
+        try {
+            if (result.path("observationError").asBoolean()) {
+                result.remove(listOf("observationError", "failure", "reasonCode", "reason"))
+                result.put("retryable", false)
+            }
+            observeCurrent(parent, target, result)
+        } catch (e: RestClientException) {
+            repository.requirePermission(parent)
+            // RAW/admission writes already have durable receipts. A read failure must not replay them or stop peers.
+            PaperReprocessFailure.record(result, e, parent.executionId, target.id)
+            result.put("observationError", true).put("retryable", true).put("reasonCode", "OBSERVATION_FAILED")
+                .put("reason", "核验结果读取失败，已生效收据保留；重试仅重新读取结果")
+            trace(result, 5, "ERROR")
+            save(parent, target, result)
+            complete(parent, target, result, ReprocessItemState.ERROR)
+        }
+    }
+
+    private fun observeCurrent(parent: ReprocessRun, target: ReprocessItem, result: ObjectNode) {
         val childId = result.path("childRunId").takeIf { it.isIntegralNumber }?.asLong()
         val ordinaryId = result.path("verificationItemId").takeIf { it.isIntegralNumber }?.asLong()
         val item = ordinaryId?.let(verification::findItem) ?: childId?.let { id ->

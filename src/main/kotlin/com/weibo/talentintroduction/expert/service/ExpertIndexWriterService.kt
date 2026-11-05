@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.discovery.service.DiscoveryEsRetry
+
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -614,12 +616,9 @@ class ExpertIndexWriterService(
         val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid" +
             if (DiscoveryIdentity.isDiscoveryMap(profile)) "?op_type=create" else ""
         return try {
-            restTemplate.exchange(
-                putUrl,
-                HttpMethod.PUT,
-                HttpEntity(profile, headers()),
-                JsonNode::class.java
-            )
+            val request = { restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(profile, headers()), JsonNode::class.java) }
+            if (DiscoveryIdentity.isDiscoveryMap(profile)) DiscoveryEsRetry.execute("RAW_CREATE", request)
+            else request()
             true
         } catch (e: Exception) {
             log.warn("Failed to index orcid={} to raw index", orcid, e)
@@ -704,10 +703,10 @@ class ExpertIndexWriterService(
     fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
         val index = expertIndexService.indexName(level)
         val response = try {
-            restTemplate.exchange(
+            DiscoveryEsRetry.execute("DISCOVERY_GET") { restTemplate.exchange(
                 "${properties.baseUrl}/$index/_doc/$docId", HttpMethod.GET,
                 HttpEntity(null, headers()), JsonNode::class.java
-            ).body ?: error("Empty ES GET response for $level/$docId")
+            ) }.body ?: error("Empty ES GET response for $level/$docId")
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) return null
             throw e
@@ -736,10 +735,10 @@ class ExpertIndexWriterService(
                 "externalIds", "emailSource", "tags", "orcidId"
             )
         )
-        val response = restTemplate.exchange(
+        val response = DiscoveryEsRetry.execute("IDENTITY_EMAIL_SEARCH") { restTemplate.exchange(
             "${properties.baseUrl}/$indices/_search?ignore_unavailable=true",
             HttpMethod.POST, HttpEntity(query, headers()), JsonNode::class.java
-        ).body ?: error("Empty ES _search response for email lookup")
+        ) }.body ?: error("Empty ES _search response for email lookup")
         // R-4（V-28）：唯一性用途的搜索必须确认**正常完整结束** —— timeout / failed shard / 缺必要结构
         // 一律不可用，绝不从一个可见 hit 推断「唯一 doc」后写 proof。
         if (response.isNull || response.isMissingNode) {
@@ -879,7 +878,7 @@ class ExpertIndexWriterService(
         if (source.isEmpty()) return DiscoveryCandidateProjection.SOURCE_MISSING
 
         val alreadyApplied = try {
-            documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+            DiscoveryEsRetry.execute("DISCOVERY_APPLICATION_EXISTS") { documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId) }
         } catch (e: Exception) {
             log.warn("Failed to check APPLICATION existence for esDocId={} during projection", docId, e)
             return DiscoveryCandidateProjection.WRITE_FAILED
@@ -910,7 +909,9 @@ class ExpertIndexWriterService(
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId?op_type=create"
         return try {
-            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, headers()), JsonNode::class.java)
+            DiscoveryEsRetry.execute("CANDIDATE_CREATE") {
+                restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, headers()), JsonNode::class.java)
+            }
             DiscoveryCandidateProjection.PROJECTED
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.CONFLICT) {
@@ -969,9 +970,9 @@ class ExpertIndexWriterService(
         val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
         val body = mapOf("doc" to mapOf("identityVerification" to proof))
         return try {
-            val response = restTemplate.exchange(
+            val response = DiscoveryEsRetry.execute("IDENTITY_PROOF_CAS") { restTemplate.exchange(
                 url, HttpMethod.POST, HttpEntity(body, headers()), JsonNode::class.java
-            ).body ?: return IdentityProofWriteResult.FAILED
+            ) }.body ?: return IdentityProofWriteResult.FAILED
             if (response.path("result").asText() == "updated") IdentityProofWriteResult.UPDATED
             else IdentityProofWriteResult.FAILED
         } catch (e: HttpClientErrorException) {
@@ -1010,9 +1011,9 @@ class ExpertIndexWriterService(
         val index = expertIndexService.indexName(level)
         val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
         return try {
-            val response = restTemplate.exchange(
+            val response = DiscoveryEsRetry.execute("NAME_PROOF_CAS") { restTemplate.exchange(
                 url, HttpMethod.POST, HttpEntity(mapOf("doc" to doc), headers()), JsonNode::class.java
-            ).body ?: return IdentityProofWriteResult.FAILED
+            ) }.body ?: return IdentityProofWriteResult.FAILED
             if (response.path("result").asText() == "updated") IdentityProofWriteResult.UPDATED
             else IdentityProofWriteResult.FAILED
         } catch (e: HttpClientErrorException) {

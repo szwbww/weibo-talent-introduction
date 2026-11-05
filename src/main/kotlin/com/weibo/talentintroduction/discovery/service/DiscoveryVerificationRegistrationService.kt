@@ -279,6 +279,7 @@ class DiscoveryVerificationRegistrationService(
         } catch (e: Exception) {
             val cancellation = cancellationCause(e)
             if (cancellation != null) throw cancellation
+            PaperReprocessFailure.log("DISCOVERY_REGISTRATION_RESERVE_FAILED", e, context.executionId)
             throw DiscoveryRegistrationException(e)
         }
     }
@@ -383,7 +384,10 @@ class DiscoveryVerificationRegistrationService(
                 val activated = repository.activateItem(item.id, (count / 100 + 1).toInt(), clock.instant())
                 traces.initSteps(activated.id, clock.instant())
             }
-        } catch (e: Exception) { throw DiscoveryRegistrationException(e) }
+        } catch (e: Exception) {
+            PaperReprocessFailure.log("DISCOVERY_REGISTRATION_ACTIVATE_FAILED", e, item.ownerExecutionId)
+            throw DiscoveryRegistrationException(e)
+        }
     }
 
     /** Only an existing reservation with the exact RAW identity and source may be recovered. */
@@ -392,7 +396,10 @@ class DiscoveryVerificationRegistrationService(
             repository.findItemsByDocIds(listOf(docId)).filter {
                 it.state == VerificationState.RESERVED && it.sourceName == sourceName && it.sourceItemKey == sourceItemKey
             }.forEach { recover(it) }
-        } catch (e: Exception) { throw DiscoveryRegistrationException(e) }
+        } catch (e: Exception) {
+            PaperReprocessFailure.log("DISCOVERY_REGISTRATION_RECOVER_FAILED", e)
+            throw DiscoveryRegistrationException(e)
+        }
     }
 
     private fun recover(item: VerificationItem): Boolean {

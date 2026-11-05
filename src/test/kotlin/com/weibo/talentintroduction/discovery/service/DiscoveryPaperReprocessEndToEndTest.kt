@@ -139,6 +139,27 @@ class DiscoveryPaperReprocessEndToEndTest {
         }
     }
 
+    @Test fun `child observation HTTP failure preserves peers and explicit retry recovers receipts`() {
+        Harness().use { h ->
+            h.seedBatchedSource()
+            val run = h.create(Harness.CHILD_SOURCE)
+            h.apply.afterEffect = { point -> if (point == "AFTER_START") h.failObservationReads = true }
+            h.pump(run.executionId, ReprocessState.COMPLETED_WITH_ERRORS)
+            val failed = h.targets(run.executionId).filter { it.result?.path("observationError")?.asBoolean() == true }
+            assertTrue(failed.isNotEmpty())
+            assertTrue(failed.all { it.result!!.path("applied").asBoolean() })
+            assertTrue(failed.all { it.result!!.path("failure").path("causes").any { c -> c.path("httpStatus").asInt() == 503 } })
+            assertTrue(h.repository.summary(run.executionId).targetComplete >= 100)
+            val writes = h.rawWrites
+            h.failObservationReads = false
+            h.apply.afterEffect = {}
+            val retried = h.service.retry(run.executionId, h.repository.find(run.executionId)!!.revision)
+            h.pump(retried.executionId, ReprocessState.COMPLETED)
+            assertEquals(writes, h.rawWrites)
+            assertFalse(h.targets(retried.executionId).any { it.result?.path("observationError")?.asBoolean() == true })
+        }
+    }
+
     @Test fun `partial paper failure admits successful peers and followup adds recovered expert without duplicate RAW`() {
         Harness().use { h ->
             h.seedMainSource()
@@ -464,6 +485,7 @@ class DiscoveryPaperReprocessEndToEndTest {
         val failRawDocs = mutableSetOf<String>()
         val failCandidateDocs = mutableSetOf<String>()
         val providerUris = mutableListOf<String>()
+        @Volatile var failObservationReads = false
         var rawWrites = 0
         val esExecutor = Executors.newCachedThreadPool()
         val server = ESFixture(this)
@@ -522,6 +544,12 @@ class DiscoveryPaperReprocessEndToEndTest {
             server.start()
             props = f.esProperties.copy(baseUrl = "http://127.0.0.1:${server.port}")
             val esHttp = RestTemplate()
+            esHttp.interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { request, bytes, execution ->
+                if (failObservationReads && Thread.currentThread().name == "paper-reprocess-audit" &&
+                    request.method == org.springframework.http.HttpMethod.GET && request.uri.path.startsWith("/raw/_doc/"))
+                    throw org.springframework.web.client.HttpServerErrorException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                execution.execute(request, bytes)
+            })
             val indices = ExpertIndexService(props, esHttp, mapper)
             writer = ExpertIndexWriterService(esHttp, props, indices, mapper,
                 Mockito.mock(ExpertPromotionAuditService::class.java), contacts)

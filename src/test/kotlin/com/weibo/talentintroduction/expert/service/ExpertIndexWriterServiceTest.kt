@@ -26,6 +26,58 @@ import org.mockito.Mockito
 import java.time.LocalDateTime
 
 class ExpertIndexWriterServiceTest {
+    private class RetryTime : com.weibo.talentintroduction.config.PolicyTimeSource {
+        var elapsed = 0L
+        override fun now() = java.time.Instant.EPOCH.plusMillis(elapsed)
+        override fun sleep(ms: Long) { elapsed += ms }
+    }
+
+    @Test
+    fun `discovery RAW create retries only forbidden and preserves create request`() {
+        val time = RetryTime()
+        val doc = mapOf<String, Any?>("emailSource" to "PAPER_FULLTEXT", "email" to "test@example.org")
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.FORBIDDEN))
+            .thenReturn(ResponseEntity(mapper.readTree("{}"), HttpStatus.CREATED))
+        assertTrue(com.weibo.talentintroduction.discovery.service.DiscoveryEsRetry.withContext(time, { false }) {
+            service.indexToRaw("doc", doc)
+        })
+        val bodies = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate, Mockito.times(2)).exchange(
+            eq("https://es.example.com:9200/orcid_info/_doc/DOC?op_type=create"), eq(HttpMethod.PUT), bodies.capture(), eq(JsonNode::class.java))
+        assertTrue(bodies.allValues.all { it.body == doc })
+        assertEquals(2_000L, time.elapsed)
+    }
+
+    @Test
+    fun `discovery GET repeated forbidden is not missing and non discovery RAW is not retried`() {
+        val time = RetryTime()
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.FORBIDDEN))
+        assertThrows(HttpClientErrorException::class.java) {
+            com.weibo.talentintroduction.discovery.service.DiscoveryEsRetry.withContext(time, { false }) {
+                service.readDiscoveryDocument(ExpertIndexLevel.RAW, "doc")
+            }
+        }
+        Mockito.verify(restTemplate, Mockito.times(4)).exchange(Mockito.anyString(), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+        assertEquals(17_000L, time.elapsed)
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.FORBIDDEN))
+        assertFalse(service.indexToRaw("manual", mapOf("email" to "test@example.org")))
+        Mockito.verify(restTemplate).exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
+    fun `cancelled discovery write wait issues no additional create`() {
+        val time = RetryTime()
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.FORBIDDEN))
+        assertFalse(com.weibo.talentintroduction.discovery.service.DiscoveryEsRetry.withContext(time, { time.elapsed >= 250L }) {
+            service.indexToRaw("doc", mapOf("emailSource" to "PAPER_FULLTEXT"))
+        })
+        Mockito.verify(restTemplate).exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+        assertEquals(250L, time.elapsed)
+    }
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
     private val mapper = ObjectMapper()
     private val properties = ElasticsearchProperties(
