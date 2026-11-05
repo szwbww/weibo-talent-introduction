@@ -168,7 +168,7 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 | 03 | [事务状态机与草稿](manual-reply-delay-03-lifecycle.md) | 12（A2/A3/A5/A6） | 02 |
 | 04 | [后台执行与操作 API](manual-reply-delay-04-worker-api.md) | 9（A7/A8/A9/A10） | 03 |
 | 05 | [会话读模型](manual-reply-delay-05-query.md) | 10（A11–A14） | 04 |
-| 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 18（A15–A20：11特批＋7既有测试兼容） | 05 |
+| 06 | [前端操作与状态](manual-reply-delay-06-frontend.md) | 20（A15–A22：11特批＋9既有测试兼容） | 05 |
 | 07 | [入口接通与集成验收](manual-reply-delay-07-activation.md) | 7（A4） | 06 |
 
 技术契约与每步具体任务在子计划正文中。共同门禁为 I-1～I-11，子计划不得用测试 mock 覆盖掉真实事务边界。
@@ -304,4 +304,6 @@ O-4 普通回复撤回后恢复原草稿与附件。已审核回复撤回后保�
 - A17/A18（适用已批准A5「授权必要测试兼容修订并持续执行」及A15同类契约补齐）：06新增performance.now轮询与SVG要求暴露既有mailboxChatBehavior/mailboxReadOnly测试宿主缺单调时钟、namespace DOM和周期定时器清理的具体失配；仅授权两个既有测试修复宿主能力/teardown，保留业务断言，文件数11→13（无新增产品范围，仍两个子系统）。同时更正S-4的资源计数笔误：Impl06Epoch2实际grep `\?v=` 返回CSS7项、JS13项共20项；必须全保留、统一版本值、数量不变，不能删除一项凑旧19。该事实修正不降低资源一致性验收，完整grep回执由06 execution.md保留，身份见ledger A17/A18。
 
 - A19/A20（适用已批准A5）：真实受影响测试运行artifact2329为436项/432通过/4失败，暴露mailboxMailReadAccess/mailboxOutboundAttachments无界timer drain导致RangeError，以及mailboxReplyIdentity缺新closure state；全JS定向grep又确认mailboxSuspension/meetingConfirmationIntegration相同timer/clock缺口。仅授权这五个既有测试宿主的performance/单macrotask drain/直接closure依赖修订，保留业务断言；已有mailboxReadOnly中被新focus刷新合同替代的“不刷新”断言删除而非改计数凑绿，其DOM/scroll/权限coalescing断言保留。06文件数13→18，增加均为同前端子系统既有测试，不新增产品范围/行为。记录已失败运行与中断Maven，不把它们计作通过；最终新鲜检查仍必须完成。身份见ledger A19/A20。
+
+- A21/A22（适用已批准A5）：必跑Maven的controller13/13通过，但全JS2054项/2037通过/17失败（artifact2339）；authFlow既有extractFn sandbox缺新增legacyDelayedReplies Map产生15项ReferenceError，mailReviewReader旧focus“只请求access”断言与T3矛盾。仅新增两测试文件授权：前者补Map依赖并保留auth断言，后者删除过时唯一请求断言/专用start变量且保留编辑器身份/正文/CAS/reload断言；不改生产范围或重钉请求数。其余一项为新增自有样式测试重复key literal，在原授权文件内纠正，taskActivityCenter.test.js不扩围。06文件数18→20，仍只增加既有测试兼容；最终新鲜全部检查与浏览器证据不可豁免。
 
