@@ -7,11 +7,10 @@ Worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-d
 1. src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt
 2. src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt
 3. src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt
-4. src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt
-5. src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt
-6. src/main/resources/application.yml
-7. src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplyDelayEndToEndIT.kt (new)
-8. src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt
+4. src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt
+5. src/main/resources/application.yml
+6. src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplyDelayEndToEndIT.kt (new)
+7. src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt
 No other product/test files or plan modifications. Preserve any pre-existing application.yml edits and add only the target option. Unauthorized dependency changes require PLAN_CONFLICT.
 
 ## Contract
@@ -35,3 +34,12 @@ Use execute-p. One writer, no push/merge/rebase/amend/reset. Local implementatio
 
 The approved child 07 plan at commit ea61d579425e894ee37c600f599beef1fdb46395 supersedes the earlier eight-file list: remove `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt` from modification authority (seven files remain). Child 03 owns and implements `MailReviewSendRequest.delayExpectedRevision` plus CANCELLED preparation validation; 07 only consumes/forwards it through MailReviewSendService and proves the integrated behavior. Do not re-add or change a parallel DTO field. User authorizes continuous execution through READY_FOR_HUMAN_REVIEW, explicitly not review-fast-p.
 
+
+## Prior outputs and bounded standing authority
+
+- Plans/ledger remain authoritative. Latest master identity is commit:a5c1ddb90e92b5aef7bf8f16b031dd4d51c49b80; approved07 identity remains commit:ea61d579425e894ee37c600f599beef1fdb46395. The current seven-file list above incorporates A4; no DTO duplication is authorized.
+- Terminal06 product base is `4e64c1f4da4eb5acdac282731f58f2798ab9ff5d`. Reverify06Round1 returned LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD and closed F06-01 (restored edited raw-template resurrection). Fresh focused153/affected613/controller13/fullJS2065/syntax16 passed. Runtime archive `local://reverify06-epoch2-attempt2-round1-evidence.tar.gz` and prior archives referenced there contain isolated app/MySQL/SMTP/browser startup sources and genuine UI/MIME receipts; all owned services stopped. Reuse fixture infrastructure, not prior results as new07 acceptance.
+- 04 actual SMTP proof used controlled lifecycle collaborators plus separate MySQL CAS tests;05 real API/query/MySQL proof stubbed SMTP;06 public send remained synchronous before07. None waive07's integrated controller/session→queue→worker→finalization, true60-second or restart acceptance.
+- Known03 baseline: `MailReviewQueryIT` existing size100 constant-batch query assertion failed at old line239 and was independently reproduced at02 base72906c0c5e36393429320817ea0de4f7d6f3ff05. Preserve classification; do not rerun to establish that known failure or repair unrelated code. Old installed11.0.15 tzdb also lacks America/Coyhaique; previous isolated runtime used installed Zulu11.0.32.1 (same Java major), while mandatory Maven checks used specified zulu-11. Report actual runtime and required-command environments.
+- User's standing approvals A5, A11 and A15 allow evidence-backed necessary existing-test compatibility, existing internal visibility/pure bounded batch readers, and missing source/status/response contract fields plus direct validation/tests, respectively. Before any outside-seven-file edit, send exact mismatch/source evidence, proposed bounded files and contract/commands to the controller for an explicit plan+ledger amendment commit. No silent scope change, security weakening, schema expansion or new business behavior. Broader decisions still require human authority. This does not authorize changing completed-child logs.
+- Resolve02's recorded no-draft conversation limitation against all approved supported inputs without silently making draftRef mandatory or falling back to synchronous delivery when enabled. If additional source metadata is genuinely required, report the exact evidence and necessary bounded seam under the standing authority before editing outside this list.
