@@ -15,6 +15,15 @@ Worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-d
 9. src/test/js/mailboxChatStyle.test.js
 10. src/main/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyController.kt (A16: restore-only authoritative source contract)
 11. src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt (A16: source return/validation and preserved permission regressions)
+12. src/test/js/mailboxChatBehavior.test.js (A18: existing clock/timer harness compatibility, original assertions preserved)
+13. src/test/js/mailboxReadOnly.test.js (A18/A20: clock/SVG/timer harness compatibility; delete superseded focus-no-refresh assertion, preserve other DOM/scroll/access-coalescing assertions)
+14. src/test/js/mailboxMailReadAccess.test.js (A20: performance and single-macrotask timer drain only)
+15. src/test/js/mailboxOutboundAttachments.test.js (A20: performance and single-macrotask timer drain only)
+16. src/test/js/mailboxReplyIdentity.test.js (A20: directly required extractFn closure fixture dependencies only)
+17. src/test/js/mailboxSuspension.test.js (A20: performance and single-macrotask timer drain only)
+18. src/test/js/meetingConfirmationIntegration.test.js (A20: performance and single-macrotask timer drain only)
+19. src/test/js/authFlow.test.js (A22: directly required legacyDelayedReplies Map sandbox dependency only)
+20. src/test/js/mailReviewReader.test.js (A22: remove superseded focus-only-access assertion/start capture, preserve editor/content/CAS/reload assertions)
 No other files, no plan modifications. Scope expansion requires a specific PLAN_CONFLICT, not silent test weakening. Prior reports are under docs/plans/fast/manual-reply-delay-master/children/01-storage through 05-query.
 
 ## Required behavior and invariants
@@ -44,4 +53,25 @@ Use execute-p. One writer, no push/merge/rebase/amend/reset. Commit only authori
 - Required controller regression plus existingNode/browserproof all stillrequired. Completed01–05logs stayunchanged. Actual06browser uses real04/05API+isolatedSMTP anddesktop/narrowscreenshots; noearly07activation/fakeUI.
 - A5 existing-test compatibility, A11 internal visibility/pure-batch-read and A15 narrowly necessary missing source/status/response contract completion are preapproved only within their explicit master bounds. Report exact evidence/files/interface to controller for recorded amendment before unlisted edits. No new business/compatibilitybreak/schema/safetyweakening.
 - Append epoch2execution; fix_round0. Continue through07aftercleancheckpoint; neverreview-fast-p.
+
+
+## Epoch 2 — A17/A18 harness and factual baseline correction
+
+- Latest master/06 identity `commit:801bb85329dab0ddfa06e1b93e124a6c4bf20fe9`. Prior A5/A15 authority applied to exact reported compatibility evidence; sameepoch2/fix0.
+- Authorized set13files: prior11 plus two existingJS test harnesses only for performance.now/SVG namespace/timer cleanup. Preserve original assertions; include both in affected test command set and ensure Node exits.
+- Current index has20existing versioned references (7CSS+13JS), not originalplan's mistaken19. Preserveall20, samecount and uniform20261104-manual-reply-delay; no resource removal. Include actual full grep receipt in execution. LiteralCSS/DOM contract otherwise unchanged.
+
+
+## Epoch 2 — A19/A20 copied harness compatibility
+
+- Latest master/06 identity `commit:4d8e42200b8c61ca49f51dd62ac4416d72ae2231`, authorized18files; added5existingtest fixtures only underA5. Actual affected test432/436 and exactcopiedharnessgrep are evidence; retain them and interruptedMaven honestly.
+- Fix mandatoryclock, execute one current macrotask snapshot perdrain (do not discard callbackunderassertion), directextractFnclosuredependencies andproperteardown. Preservebusinessassertions. ExistingReadonly obsolete focus-does-not-refresh assertion is removed, not count4→6 repinned; DOM/scroll/accesscoalescing remains.
+- All newcompatibilityfiles enter affectedtestcommandset; final fresh mandatorychecks/browser stillrequired. No new delayed-jobUNKNOWN lock weakening; record any legacy-attempt distinction precisely forverifier. Sameepoch2/fix0.
+
+
+## Epoch 2 — A21/A22 observed auth/review compatibility
+
+- Latest master/06 identity `commit:a5c1ddb90e92b5aef7bf8f16b031dd4d51c49b80`, authorized20files; two newexistingtestpaths only underA5. FullJS2037/2054 failures/controller13pass fromartifact2339 remain recorded, not overallpass.
+- authFlow gets onlymissingMap closurefixture; mailReviewReader obsolete only-access focusassertion/startcapture removed, not repinned. All otherauth/editor/content/CAS/reloadassertions retained. taskActivityCenter.test.js staysrun-only; ownnewtest duplicatedkey fix withinoriginalscope.
+- Addboth to affectedtests, obtainfinalfreshchecks/browser. Sameepoch2/fix0, no productauthority expansion.
 
