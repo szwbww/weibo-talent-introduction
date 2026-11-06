@@ -2,13 +2,15 @@
 
 Authority: `docs/plans/2026-11-04/manual-reply-delay-master.md`, A-1–A-12. This is **agent-operated execution evidence**, not human acceptance, independent verification, overall PASS, or production rollout. Human sign-off remains pending. Production default remains disabled.
 
+Current disposition (2026-11-06): all twelve items have their assigned execution evidence. The original A5 negative below is historical; its unchanged native acceptance requirement is now covered by independent08 evidence in the closing section. Human acceptance and whole-master review remain pending.
+
 The first operator, `Impl07FinalActivation`, began acceptance and exported `acceptance-checklist.json`; it contains start-time NOT_RUN entries, not final results. That original file is preserved. This requested Markdown export was produced during continuation by `Resume07FinalActivation` on 2026-11-06; no earlier Markdown export is claimed. Runtime logs carry their actual UTC epoch and Asia/Shanghai display timestamps (some UTC dates are 2026-11-05).
 
 Evidence root: retained `/tmp/impl07-activation-epoch1-fix0`, copied into the durable archive identified by the final 07 execution report. Names below are relative to that evidence root. Earlier successes are attributed, not represented as newly rerun. Earlier failed trials remain alongside their later successful completion.
 
 Environment: real production Spring application, session/controller/transaction/repository chain, MySQL 8.0, fixed 60,000-ms delay, isolated loopback controlled SMTP with MIME capture. Continuation added real isolated Elasticsearch 7.17.26 and standalone GreenMail 2.1.3 SMTP/IMAP servers; the application consumes their actual protocols, not mocked business services. Java runtime is installed Zulu 11.0.32.1; required Maven checks use specified Zulu 11.0.15. No production recipient or deployment.
 
-## Checklist
+## Historical 07 execution checklist
 
 | Item | Executed checklist | Operator / date | Actual result and evidence |
 |---|---|---|---|
@@ -25,7 +27,7 @@ Environment: real production Spring application, session/controller/transaction/
 | A-11 Layout/keyboard | [x] Execution evidence collected | Impl07FinalActivation + Resume07FinalActivation / 2026-11-05–06 | Prior actual1440px icon17px/#c53e32,390px no overflow, mobile confirmation hit areas44px. Continuation real Tab traversal focused failure icon and made public tooltip visible (opacity1, visibility visible); separate native confirmation Tab focused confirm-submit in the same translation footer. `A11-desktop.json/png`, `A11-mobile.json/png`, `A11-mobile-confirm.png`, `A11-resume-native-keyboard.json`, `A11-resume-keyboard.png`, `A11-resume-confirm-keyboard.json`. Desktop confirm height30px is not represented as mobile44px evidence. |
 | A-12 Legacy/newer editor conflict | [x] Execution evidence collected | Resume07FinalActivation / 2026-11-06 | Production legacy detail helper opened real editor8120; actual fill/send/safety-confirm queued job31. Separate managed browser client saved an ordinary draft. Native cancel succeeded; native Restore opened explicit conflict notice preserving current draft and retained original input. Current ordinary text and original legacy text remained separately readable, queue CANCELLED, no forced overwrite. `A12-resume-native-conflict.json`, `A12-resume-two-browser-conflict.png`, `resume-runtime-api.json`. The older API-only version2 preservation proof `A12-current-draft-preserved.json` is retained, not relabeled native. |
 
-## Required automated gates and unresolved classification
+## Historical 07 automated gates and then-unresolved classification
 
 - New `ManualReplyDelayEndToEndIT` final continuation command executed29, passed29, failures0/errors0/skips0; exact command/environment in `resume-e2e-final.json`, report in `resume-final-com.weibo.talentintroduction.mail.service.ManualReplyDelayEndToEndIT.txt`.
 - Prior original required class-set run executed355, failures2/errors2/skips0. Its new-E2E failures were subsequently corrected and exercised; existing `MailReviewSendIT` still has the observed expected Subject/actual Re: Inbound failure. Do not call that whole command PASS.
@@ -39,3 +41,11 @@ Environment: real production Spring application, session/controller/transaction/
 Operator Resume07FinalActivation read the explicitly approved master/07/08 plans at commit `8a51021ca463da1e3ea279bf5a94e998267751bf` and brief/ledger authority at `eb0675208508d5a0dd2abcbf5848b37aaa122c6d`. The user's decision is「按总 A-5 补齐」. Only A5 frontend/native closure transfers to sequential `08-deadline-confirmation`; the original late409 requirement is unchanged.
 
 **A5 remains unchecked / NOT PASSED, now owned by pending08.** The epoch1 negative row, real native evidence and separate server409 evidence above remain historical facts, not superseded by an invented success. A1–A4/A6–A12 evidence is retained with its original operator/date. All eleven product/test source hashes matched the durable epoch1 archive during the epoch2 rebind; no tests or runtime scenarios were replayed solely for this ownership amendment. Independent verification must freshly exercise its required gates. This update is neither human acceptance nor permission to enable production; master completion still requires08 and all final gates.
+
+## Current evidence closure — 07/08, 2026-11-06
+
+- [x] **A5 native late confirmation:** Verify08DeadlineConfirmation independently exercised ordinary canonical DRAFT, admin APPROVED REVIEW and delegated FULL DRAFT on current served source. Native openings were due−964/−976/−967ms; explicit confirmations were due+1133/+1124/+1132ms. Each produced exactly one captured-revision cancel POST409 with「已超过撤回期限」, followed by real authoritative jobGET200/SENT; each reserved Message-ID matched exactly one MIME. REVIEW body/version and delegated attachment remained intact. READ/revocation, expiry-dismiss/no-reopen,1440/390/keyboard and FAILED/UNKNOWN footer protections were also observed. This closes A31/A32's assigned08 obligation without rewriting the historical07 negative.
+- [x] **Independent child gates recorded:** 07 LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD includes fresh newE2E29/29 and real uninterrupted61.327s delivery/recovery proof. Its requiredMaven355 retained354 passes/1 subject failure/0errors/skips; the failure is independently classified PRE_EXISTING_ADJACENT by unchanged-base causal source, not dynamic baseline execution.08 LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD includes fresh focused238/238/fullJS2103/2103, zero skips and syntax0. No whole-command Maven PASS or whole-master PASS is claimed.
+- [ ] **Human acceptance / whole-master review:** not performed. Production enablement/deployment not performed; default remains disabled. These machine-operated checkboxes do not authorize release.
+
+Current product head:83ec3e3bdf620f80198f73ae496f78aaf75625f4. Exact reports: children/07-activation/verify-log.md and children/08-deadline-confirmation/verify-log.md.07 archive: local://verify07-activation-epoch2attempt1fix0-evidence.tar.gz, SHA25603a7d61560a67172a35fe6b178471ded5c6db9adf90ed5ae6b918efaef5306ee.08 archive: local://verify08-deadline-confirmation-epoch1attempt1fix0-evidence.tar.gz, SHA256c8ce6017fe1edaf0ce44758caec551e76232f739fb57d5a12c4545a8517a0e53. Earlier sources, failed harness attempts and actor/date attribution remain in their original logs/archives.

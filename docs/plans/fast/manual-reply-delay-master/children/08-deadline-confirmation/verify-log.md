@@ -1,3 +1,70 @@
 # 08 Deadline Confirmation Light Verification
 
 No verification has been performed. Append independent reports after the committed implementation.
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 08-deadline-confirmation — `docs/plans/2026-11-04/manual-reply-delay-08-deadline-confirmation.md`
+Boundary: c1b70bcb9d8e6117363ae2c03d26e22c870eee89..83ec3e3bdf620f80198f73ae496f78aaf75625f4
+Verifier: Verify08DeadlineConfirmation — distinct from Impl08DeadlineConfirmation and Resume08DeadlineConfirmation
+Epoch: 1 / attempt: 1 / fix: 0. Date: 2026-11-06.
+Mode: bounded fix-v WORKFLOW_ARTIFACTS, restricted to this append-only verification log; product/tests/Git/plans/other reports read-only. No product repair authority.
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | Immutable `git diff --name-status` and archived `reviewed-product.patch`: exactly the authorized five product/test paths — `src/main/resources/static/mailbox-chat.js`, `src/main/resources/static/index.html`, `src/test/js/mailboxDelayedReply.test.js`, `src/test/js/mailReviewAdmin.test.js`, `src/test/js/expertAccessWorkspace.test.js`. Remaining range entries are controller control-plane documents, not additional product changes. `source-provenance.json` proves current reviewed bytes equal review_head; no backend/CSS/app.js/mailbox-readonly.js/shared fixture change. |
+| Plan and invariants | PASS | I1–I4/T1–T2: `mailbox-chat.js:1026–1051,1076–1121,1229–1287` consistently separate new-open admission from continued confirmation at render/submit/timer; source lifecycle and consumer dispatch traced below. Direct regressions: `mailboxDelayedReply.test.js:46–138`, `mailReviewAdmin.test.js:527–563`, `expertAccessWorkspace.test.js:540–591`. I5/S1–S2/T3: index changes only existing resource values; CSS/DOM contracts and real current-source footer/layout proof preserved. T4/A1–A4 changed-surface runtime evidence is fresh and native, not borrowed API-only or DOM-stub evidence. |
+| Required commands | PASS | Fresh after source analysis, with no product edits afterward: focused exit0, tests238/pass238/fail0/skipped0/cancelled0; full JS exit0, tests2103/pass2103/fail0/skipped0/cancelled0; syntax exit0. Exact commands below and complete stdout/stderr/argv in archive. Fresh real Spring/MySQL/controlled SMTP/Chrome native smoke exit0; real FAILED/UNKNOWN footer smoke exit0. Final counts match the supplied corrected baseline. |
+| Downstream interfaces | PASS | Existing numeric cancel/retry dispatch at `mailbox-chat.js:10128` reaches the shared action path. Exact POST body remains captured `expectedRevision` only; existing GET/public error/current-status semantics unchanged. FULL delegation still mounts the same MailboxChat at `mailbox-readonly.js:1127–1151`; READ remains status-only at1013–1039; current-grant lock at1313–1327 and exact app method/path allowlist at21261–21322 unchanged. `DelayedManualReplyController.kt:106–117,134–166` retains owner/FULL/revision/deadline authority and lifecycle CAS. This is the final child interface, not whole-master or release verification. |
+
+**Authority, scope and closed decisions.** The complete brief and exact approved plan were read. Independently recomputed plan SHA256: `991aa66575c7e22efe2143b57a3571ec4a8c4a153e392152f80d827486977072`. A31/A32 approves only the narrow admitted-cancel deadline exception; completed06/F06-01 and original07 evidence remain historical. No matching deadline-confirmation/A31/A32/F08 fix plan was found under `docs/plans/fix`; child08 fix-log has no repair round. The old missing-row fixture failure is preserved and not rerun: the current test uses a same-key authoritative row with null delayedReply, while production paginated merge semantics remain unchanged. Original07 subject/size100/tzdb notes are outside08; no Kotlin/baseline rerun, LSP PASS, broad review, deployment or production enablement is claimed.
+
+**Direct invariant audit.**
+- I1/I2: `delayConfirmationValid` at1026–1034 is consumed by render1041, submit1087 and timer1248. Initial open1118 still requires current writable, WAITING/canCancel, no public error and remaining>0. Continued cancel retains current owner/id/revision/writable/WAITING/error checks and permits elapsed time without treating historical canCancel as server permission. Fresh expired WAITING/canCancel=false, stale true, full redraw, observed same-revision nonWAITING, revision/job/error/capability invalidation and stale open/dismiss boundaries have direct passing behavior regressions. Missing job is authoritative replacement, not pagination omission.
+- I3: busy is set before POST at1092; body at1094 is the captured revision only. Failure clears confirmation,401/403 unmount,409 follows the existing authoritative GET/public error path at1103–1107; no automatic POST retry or inferred success. Regression assertions distinguish action POST→job GET from background polling. Actual native requests corroborate this below.
+- I4: owner is user/contact/account-scope/conversation epoch at999–1001; selection3928+, generation3951–3954, current-auth3170–3236, account/session apply10794–10855, hidden/stop1229–1235, unmount10863+ and lockAccess11012+ preserve cleanup. Timers remain1s, detail2s/5s, list5s at1253–1264; deadline remains serverNow plus performance.now at1005–1011, and zero is not SENT. Retry stays FAILED/canRetry at1034/1050/1118; UNKNOWN/permanent/historical capabilities are not broadened. Existing ordinary draft/attachment and REVIEW APPROVED/context semantics are covered by the prescribed suites and fresh runtime. Native smoke does not claim an exhaustive fresh replay of every inherited logout/navigation/retry scenario; those have direct source/regression coverage.
+- I5/S1/S2: replacing the new index key with the base key reconstructs the original index byte-for-byte. Actual specialized grep receipts enumerate the existing7CSS+13JS references at11–17/2547–2559 and unversioned task runtime2546; current/base key search over src/test and product static JS has no matches. Original footer DOM, role=group, ARIA/text, classes, no inline style, CSS literals, host IDs, resource URLs/order and actionDialog are unchanged. Detailed source checklist and relevant read-only knowledge probes are archived in `verify08-source-audit.md` and `verify08-static-search-receipts.md`; no unrelated knowledge writeback was authorized.
+
+**Fresh required commands.**
+| Exact command, run from the brief worktree | Exit | Observed result |
+|---|---:|---|
+| `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailReviewAdmin.test.js src/test/js/expertAccessWorkspace.test.js src/test/js/mailboxReadOnly.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxServerDrafts.test.js` | 0 | 238 tests,238 passed,0 failed,0 skipped,0 cancelled,0 todo |
+| `node --test src/test/js/*.test.js` — invoked via `/bin/zsh -c` for normal glob expansion | 0 | 2103 tests,2103 passed,0 failed,0 skipped,0 cancelled,0 todo |
+| `node --check src/main/resources/static/mailbox-chat.js` | 0 | Syntax check; no test counts |
+| `node /tmp/verify08-deadline-confirmation-epoch1attempt1fix0/fresh-runtime/native.cjs` | 0 | Real native ordinary/REVIEW/delegated A5, READ/revocation, expired dismissal,1440/390/keyboard;264.75s |
+| `node /tmp/verify08-deadline-confirmation-epoch1attempt1fix0/fresh-runtime/error-surfaces.cjs` | 0 | Actual SMTP550→permanent FAILED and DATA disconnect→UNKNOWN, native footer/error surface;65.16s |
+
+Build: N/A — no build prescribed for this frontend-only child; reuse of the unchanged existing application classes is explicitly attributed. No Maven or known baseline-failure reproduction was run. The fresh Node trio ran2026-11-06T02:30:20Z–02:30:30Z; raw summaries are retained, including exact exits and zero skips.
+
+**Fresh native current-source runtime.** Dedicated owned application18138, MySQL33438/labelled container `verify08-deadline-epoch1-db`, controlled SMTP25438/control25439, real Chrome157.0.8103.39 via Playwright. Application served this worktree's `src/main/resources/static/` through the normal file static-location configuration. Native pointer and keyboard events were trusted; only real GET requests were held at the deadline. No clock, response, DOM, body or business-state fabrication. All fresh jobs retained the original60000ms deadline.
+
+| Changed writable surface | Job/captured revision | Open relative due | Confirm relative due | Actual outcome |
+|---|---|---:|---:|---|
+| Ordinary canonical DRAFT/admin | 1/1 | −964ms | +1133ms | One cancel POST409, then one action job GET200/SENT |
+| Immutable APPROVED REVIEW/admin | 2/1 | −976ms | +1124ms | One cancel POST409, then one action job GET200/SENT |
+| Delegated FULL DRAFT/user1 with uploaded attachment | 3/1 | −967ms | +1132ms | One cancel POST409, then one action job GET200/SENT |
+
+Every cancel body was exactly `expectedRevision:1`, matching its captured job; every409 body was exactly code `DELAYED_REPLY_TOO_LATE`, message「已超过撤回期限」. Actual screenshots/cards showed SENT plus the public deadline error, never cancellation success; no automatic cancel rePOST. Background held GETs are separately identified in each raw network log. The matching real SMTP DATA/MIME count is exactly one per A5 Message-ID, with the original plain text and delegated `native08-attachment.txt` intact. Fresh session DATA totals5 unique IDs: three A5 messages, a distinct dismissal fixture and the explicitly UNKNOWN/disconnected fixture; the latter is not mislabeled as confirmed delivery. Failed/revoked fixtures and the separate failed initial runtime are not miscounted as duplicate A5 sends. See `final-native-correlation.json`, raw MIME, SMTP events and DB dump.
+
+REVIEW stayed APPROVED/version3 with identical subject/text/HTML and noneditable editor (`native-review-immutability.json`). Native READ had zero cancel/retry/confirm, and user1 REVIEW cancel/retry HTTP requests returned403. A real database grant revocation after native admission produced native POST403/MAIL_WRITE_FORBIDDEN and retired the confirmation; refreshed native READ still had no write actions. This revocation fixture is a permission boundary before deadline, not falsely reported as a second61s A5. Native LEGACY expiry dismissal left open0/confirm0/cancelPOST0 after deadline. Deterministic regressions cover fresh expired false capability and all precise stale-context invalidations.
+
+At actual1440/390 viewports, footer remained the original inline role=group/ARIA/buttons,12px/7px gaps,11px status, no overlay/inline style and no document horizontal overflow. Native Tab focused confirm with2px rgb(59,130,246) outline/2px offset; buttons measured30px desktop and44px mobile. Real permanent FAILED and UNKNOWN cards had17px rgb(197,62,50) icons, accessible reason/tooltip, no cancel/retry/confirm and no overflow. Screenshots and computed measurements are archived, not inferred from DOM stubs.
+
+**Source and provenance.** Fresh browser response bytes matched reviewed source for index, chat JS and both frozen CSS files. Actual index SHA256 is `fef64dba60702dd505c3d1ec4b4aed6849da07cd4ec5b463087096a5b93d9048`; mailbox-chat.js SHA256 is `5caa267723a0fd05fddba08990e49d5bc2d7cdf79506375cc6c5e39397b6b392`. The supplied writer archive was copied, independently hashed to `f06023b0122fd3325f7d010c91fd2dc2dd9e77f880a0fedebfe6ea758a65a433`, safely expanded and its actual served bytes/MIME/POST409→GET receipts validated. Its ordinary1/1, REVIEW2/5 and delegated3/1 proofs remain attributed to Resume08DeadlineConfirmation, never invented as verifier freshness. Re-enqueued REVIEW revision5 retained original createdAt; its new deadline was not incorrectly assessed as first-createdAt+60000.
+
+**Preserved failures and cleanup.** Initial writer fixture failures remain nested unchanged in the attributed archive. Verifier scratch failures are also preserved: startup receipt-path TypeError after owned container creation; an attribution validator's incorrect original-createdAt premise for re-enqueued REVIEW; Playwright's non-article-qualified selector matching both article and translate button. The latter ended before any cancel POST; its single SMTP, screenshot, network, DB dump and cleanup are separate, unaccepted A5 evidence. Only scratch wrappers/selectors were corrected, with no product/test edit, and the accepted native run used a separately recreated owned database. Raw failure JSON/scripts/receipts are archived. All owned browsers closed, application/SMTP terminated, labelled container removed;18138/33438/25438/25439 had no reachable listeners after final cleanup. No borrowed runtime was stopped.
+
+Archive: `local://verify08-deadline-confirmation-epoch1attempt1fix0-evidence.tar.gz`
+Archive SHA256: `c8ce6017fe1edaf0ce44758caec551e76232f739fb57d5a12c4545a8517a0e53` — computed from the archive and independently revalidated after durable URI copy.
+Expanded evidence: `/tmp/verify08-deadline-confirmation-epoch1attempt1fix0/`;285 hashed evidence files plus manifest. Commands, current-source snapshots, screenshots, HTTP, MIME, real setup/cleanup and attributed failures are retained.
+
+State-machine check: ✅. Cross-plan check: ✅. Deleted-code/no-extras/scope check: ✅. Accumulation: N/A, no new persisted aggregate. Human acceptance: PENDING; native automation is machine evidence, not human acceptance. Controller owns aggregate acceptance-index/checkpoint/final handoff. This report completes only child08's four gates, not whole-master review, aggregate approval or production release.
+
+### AUTO_FIX
+- N/A — no proven four-gate product/test violation or authorized correction remains.
+
+### RECORD_ONLY
+- O08-01: execution.md's prose index SHA256 is truncated/mistyped. Actual archived served index, source-provenance manifest and fresh browser response all independently hash to `fef64dba60702dd505c3d1ec4b4aed6849da07cd4ec5b463087096a5b93d9048`. Metadata-only discrepancy outside the five product/test gates; no source mismatch or missing native evidence. Recorded without editing execution.md or reopening writer work.
+
+### Required Action
+- COMPLETE_CHILD
