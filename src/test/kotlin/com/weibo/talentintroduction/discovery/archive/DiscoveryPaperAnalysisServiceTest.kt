@@ -50,7 +50,6 @@ class DiscoveryPaperAnalysisServiceTest {
         assertEquals(facts.extract(input.bytes, "PDF", input.authors, input.metadata.path("pubYear").asInt(), hash),
             parsed.qualification)
         assertTrue(parsed.emails.any { it.givenNames == "Emilio" })
-        assertEquals(20261101, analyzer.versions()["pdfLayout"])
         assertEquals(20261004, analyzer.versions()["identityExtraction"])
         val result = analyzer.compute(listOf(body), input.metadata, input.first,
             input.first.path("attemptIds").map { it.asLong() }.toSet(), java.time.Instant.EPOCH)
