@@ -54,6 +54,9 @@ class ExpertMailPermissionGuardTest {
     private lateinit var calendar: MeetingCalendarService
     private lateinit var meetings: MeetingConfirmationService
     private lateinit var outbound: OutboundAttachmentService
+    private lateinit var templateOperations: PendingMailOperationService
+    private lateinit var templateService: com.weibo.talentintroduction.template.service.MailComposeTemplateService
+    private lateinit var templateController: com.weibo.talentintroduction.mail.controller.ConversationTemplateController
     private lateinit var builtin: BuiltinAttachmentService
     private lateinit var logs: com.weibo.talentintroduction.audit.service.OperatorActionLogService
     private lateinit var snippets: com.weibo.talentintroduction.reply.service.ReplySnippetService
@@ -105,6 +108,12 @@ class ExpertMailPermissionGuardTest {
         meetings = Mockito.mock(MeetingConfirmationService::class.java)
         outbound = Mockito.mock(OutboundAttachmentService::class.java)
         builtin = Mockito.mock(BuiltinAttachmentService::class.java)
+        templateOperations = Mockito.mock(PendingMailOperationService::class.java)
+        templateService = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+        Mockito.`when`(templateService.listAll()).thenReturn(emptyList())
+        Mockito.`when`(templateOperations.resolveIdentitySource(ReplyIdentityContextRequest(ReplyIdentitySourceKind.INBOUND,1,101)))
+            .thenThrow(IllegalArgumentException("fixture context rejected"))
+        templateController = com.weibo.talentintroduction.mail.controller.ConversationTemplateController(templateService, templateOperations, guard)
         val auth = Mockito.mock(AuthService::class.java)
         for (user in listOf("admin", "user1")) {
             Mockito.`when`(auth.findUser(user)).thenReturn(AdminUser(username = user, passwordHash = "unused",
@@ -124,6 +133,7 @@ class ExpertMailPermissionGuardTest {
             beans.registerSingleton("locations", ExpertContactLocationController(Mockito.mock(ExpertContactLocationService::class.java), Mockito.mock(ExpertContactLocationCatalog::class.java)))
             beans.registerSingleton("calendar", MeetingCalendarController(calendar, guard))
             beans.registerSingleton("meetings", MeetingConfirmationController(meetings))
+            beans.registerSingleton("conversationTemplates", templateController)
             beans.registerSingleton("outbound", OutboundAttachmentController(outbound, builtinAttachments = builtin))
             logs = Mockito.mock(com.weibo.talentintroduction.audit.service.OperatorActionLogService::class.java)
             snippets = Mockito.mock(com.weibo.talentintroduction.reply.service.ReplySnippetService::class.java)
@@ -199,6 +209,24 @@ class ExpertMailPermissionGuardTest {
         mvc.perform(get("/api/mail/contact-locations/3/timing").session(session())).andExpect(status().isForbidden)
         mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,2").session(session())).andExpect(status().isOk)
         mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,3").session(session())).andExpect(status().isForbidden)
+    }
+
+    @Test fun `template reference endpoints require FULL and revoke immediately`() {
+        val base = "/api/mail/conversations"
+        mvc.perform(get("$base/1/reply-templates").session(session())).andExpect(status().isOk)
+        mvc.perform(post("$base/1/reply-templates/preview").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"templateId":1,"inboundProcessingId":101}""")).andExpect(status().isBadRequest)
+        Mockito.verify(templateService).listAll()
+        Mockito.verify(templateOperations).resolveIdentitySource(ReplyIdentityContextRequest(ReplyIdentitySourceKind.INBOUND,1,101))
+        Mockito.clearInvocations(templateService, templateOperations)
+        for (id in listOf(2, 3)) {
+            mvc.perform(get("$base/$id/reply-templates").session(session())).andExpect(status().isForbidden)
+            mvc.perform(post("$base/$id/reply-templates/preview").session(session()).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"templateId":1,"inboundProcessingId":101}""")).andExpect(status().isForbidden)
+        }
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        mvc.perform(get("$base/1/reply-templates").session(session())).andExpect(status().isForbidden)
+        Mockito.verifyNoInteractions(templateService, templateOperations)
     }
 
     @Test fun `builtin catalog and selection require FULL and revoke before file creation`() {

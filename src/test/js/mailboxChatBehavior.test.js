@@ -6894,7 +6894,7 @@ describe("07 delegated conversation — fixed target and existing editor", () =>
         assert.strictEqual(ctx.host.querySelector("#mcFilterPopover"), null);
         assert.ok(ctx.host.querySelector('[data-section="workbench"]'));
         assert.ok(ctx.host.querySelector('[data-section="logs"]'));
-        assert.strictEqual(ctx.host.querySelector('[data-action="mc-open-template-reference"]'), null);
+        assert.ok(ctx.host.querySelector('[data-action="mc-open-template-reference"]'));
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-template-follow"]'), null);
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-reply-identity-settings"]'), null);
         assert.strictEqual(ctx.host.querySelectorAll('[data-role="mc-editor"]').length, 1);
@@ -6905,6 +6905,29 @@ describe("07 delegated conversation — fixed target and existing editor", () =>
         assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/conversations?")));
         assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/drafts/summaries")));
         assert.strictEqual(ctx.calls.workbenchMounts.length, 0);
+        ctx.api.unmount();
+    });
+
+    it("user1 references enabled templates through expert-scoped endpoints and saves its own draft", async () => {
+        const ctx = await delegated({ route: (url, method, body, entry, next) => {
+            if (url === "/api/mail/conversations/1/reply-templates") return [{ id: 9, templateName: "Example", enabled: true, subject: "Hello", blocks: [] }];
+            if (url === "/api/mail/conversations/1/reply-templates/preview") {
+                assert.deepStrictEqual(JSON.parse(body), { templateId: 9, inboundProcessingId: 101, senderAccountCode: "acc1" });
+                return { subject: "Hello", body: "Template reply", blocks: [], fallbackKeys: [], variables: [], toEmail: "a@example.edu" };
+            }
+            if (url.startsWith("/api/mail/mailbox/review-drafts?")) return { items: [], total: 0 };
+            return next(url, method, body);
+        }});
+        click(ctx.host.querySelector('[data-action="mc-open-template-reference"]'));
+        await flush();
+        const apply = ctx.doc.body.querySelector('[data-action="mc-apply-template-reference"]');
+        assert.ok(apply && !apply.disabled);
+        click(apply);
+        await ctx.api.flushDrafts();
+        assert.ok(ctx.host.querySelector('[data-role="mc-editor"]').textContent.includes("Template reply"));
+        assert.ok(ctx.calls.api.some(c => c.method === "PUT" && c.url.startsWith("/api/mail/mailbox/drafts/target?")));
+        assert.ok(!ctx.calls.api.some(c => c.url.startsWith("/api/compose-templates")));
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
         ctx.api.unmount();
     });
 

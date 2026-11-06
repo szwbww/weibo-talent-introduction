@@ -34,6 +34,8 @@ class ExpertMailPermissionGuard(
             }
             route(OperatorActionLogController::class.java, "search", "GET", Target.LOGS)
             route(ReplySnippetController::class.java, "list", "GET", Target.SNIPPETS)
+            route(ConversationTemplateController::class.java, "list", "GET", Target.CONTACT)
+            route(ConversationTemplateController::class.java, "preview", "POST", Target.CONTACT)
             val conversation = MailboxConversationController::class.java
             route(conversation, "conversationManualRichReply", "POST", Target.CONTACT)
             route(conversation, "follow", "PUT", Target.CONTACT)

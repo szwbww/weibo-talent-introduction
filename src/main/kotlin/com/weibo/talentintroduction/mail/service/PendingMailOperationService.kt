@@ -533,7 +533,7 @@ class PendingMailOperationService(
         }) ?: throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "CONVERSATION_SENT_ANCHOR_NOT_FOUND")
     }
 
-    private fun resolveIdentitySource(request: ReplyIdentityContextRequest): ReplyIdentitySource {
+    fun resolveIdentitySource(request: ReplyIdentityContextRequest): ReplyIdentitySource {
         request.validate()
         val contact = expertContactRepository.findById(request.contactId)
             .orElseThrow { error("Expert contact not found: ${request.contactId}") }

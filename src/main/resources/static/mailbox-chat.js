@@ -6271,7 +6271,7 @@
             const materialTrigger = ui && !delegated ? materialRequestTriggerHtml() : "";
             // S-1（fast-p 01 I-1）：引用模板入口只属于有真实来信的人工回复（outbound=false），
             // 不依赖会议组件；固定在材料索取之后、跟进按钮之前。
-            const templateReferenceTrigger = isOutbound || delegated
+            const templateReferenceTrigger = isOutbound
                 ? ""
                 : `<button class="button reply-template-trigger" type="button" data-action="mc-open-template-reference">引用模板</button>`;
             // S-1：跟进按钮只在当前专家确有成功发件时渲染，固定紧随既有会议按钮之后，
@@ -8691,7 +8691,7 @@
             state.loading = "list";
             state.error = "";
             renderTemplateReference();
-            hostApi()("/api/compose-templates").then((data) => {
+            hostApi()(delegated ? `/api/mail/conversations/${state.identity.contactId}/reply-templates` : "/api/compose-templates").then((data) => {
                 if (!templateReferenceSeqMatches(seq)) return;
                 if (!Array.isArray(data)) {
                     state.loading = "";
@@ -8748,9 +8748,9 @@
                 strictPlaceholders: false,
                 variantIndex: 0
             };
-            hostApi()("/api/compose-templates/preview-draft", {
+            hostApi()(delegated ? `/api/mail/conversations/${identity.contactId}/reply-templates/preview` : "/api/compose-templates/preview-draft", {
                 method: "POST",
-                body: JSON.stringify(payload)
+                body: JSON.stringify(delegated ? { templateId: item.id, inboundProcessingId: identity.processingId, senderAccountCode: identity.senderAccountCode } : payload)
             }).then((result) => {
                 if (!templateReferenceSeqMatches(seq)) return;
                 if (!templateReferencePreviewValid(result)) {
@@ -8816,6 +8816,7 @@
             const values = readManualValues(composeEl);
             if (!values) return;
             const identity = templateReferenceIdentity();
+            identity.processingId = processingId;
             identity.anchorId = anchorId;
             identity.senderAccountCode = account.code;
             identity.subject = values.subject;
