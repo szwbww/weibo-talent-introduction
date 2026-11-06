@@ -1239,7 +1239,10 @@
         function stopDelayPolling() {
             clearTimeout(delayState.timer);
             delayState.timer = null;
-            delayState.confirm = null;
+            if (delayState.confirm) {
+                delayState.confirm = null;
+                renderDelayActions();
+            }
             delayReadControllers.forEach((controller) => controller.abort());
             delayReadControllers.clear();
         }

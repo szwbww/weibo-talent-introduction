@@ -133,6 +133,95 @@ for (const cleanup of ["hidden", "unmount", "expert"]) {
         finish(h);
     });
 }
+test("hidden confirmation DOM is removed and unchanged resume permits one fresh explicit action", async () => {
+    for (const action of ["cancel", "retry"]) {
+        const h = await boot(action === "cancel" ? { revision: 7 } : {
+            revision: 7, status: "FAILED", canCancel: false, canRetry: true
+        });
+        try {
+            const reads = [], api = h.sandbox.api;
+            h.sandbox.api = async (url, options) => {
+                const response = await api(url, options);
+                if (url.includes("/conversations/1/messages") && (!options || !options.method || options.method === "GET")) {
+                    reads.push(JSON.parse(JSON.stringify(response)));
+                }
+                return response;
+            };
+            await h.time.advance(5000);
+            assert.ok(reads.length > 0, "capture an actual conversation GET before hiding");
+            const before = reads[reads.length - 1];
+            const cardSelector = '[data-message-key="DELAYED_MANUAL_REPLY:77"]';
+            const card = h.host.querySelector(cardSelector), body = card.querySelector(".mc-body");
+            assert.ok(body);
+            const actions = card.querySelector(".mc-delay-actions");
+            const innerHTML = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(actions), "innerHTML");
+            // Match native replacement: detached nodes must no longer bubble to the host.
+            Object.defineProperty(actions, "innerHTML", {
+                get() { return innerHTML.get.call(this); },
+                set(value) {
+                    this.childNodes.slice().forEach(child => this.removeChild(child));
+                    innerHTML.set.call(this, value);
+                }
+            });
+            H.click(button(h, `mc-delay-${action}-open`)); await H.flush();
+            const confirmation = card.querySelector(".mc-delay-confirm");
+            const submit = button(h, "mc-delay-confirm-submit"), dismiss = button(h, "mc-delay-confirm-dismiss");
+            assert.ok(confirmation); assert.ok(submit); assert.ok(dismiss);
+            assert.equal(h.state.posts.length, 0);
+
+            h.doc.hidden = true;
+            h.doc.root.dispatchEvent(new H.MiniEvent("visibilitychange"));
+            await H.flush();
+            assert.equal(!!h.host.querySelector(".mc-delay-confirm"), false, `${action}: hidden must remove visible confirmation DOM`);
+            assert.equal(h.host.contains(confirmation), false);
+            assert.equal(h.host.contains(submit), false);
+            assert.equal(h.host.contains(dismiss), false);
+            assert.equal(button(h, "mc-delay-confirm-submit"), null);
+            assert.equal(button(h, "mc-delay-confirm-dismiss"), null);
+            assert.equal(h.host.querySelector(cardSelector), card, "hidden cleanup preserves the message card");
+            assert.equal(card.querySelector(".mc-body"), body, "hidden cleanup preserves the message body");
+            const conversationCalls = () => h.calls.api.filter(entry => entry.url.startsWith("/api/mail/mailbox/conversations")).length;
+            const hiddenCalls = conversationCalls(), readCount = reads.length;
+            await h.time.advance(10000);
+            assert.equal(conversationCalls(), hiddenCalls, "hidden time must not poll conversations");
+            assert.equal(reads.length, readCount);
+
+            h.doc.hidden = false;
+            h.doc.root.dispatchEvent(new H.MiniEvent("visibilitychange"));
+            await H.flush();
+            assert.ok(reads.length > readCount, "visibility resume performs an actual conversation GET");
+            const resumed = reads[reads.length - 1];
+            const delayedJob = response => response.items.find(item => item.source === "DELAYED_MANUAL_REPLY").delayedReply;
+            assert.ok(delayedJob(resumed).serverNowMs > delayedJob(before).serverNowMs);
+            const withoutServerNow = response => JSON.stringify(response, (key, value) => key === "serverNowMs" ? undefined : value);
+            assert.equal(withoutServerNow(resumed), withoutServerNow(before), "resume changes only serverNowMs, not job/revision/status/capabilities");
+            assert.equal(h.host.querySelector(".mc-delay-confirm"), null);
+            assert.equal(button(h, "mc-delay-confirm-submit"), null);
+            assert.equal(button(h, "mc-delay-confirm-dismiss"), null);
+            assert.equal(h.host.contains(submit), false);
+            assert.equal(h.host.contains(dismiss), false);
+            assert.equal(h.host.querySelector(cardSelector), card);
+            assert.equal(card.querySelector(".mc-body"), body);
+            H.click(submit); H.click(dismiss); await H.flush();
+            assert.equal(h.state.posts.length, 0, "detached confirmation references cannot submit");
+
+            const reopen = button(h, `mc-delay-${action}-open`);
+            assert.ok(reopen, "the current legal action remains available");
+            const revision = delayedJob(resumed).revision;
+            H.click(reopen); await H.flush();
+            const freshSubmit = button(h, "mc-delay-confirm-submit");
+            assert.ok(freshSubmit); assert.notEqual(freshSubmit, submit);
+            assert.equal(h.state.posts.length, 0, "reopening still requires explicit confirmation");
+            H.click(freshSubmit); H.click(freshSubmit); await H.flush();
+            assert.deepEqual(h.state.posts, [{ expectedRevision: revision }]);
+            const posts = h.calls.api.filter(entry => entry.method === "POST" && /\/delayed-replies\/77\//.test(entry.url));
+            assert.equal(posts.length, 1);
+            assert.ok(posts[0].url.endsWith(`/${action}`));
+        } finally {
+            finish(h);
+        }
+    }
+});
 test("UNKNOWN, permanent failures, and historical errors have no retry capability",async()=>{
     for (const status of ["UNKNOWN","FAILED"]) { const h=await boot({status,canCancel:false,publicErrorMessage:'<img src=x onerror=alert(1)>'});
         assert.equal(button(h,"mc-delay-retry-open"),null); assert.equal(h.host.querySelector('.mc-send-error img'),null); assert.match(h.host.textContent,/img src=x/); finish(h); }
