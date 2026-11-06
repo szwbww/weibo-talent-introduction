@@ -29,3 +29,11 @@ Actual isolated browser/server A5:60000ms unchanged, native59s open/61s confirm,
 
 ## Delivery
 Use execute-p, one writer, no new worktree/reset/amend/rebase/merge/push/deployment. Product-only commit exact five files. Append execution.md with identities, commands, actual runtime evidence and durable archive/cleanup. Preserve old07 failure; controller updates aggregate acceptance index from this child's new evidence only after independent terminal verification. Return READY_FOR_VERIFICATION with commit and artifacts; never overall PASS. Fresh distinct verifier writes only verify-log and executes four gates. Controller owns ledger/checkpoints/final handoff.
+
+## Dependency terminal handoff
+
+07 completed LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD; immutable product basec1b70bcb9d8e6117363ae2c03d26e22c870eee89, evidencef7d42c8cd37fbcc76fb717854fc280f15f754902. Complete nine-child dirty and clean07 checkpoints both exit0/VALID/CHILD_CHECKPOINT; clean checkpoint5a9955a6b42feba371eaf4496f8508ff570bbf96. No repair changed that product base.
+
+Final07 report: children/07-activation/verify-log.md. Independent runtime/test archive local://verify07-activation-epoch2attempt1fix0-evidence.tar.gz SHA25603a7d61560a67172a35fe6b178471ded5c6db9adf90ed5ae6b918efaef5306ee. Its actual Spring/MySQL/SMTP session/setup/SQL/MIME scripts supplement the prior browser archive; all owned listeners/containers were cleaned. NewE2E29/fullJS2076 passed; fresh requiredMaven355 retained one subject assertion classified unchanged-base PRE_EXISTING_ADJACENT by independent causal source proof, not dynamic base reproduction. That subject issue and oldReviewQuery exclusion are not08 work; never rerun baseline failures merely to confirm them.
+
+O07E2-03 remains this child's actual nativeA5 obligation. Current backend late-cancel409/message is proven but cannot substitute for this child's fresh real browser POST/GET/screen proof.07 restart and other assigned integrated acceptance are completed with precise attribution in its report, not to be reopened or rerun wholesale here.
