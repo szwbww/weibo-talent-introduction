@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-11-04/manual-reply-delay-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 2
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 3
 - Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (sha256 4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e)
 - Governing master identity: commit 8a51021ca463da1e3ea279bf5a94e998267751bf; sha256 4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e
 - Invoked master identity: SAME (explicit retained-worktree handoff; prior epoch invoked-copy hash retained below)
@@ -11,26 +11,26 @@
 - Fast-p ledger: docs/plans/fast/manual-reply-delay-master/ledger.md (sha256 76dadc5a2039d622ffdb1cd3423bc9f2629a024f4e4dc37b539560528d61a31b)
 - Fast-p handoff: docs/plans/fast/manual-reply-delay-master/human-review-handoff.md (sha256 82089ede965eb02123c4f26bebb806c1a57c93b1fe18fb0c54141d067d14861c)
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
-- Final code head: fc2750cd7ad4ae5200195036d874aeeb8b5ae400
-- Evidence parent before next commit: 6a2cc31f60c34819bed7edeeebf9300921d2ed19
-- Previous evidence commit: 6a2cc31f60c34819bed7edeeebf9300921d2ed19 (repair execution); aggregate epoch1 5253550d21fc5c404ded279587a422dbc330bdcd
+- Final code head: 60f4a5389e032aac50d1a8f0d8eab0519edc3ad7
+- Evidence parent before next commit: 39bfd10890e94b531f46e54c251f35d9ecd9fc4f
+- Previous evidence commit: 39bfd10890e94b531f46e54c251f35d9ecd9fc4f (repair execution); aggregate epoch2 283fd18fd23eefed53f3b98fa0381d2f538a34a3
 - Branch: fast/manual-reply-delay-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
 - Worktree resolution: EXPLICIT (current exact handoff invocation; epoch1 discovery retained below)
 - Discovery evidence: discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-04/manual-reply-delay-master.md; exit0 SELECTED exactly one candidate; 9 terminal children, exact recorded branch/worktree, base/code ancestry and recorded master identity validated. Invoked and worktree hashes recorded above.
 - Misdirected review evidence: N/A (no selected-worktree prior review)
-- Reviewer: /root/aggregate_review_epoch2 (fresh fork_turns=none, created after repair commit; distinct from recorded writers/verifiers and known repair executors)
+- Reviewer: /root/aggregate_review_epoch3 (fresh fork_turns=none; created after repair commit, no inherited execution context)
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md, Epoch 2 — 2026-11-06; FAIL / PROGRESSING
-- Repair artifact: docs/plans/fix/manual-reply-delay-master/repair.md (current draft sha256 f96501759344c97dd27cc6e7bce2cbc3f842c703ddd376a03f7996e15652ef03; V-5, three files; prior executed identity retained in Epoch 2 preflight)
+- Machine result: PASS
+- Machine report epoch: machine-verification.md, Epoch 3 — 2026-11-06; PASS / PROGRESSING
+- Repair artifact: docs/plans/fix/manual-reply-delay-master/repair.md (executed sha256 f96501759344c97dd27cc6e7bce2cbc3f842c703ddd376a03f7996e15652ef03; V-5, three files)
 - Repair evidence mode: DURABLE_HANDOFF
-- Repair approval source: Human-originated exact execute-p invocation recorded in repair-execution.md / Identity and authority
-- Repair executor: omp coding assistant; RepairMixedCollation and RepairInboundRestore; global parent ID unavailable
-- Repair code head: fc2750cd7ad4ae5200195036d874aeeb8b5ae400
+- Repair approval source: Human-originated exact execute-p invocation recorded in repair-execution.md / latest Identity and approval
+- Repair executor: omp coding assistant; HiddenConfirmRegression and NativeVisibilityRepair; global parent ID unavailable
+- Repair code head: 60f4a5389e032aac50d1a8f0d8eab0519edc3ad7
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Approve current three-file V-5 repair through its exact execute-p invocation, including local product/handoff commits; request same-chat return to fresh aggregate review. Prior execute-p approval does not authorize this new draft. Human A-1–A-12 remain PENDING.
+- Blocker/next action: Human acceptance A-1–A-12 PENDING. Return each item verdict with evidence/note, then explicitly accept code boundary a224623c8dc17bdad1ce80e1c4391637bf7ee5ca..60f4a5389e032aac50d1a8f0d8eab0519edc3ad7 and governing master SHA256 4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e (A1–A32).
 
 ## Preflight evidence
 
@@ -87,3 +87,29 @@ Exact unified diff is JSON-encoded below to preserve blank context markers witho
 - Owned application/SMTP/three containers cleaned after DB snapshots; no owned Chrome remains. Reviewer left HEAD6a2cc31f60c34819bed7edeeebf9300921d2ed19/index/src unchanged, modified only the allowed repair.
 - Evidence parent before this phase commit:6a2cc31f60c34819bed7edeeebf9300921d2ed19. Product head remainsfc2750cd7ad4ae5200195036d874aeeb8b5ae400. Commit scope only ledger.md,machine-verification.md,and exact repair.md. No product edits, push, merge or deployment.
 - Human A-1–A-12 PENDING; no checklist/sign-off created because machine FAIL.
+
+## Epoch 3 preflight — 2026-11-06 Asia/Shanghai
+
+- EXPLICIT retained-worktree handoff. All nine child plan bytes match recorded commits, all 36 child evidence artifacts exist, and every fast-ledger commit identity is an ancestor of current evidence HEAD. All nine child states remain terminal.
+- Governing master SHA256 4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e exactly matches commit 8a51021ca463da1e3ea279bf5a94e998267751bf. AMENDMENT_RECORDED A1–A32; prior governing diff/rule/reason/approval preserved. Fast ledger/handoff hashes unchanged.
+- Verified ancestry: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca -> fc2750cd7ad4ae5200195036d874aeeb8b5ae400 -> 60f4a5389e032aac50d1a8f0d8eab0519edc3ad7 -> 39bfd10890e94b531f46e54c251f35d9ecd9fc4f.
+- Cumulative product/test repair delta exactly three Authorized Files: src/main/resources/static/mailbox-chat.js, src/test/js/mailboxDelayedReply.test.js, src/main/resources/static/index.html. Intervening documentation is prior review/repair evidence only; tail after candidate changes only repair-execution.md. Worktree/index clean before this update.
+- DURABLE_HANDOFF: latest repair-execution.md section names exact f96501759344c97dd27cc6e7bce2cbc3f842c703ddd376a03f7996e15652ef03 repair identity, explicit human execute-p approval, pre/post code boundaries, executor, required commands and failures. Handoff SHA256 edbd6ae2185512489366681af0a7aa6025f510725e8453f777047b27cbb6bb14. Historical approval-required draft wording is not a new blocker.
+- Environment freshly checked: Zulu11.0.15, Maven3.9.11, Node25.7.0, Docker29.8.2. Docker sandbox access denied initially; approved read-only escalation succeeded. All Maven explicitly uses JDK11; disposable local services only. Independent reviewer available.
+- Controller remains orchestration-only. No product/test edits, repair execution, push, merge or deployment authorized. Fresh reviewer must use review-p aggregate/master with no inherited conversation and rerun complete mandatory matrix/commands.
+
+- Epoch3 reviewer dispatch attempt1 succeeded: /root/aggregate_review_epoch3; fork_turns=none; exact artifact/identity/command bundle only. Identity differs from prior aggregate reviewers and recorded repair executors.
+
+## Epoch 3 completion — 2026-11-06 Asia/Shanghai
+
+- Fresh independent /root/aggregate_review_epoch3 completed review-p/verify-p aggregate/master: PASS / PROGRESSING. Repair planning N/A; no repair artifact update. V-1–V-5 and B-1 resolved, no unavailable mandatory machine evidence. Prior epochs/findings preserved.
+- Fresh C-1 compilation exit0. C-2 exit1:358 run/357pass/1failure/0errors/0skips. C-3 exit1:225run/221pass/2failures/2errors/0skips. Combined583/578pass/3failures/2errors/0skips. Subject/size100 failures have unchanged-base causal evidence; optional owner fixture failures/errors remain disclosed. Raw failed commands are not labeled green. Flyway49/49, Query10/10, E2E30/30, Lifecycle44/44, WriteSeam1/1.
+- FullJS2116/2116 after narrow sandbox-output authorization, original EPERM failure retained. Focused198/251/119/445 all pass,19syntax gates exit0.
+- Fresh real60000ms queue and600000ms crash recovery/UNKNOWN/no duplicate, original-collation GET200, dual oversize413/zero-effects, three-host native late409, frozen MIME/ICS/binary bytes, permissions/context/RAG/non-target/pagination/list-only and conflict preservation completed. Actual hidden/resume admin/FULL/READ/retry supplies128 genuine hidden samples; old confirmation gone, hiddenGET0/automaticPOST0, unchanged-job resume and exactly1 fresh explicit cancel/retry. V-5 closure is behavioral, not finding-count inference.
+- Host clamshell sleep17:31:33 through20:00:31 explains interrupted runtime and C-3 elapsed9102.648s. Original failures/logs retained; only unfinished/invalidated branches completed after wake. Temporary owned sleep guard cleaned, no permanent setting changed. No clock or deadline timestamp manipulation.
+- Complete returned report appended verbatim; prior103820-byte report prefix immutable. Controller checked exact boundary/identities, command and runtime coverage, contract matrix, cumulative58-file and individual amendment authority, lineage/convergence, RECORD_ONLY mapping, evidence limits and human gate. Reviewer corrected V-4 lineage title to missing conflict prompt; no historical data-loss claim invented. Controller did not independently review or repair product.
+- Raw archive /tmp/aggregate-epoch3-evidence.tar.gz; SHA2569c67763c19e923d982eaa1c9b3d77127a363dec21f1691aaf4f024afc36ed83a;12499211bytes/554files. Controller independently verified archive/report hashes.
+- Owned runtime processes/Chrome/three containers and temporary sleep guard cleaned after database dumps. HEAD39bfd10890e94b531f46e54c251f35d9ecd9fc4f/index/product and50protected artifacts unchanged by reviewer. No push/merge/deployment.
+- Evidence parent before this phase commit:39bfd10890e94b531f46e54c251f35d9ecd9fc4f. Product head remains60f4a5389e032aac50d1a8f0d8eab0519edc3ad7. Commit scope only ledger.md,machine-verification.md,manual-acceptance.md.
+- Human A-1–A-12 PENDING; checklist copies only exact master items plus required sign-off. No human results, reporter, acceptance or final-decision invented. Stop at AWAITING_HUMAN_ACCEPTANCE per review-fast-p Human Acceptance Gate.
+- Frozen report /tmp/aggregate-epoch3/report.md: 68954bytes/489lines/SHA256 c0a23e882ec5aa9692813e686a10971f302d9e6f3d2a8d0953e7b1b2f3c0ea84.

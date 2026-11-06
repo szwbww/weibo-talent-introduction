@@ -1004,3 +1004,494 @@ $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply
 ```
 
 No product code was modified.
+
+
+## Aggregate review — Epoch 3 — AGGREGATE-20261106-E3
+
+## Verification Result: PASS
+
+Plan: `W/docs/plans/2026-11-04/manual-reply-delay-master.md`
+Implementation boundary: MASTER_BASE→`60f4a5389e032aac50d1a8f0d8eab0519edc3ad7`; exact three-file post-repair delta checked separately.
+Manual acceptance: PENDING (A-1–A-12).
+Convergence: **PROGRESSING**. V-1…V-5 resolved; B-1 evidence gap resolved. Raw C-2/C-3 failures remain disclosed observations, not successful test results. No mandatory machine row remains blocked; no new product defect proven.
+Reviewer: `/root/aggregate_review_epoch3`; independent aggregate/master review. Prior reviewers `/root/aggregate_review_epoch1` and `/root/aggregate_review_epoch2` are distinct. No product implementation by this reviewer. Full `review-p` → `verify-p` workflow applied; eligible `repair-p` decision follows actual verification result.
+
+### Identity and exact boundary
+
+W = `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master`; E = `/tmp/aggregate-epoch3`; R = `E/runtime`. Paths below are relative to W unless prefixed E/R or absolute. All fresh evidence in this report belongs to Epoch 3; prior reports supply lineage and authorization history only.
+
+- Repository common root `/Users/lukai/IdeaProjects/weibo-talent-introduction`; common Git directory `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+- Selected branch `fast/manual-reply-delay-master`; MASTER_BASE_SHA `a224623c8dc17bdad1ce80e1c4391637bf7ee5ca`; current product head `60f4a5389e032aac50d1a8f0d8eab0519edc3ad7`; evidence HEAD `39bfd10890e94b531f46e54c251f35d9ecd9fc4f`.
+- EXPLICIT exact handoff invocation; invoked master identity SAME as current governing handoff. No discovery or nearest-file inference. Master `docs/plans/2026-11-04/manual-reply-delay-master.md`, SHA256 `4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e`, identical to commit `8a51021ca463da1e3ea279bf5a94e998267751bf`.
+- AMENDMENT_RECORDED A1–A32. Exact before/after/master-rule/reason/approval in selected fast ledger; prior invoked→governing exact unified JSON diff in selected review ledger under Governing master diff. Recorded approval is respected. A31/A32 human2026-11-06「按总 A-5 补齐」supersedes historical06 expiry-close behavior through five-file08, preserving all12 manual items and joint sequential release gate.
+- Durable repair handoff latest section explicitly records human exact execute-p invocation and READY_FOR_VERIFICATION. Executor identities `omp coding assistant`, `HiddenConfirmRegression`, `NativeVisibilityRepair` differ from reviewer; optional global parent executor identity unavailable, not invented or treated as a mandatory blocker.
+- Prior product `fc2750cd7ad4ae5200195036d874aeeb8b5ae400`→current code changes exactly three approved repair files: `src/main/resources/static/mailbox-chat.js`, `src/test/js/mailboxDelayedReply.test.js`, `src/main/resources/static/index.html`. Full base→current combined product/test boundary is58 files. Current worktree product matches code; index initially clean; only controller's selected review ledger dirty.
+
+| Artifact | SHA256 at review entry |
+|---|---|
+| `docs/plans/2026-11-04/manual-reply-delay-01-storage.md` | `60d362e4c9c5155120f1f21c06008a434238bc83b4b8902d11ba441b929dd2a6` — equal recorded commit `05342b4be63bbc7d9b30416ae73ada2d44b562df` |
+| `docs/plans/2026-11-04/manual-reply-delay-02-preparation.md` | `2849fccb0b6b864773506061745c779a9c78ce094715a20b52d2992ec564b951` — equal recorded commit `ab3ad56713a74664b0f34f66a138206cb14666ea` |
+| `docs/plans/2026-11-04/manual-reply-delay-03-lifecycle.md` | `d3c5cdddd4daf0c3a58fef12036b0d6dd27b6546c70048b1e4528c6a00ac7b82` — equal recorded commit `0bfe5b07c85e76f85c43a31d30fde8b37f30b9b9` |
+| `docs/plans/2026-11-04/manual-reply-delay-04-worker-api.md` | `56da95916445b1137b6c1127f8d64209f6e58b24bd8c981fa668e7ebd37a4878` — equal recorded commit `de076f6413b65809ca13610c0455965134056dcb` |
+| `docs/plans/2026-11-04/manual-reply-delay-05-query.md` | `e3c61cd9704326828a92b16a48e38eccd5c877ee9d3bb05a0c74c37c3b56f52f` — equal recorded commit `baa9ba43a9ddf8c39ff2feae1c91c3c76fea2acb` |
+| `docs/plans/2026-11-04/manual-reply-delay-06-frontend.md` | `554afdd838dbdd9adf7f8fd1f5249b0233293f625a10042a6548b22d012103d8` — equal recorded commit `a5c1ddb90e92b5aef7bf8f16b031dd4d51c49b80` |
+| `docs/plans/2026-11-04/manual-reply-delay-07-source-contract.md` | `109d6996fb968afc2e698a6fd667beb1ecad9075f17f35f831606523bf668a77` — equal recorded commit `525aeeb9e97241d5ad044f5662c75194db1a5944` |
+| `docs/plans/2026-11-04/manual-reply-delay-07-activation.md` | `b2d00f1e370e4307644c336a3c4c63d66c9c44b00a0a44c3e47347bcbc180e60` — equal recorded commit `8a51021ca463da1e3ea279bf5a94e998267751bf` |
+| `docs/plans/2026-11-04/manual-reply-delay-08-deadline-confirmation.md` | `991aa66575c7e22efe2143b57a3571ec4a8c4a153e392152f80d827486977072` — equal recorded commit `8a51021ca463da1e3ea279bf5a94e998267751bf` |
+| `docs/plans/2026-11-04/manual-reply-delay-master.md` | `4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e` |
+| `docs/plans/fast/manual-reply-delay-master/ledger.md` | `76dadc5a2039d622ffdb1cd3423bc9f2629a024f4e4dc37b539560528d61a31b` |
+| `docs/plans/fast/manual-reply-delay-master/human-review-handoff.md` | `82089ede965eb02123c4f26bebb806c1a57c93b1fe18fb0c54141d067d14861c` |
+| `docs/plans/fix/manual-reply-delay-master/repair.md` | `f96501759344c97dd27cc6e7bce2cbc3f842c703ddd376a03f7996e15652ef03` |
+| `docs/plans/review/manual-reply-delay-master/repair-execution.md` | `edbd6ae2185512489366681af0a7aa6025f510725e8453f777047b27cbb6bb14` |
+
+All36 child `brief.md`, `execution.md`, `verify-log.md`, `fix-log.md` artifacts read as unverified claims; ordered children01,02,03,04,05,06,07-source-contract,07-activation,08. Every plan matches its recorded identity commit; exact hashes, artifact byte lengths and full authority mapping: `E/identity-scope.json`. No child verdict substituted for this review. Stable V-1…V-5/B-1/O lineage retained.
+
+### Environment and fresh execution boundary
+
+Maven3.9.11 and all required compile/JVM commands use exact Zulu11.0.15 (`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`), Node25.7.0, Docker29.8.2, macOS27.2 aarch64. Real app uses installed Zulu11.0.32.1+1-LTS at `/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home/bin/java`; this patch difference is explicit. Default Java25 is not used for review gates. `E/environment-and-diff-check.json`, `E/docker-version.json` preserve actual outputs.
+
+Owned MySQL8.0.46 `aggregate-manual-reply-epoch3-db`:33501, isolated `aggregate_review` for Maven and `aggregate_runtime` for runtime. Explicit JDBC `jdbc:mysql://127.0.0.1:33501/aggregate_review?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai`; root/local-only disposable credential. Opt-in mysqlIt/migrationIt enabled. Testcontainers execute real independent database cases. No development/production DB used. C-2 and runtime overlap only on separate databases; C-3 reuses completed current compile boundary, no parallel Maven target writers.
+
+Owned app18201, socket SMTP25501/control25502, Greenmail2.1.3 IMAP31501/injectionSMTP30301, ES7.17.26:19301. Only `@example.test` recipients; no external delivery, deployment or real recipient. Original mixed MySQL collations retained. Production feature defaultfalse unchanged; local app explicitly enabled except disabled-restart case. Other mail queues/discovery/LLM/translation disabled. Exact launch `R/starts.json`; current classes after compilation and explicit current source static directory. No fake SMTP service method, altered clock, shortened60000ms delay, shortened600000ms recovery, mutated runtime due/claimed timestamps, or prior screenshots reused.
+
+### Fresh mandatory commands
+
+All exact commands below run from W; Maven uses the explicit Java11.0.15 and disposable datasource above. Raw command failure is retained, never relabeled green by the aggregate classification.
+
+#### C-1 compile
+
+```sh
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q -DskipTests test-compile
+```
+
+Exit0; quiet log `E/compile.log`, receipt `E/compile.exit`. No test count inferred.
+
+#### C-2
+
+```sh
+mvn test '-Dtest=PendingMailOperationServiceTest,ManualReplyDelayEndToEndIT,DelayedManualReplySnapshotTest,DelayedManualReplyControllerTest,DelayedManualReplyWorkerTest,DelayedManualReplyLifecycleIT,DelayedManualReplyQueryIT,MailReplyDraftServiceTest,MailReplyDraftControllerTest,MailReplyDraftRepositoryIT,MailReplyDraftSendIntegrationTest,MailReviewDraftIT,MailReviewSendIT,MailReviewQueryIT,!MailReviewQueryIT#size100*,FlywayMigrationIntegrationTest,MailboxConversationRepositoryIT' -DmysqlIt=true -DmigrationIt=true
+```
+
+Exit1; 358 run/357 pass/1 failures/0 errors/0 skipped; elapsed1307.313s. Raw `E/jvm-C2.log`; fresh XML `E/jvm-C2-reports/`.
+
+| Class | Run | Fail/error/skip |
+|---|---:|---|
+| DelayedManualReplyLifecycleIT | 44 | 0/0/0 |
+| MailReviewQueryIT | 4 | 0/0/0 |
+| DelayedManualReplyControllerTest | 16 | 0/0/0 |
+| DelayedManualReplySnapshotTest | 14 | 0/0/0 |
+| ManualReplyDelayEndToEndIT | 30 | 0/0/0 |
+| DelayedManualReplyWorkerTest | 9 | 0/0/0 |
+| MailReviewSendIT | 18 | 1/0/0 |
+| PendingMailOperationServiceTest | 49 | 0/0/0 |
+| MailReplyDraftControllerTest | 6 | 0/0/0 |
+| MailboxConversationRepositoryIT | 41 | 0/0/0 |
+| MailReplyDraftServiceTest | 14 | 0/0/0 |
+| MailReplyDraftSendIntegrationTest | 27 | 0/0/0 |
+| FlywayMigrationIntegrationTest | 49 | 0/0/0 |
+| DelayedManualReplyQueryIT | 10 | 0/0/0 |
+| MailReplyDraftRepositoryIT | 8 | 0/0/0 |
+| MailReviewDraftIT | 19 | 0/0/0 |
+#### C-3
+
+```sh
+mvn surefire:test exec:exec@node-test exec:exec@node-check-app exec:exec@node-check-task-modal-runtime '-Dtest=ManualReplySendAttemptServiceTest,PendingMailOperationServiceTrustWorkbenchTest,ExpertMailPermissionGuardTest,MailboxConversationRepositorySqlCompatTest,OperatorStatusWriteSeamGuardTest,OutboundAttachmentFlowTest,OutboundAttachmentServiceTest,MailboxReadAccessProjectionTest,MailboxAttachmentServiceTest,RagSendBridgeTest,InboundPendingOwnerIT,ExpertMailReadAccessIT,MailReviewQueryIT#size100*' -DmysqlIt=true
+```
+
+Exit1; 225 run/221 pass/2 failures/2 errors/0 skipped; elapsed9102.648s. Raw `E/jvm-C3.log`; fresh XML `E/jvm-C3-reports/`.
+
+| Class | Run | Fail/error/skip |
+|---|---:|---|
+| OperatorStatusWriteSeamGuardTest | 1 | 0/0/0 |
+| InboundPendingOwnerIT | 8 | 1/2/0 |
+| MailReviewQueryIT | 1 | 1/0/0 |
+| MailboxReadAccessProjectionTest | 9 | 0/0/0 |
+| RagSendBridgeTest | 11 | 0/0/0 |
+| ManualReplySendAttemptServiceTest | 62 | 0/0/0 |
+| MailboxAttachmentServiceTest | 7 | 0/0/0 |
+| OutboundAttachmentFlowTest | 9 | 0/0/0 |
+| OutboundAttachmentServiceTest | 28 | 0/0/0 |
+| PendingMailOperationServiceTrustWorkbenchTest | 60 | 0/0/0 |
+| ExpertMailReadAccessIT | 16 | 0/0/0 |
+| ExpertMailPermissionGuardTest | 11 | 0/0/0 |
+| MailboxConversationRepositorySqlCompatTest | 2 | 0/0/0 |
+
+C-2 only assertion failure O-1 Subject. C-3 O-2 size100 and optional O-3 owner fixture failures/errors; required write-site guard1/1 passes. Combined583 run/578 pass/3 assertion failures/2 errors/0 framework skips. Flyway49/49 completes in694.771s. C-3's9102.648s includes host sleep; ExpertMailReadAccessIT16 passed but its elapsed8977.549s is explicitly affected. No test outcomes inferred from elapsed time.
+
+Requested C-3 selection uses `mvn test` with the same `-Dtest` and `-DmysqlIt=true`. Actual lifecycle-equivalent command shown above reuses unchanged C-1/C-2 compiled outputs and invokes Surefire plus exact bound Node goals from pom. C-2/C-3 both stop at Surefire failures, so subsequent Maven Node goals do NOT execute. Fresh standalone N-5 and app/task-modal syntax supply those gates. No other Maven target writer, opt-in omission, or optional all-JVM expansion. Failures and full traces: `E/jvm-failures.json`; unchanged-base causal receipts: `E/causal-provenance.json`. No dynamic base run claimed.
+
+#### Node and syntax gates
+
+| ID | Exact command | Exit;run/pass/fail/skip |
+|---|---|---|
+| N-1 | `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailReviewAdmin.test.js src/test/js/mailboxChatStyle.test.js` | 0;198/198/0/0 |
+| N-2 | `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailReviewAdmin.test.js src/test/js/expertAccessWorkspace.test.js src/test/js/mailboxReadOnly.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxServerDrafts.test.js` | 0;251/251/0/0 |
+| N-3 | `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxChatStyle.test.js` | 0;119/119/0/0 |
+| N-4 | `node --test src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxReadOnly.test.js src/test/js/mailboxMailReadAccess.test.js src/test/js/mailboxOutboundAttachments.test.js src/test/js/mailboxReplyIdentity.test.js src/test/js/mailboxSuspension.test.js src/test/js/meetingConfirmationIntegration.test.js src/test/js/authFlow.test.js src/test/js/mailReviewReader.test.js` | 0;445/445/0/0 |
+| N-5 initial sandbox | `node --test src/test/js/*.test.js` | 1;2116/2115/1/0 |
+| N-5 authorized rerun | `node --test src/test/js/*.test.js` | 0;2116/2116/0/0 |
+| N-6 | Individual commands below | All19 exit0; syntax checks, no test count |
+
+Initial N-5 failed only because sandbox denied writing generated `target/discovery-plan-acceptance/08.html`;2115 other tests passed. Original failed log/receipt retained. Narrow authorized full rerun passed2116,0skip; `E/node-5-authorized.log` and `.exit`. No test/product edit. N-1…N-4 counts198/251/119/445 all pass,0skip. Exact argv/times/logs in `E/node-receipts.json`.
+
+```sh
+node --check src/main/resources/static/app.js
+node --check src/main/resources/static/mailbox-chat.js
+node --check src/main/resources/static/mailbox-readonly.js
+node --check src/test/js/authFlow.test.js
+node --check src/test/js/expertAccessWorkspace.test.js
+node --check src/test/js/mailReviewAdmin.test.js
+node --check src/test/js/mailReviewReader.test.js
+node --check src/test/js/mailboxChatBehavior.test.js
+node --check src/test/js/mailboxChatStyle.test.js
+node --check src/test/js/mailboxDelayedReply.test.js
+node --check src/test/js/mailboxMailReadAccess.test.js
+node --check src/test/js/mailboxOutboundAttachments.test.js
+node --check src/test/js/mailboxReadOnly.test.js
+node --check src/test/js/mailboxReplyIdentity.test.js
+node --check src/test/js/mailboxServerDrafts.test.js
+node --check src/test/js/mailboxSuspension.test.js
+node --check src/test/js/meetingConfirmationIntegration.test.js
+node --check src/main/resources/static/trust-reply-workbench.js
+node --check src/main/resources/static/task-modal-runtime.js
+```
+
+#### Required command coverage mapping
+
+The approved child briefs and plans were independently resolved; ranges are combined once against the master, not reaccepted child by child.
+
+| Original required range | Fresh evidence |
+|---|---|
+| 01 compile / Flyway migrationIt=true | C-1; C-2 Flyway49 |
+| 02 Pending / Trust / Attempt / Snapshot, A1 RagSendBridge | C-2 Pending49/Snapshot14; C-3 Trust60/Attempt62/Rag11 |
+| 02 DraftSend mysqlIt | C-2 27 |
+| 03 Attempt / DraftService | C-3 62; C-2 14 |
+| 03 Lifecycle / DraftRepo / DraftSend / ReviewDraft / full ReviewQuery mysqlIt | C-2 44/8/27/19/4; C-3 size1001, actual O-2 failure |
+| 03 Pending / Trust | C-2 49; C-3 60 |
+| 04 Worker / Controller / Guard / Snapshot / Lifecycle | C-2 9/16/14/44; C-3 Guard11 |
+| 05 Query mysqlIt / MailboxRepo mysqlIt isolated datasource | C-2 10/41 |
+| 05 SqlCompat / WriteSeam / attachment / read projection | C-3 2/1/9/28/9/7, all pass |
+| 06 Controller / focused / affected / full JS / each changed JS syntax | C-2 Controller16; N-1/N-3/N-4/N-5/N-6 |
+| 07-source six prescribed ranges | C-1; C-2 Snapshot14/Controller16/Worker9/Pending49/Lifecycle44; N-3 includes full DelayedReply; N-5/N-6 |
+| 07-activation E2E/original draft-review/Flyway/Mailbox/enabled ITs | C-2 358 plus C-3 uncovered ranges; no opted-out IT |
+| 08 exact six-file group / full JS / chat syntax / native surfaces | N-2/N-5/N-6; R-2 below; fresh actual hidden/resume R-13/R-14 passes |
+| Prior repair exact backend class range / frontend groups / syntax / live repair probes | C-2 plus C-3 WriteSeam; N-2/N-3/N-5/N-6; R-1/R-5/R-2 |
+| Optional broad InboundPendingOwnerIT and ExpertMailReadAccessIT diagnostics retained from supplied command | C-3 8 (O-3),16 pass; no expanded repair scope |
+
+### Fresh real runtime evidence
+
+All R rows use current source/current compiled code and this epoch's fixtures. Full argv/exits/durations: `R/chain-receipts.json`, `R/post-receipts.json`, `R/supplement-fresh-receipts.json`, `R/recovery-receipts.json`; direct-CDP `.exit` files record separate commands. A wrapper exit0 never overrides a child failure. Failed probes remain present; successful prefixes and narrowly completed tails are explicitly distinguished.
+
+| ID | Exact fresh script(s), all relative to R | Exit and observations |
+|---|---|---|
+| R-1 | `python3 repair-backend-corrected.py` | 0;6.847s. Original0900 suppression/server versus unicode contact metadata; real messages GET200. Unrelated suppression allows actions, matching normalized suppression disables, READ no private/action authority. Two legal4,200,019-byte INBOUND/OUTBOUND snapshots return413 SNAPSHOT_INVALID; job/attempt/record/calendar counts unchanged. `repair-backend-final.json` and HTTP records. |
+| R-2 | `node native-retry/native.cjs` | 0;269.029s. Actual ordinary/admin REVIEW/delegated FULL: open due−913/−867/−846ms, confirm due+1151/+1165/+1129ms. Each native trusted click causes exactly1 POST captured revision→409 DELAYED_REPLY_TOO_LATE→1 action-owned GET; actual SENT, no false cancellation. Holds genuine GET only, never fabricates responses/clock/DOM. READ direct mutations403/no controls, FULL→READ403 clears, expired dismiss cannot reopen; frozen REVIEW/body/version and attachments intact. |
+| R-3 | `python3 restart-proof.py` | 0;673.624s. Real SMTP DATA kills owned process. Restart same DB flag=false: WAITING job8 retains original due and sends exactly once; new90903 synchronous SENT/delayedReply null/job0. Claimed job7 stays SENDING until real600000ms recovery→UNKNOWN, retry409, exact1 DATA for its Message-ID, no fake successful record/no resend. Complete before host sleep. `restart-final.json`, SQL/HTTP/MIME. |
+| R-4 | `node final-runtime3.cjs`; `node final-runtime-tail.cjs` | 1/0;177.399s/4.553s. Completed prefix: actual ordinary DRAFT with txt attachment; refresh/switch same due;40s open+dismiss and50s confirm cancel; original body/context/ordered attachment/version retained and editable, zero record after due. Real451 FAILED→dismiss unchanged→explicit retry new≥59s WAITING. Meeting ordinary DRAFT: real preview, reverse-ordered binary files, calendar0→1 only SENT, original draft SENT/contentnull/version+1, exact ICS/binary downloads. Initial final retry read encountered WAITING during host sleep; tail checks same unchanged-due job eventually SENT exactly1, same card/error removed; no new retry or repeated send. |
+| R-5 | `node repair-native.cjs` | 0;22.798s. Two independent Chrome processes: legacy old editor versus newer ordinary saved body/two ordered attachments. Cancel/reload/native restore warns before legacy mount; exact before/after ordinary draft equality; old original readable. Clean no-conflict path restores original old editor, target id/contentnull/version0, no synthetic persisted draft. `repair-native/conflict.json`, `repair-native/final.json`. |
+| R-6 | `node error-surfaces.cjs`; `node error-recovery.cjs` | 1/0;first interrupted by sleep/HTTP timeout, fresh replacement66.705s. Actual550→FAILED PERMANENT_DELIVERY_FAILURE and real DATA-disconnect→UNKNOWN DELIVERY_UNKNOWN, both no retry/cancel/confirmation. Icon17×17px rgb(197,62,50), role/img/aria/keyboard target, hover tooltip, no1440 overflow. `native-error-recoverys.json`, current screenshots; interrupted originals retained. |
+| R-7 | `node legacy-native-complete/legacy-native.cjs`; `node legacy-inbound-complete/legacy-native.cjs` | Initial sleep-era launch failures1/1 before behavior; same unfinished commands0/0 in6.455s/6.181s after wake. Native cancel→reload→restore→requeue same job/new revision/new full due; OUTBOUND original UUID/real anchor/no draftRef; INBOUND original processing/no fake anchor. Ordered restore/raw semantics separately R-15. |
+| R-8 | `python3 remaining-review4.py` | Initial1 at login timeout; unfinished scenario0,126.609s after wake. Fresh READ author/admin APPROVED; enqueue/cancel keeps body/version/state; stale requeue409/current revision works; actual Greenmail inbound triggers REVIEW_CONTEXT_CHANGED with no send; explicit context confirmation→retry→real second60s→SENT. READ cannot cancel REVIEW. `remaining-review4-final.json`. |
+| R-9 | `python3 remaining-nontarget.py`; `python3 nontarget-tail.py` | 1/0;tail3.947s. First completed real60s RAG delivery, exact ordered facts, QA0 and unchanged manual quota, direct template SENT, then first actual IMAP request only initialized cursor and fetched0. Tail uses a new real inbound after cursor initialization: automatic meeting invitation1; ES/manual batch SUCCESS1/failure0/skip0; non-target delayed rows0. Completed RAG/direct checks not rerun; raw original prefix retained. `nontarget-final.json`. |
+| R-10 | `node ui-lifecycle-final.cjs` | Initial1 during host interruption; unfinished scenario0,23.282s. Real offline/online refresh, genuinely held GET→switch expert→old response cannot repaint, logout removes cards. Its Playwright visibility remained visible and is NOT hidden evidence. `ui-lifecycle-final.json`. |
+| R-11 | `node pagination.cjs` | 0;15.072s. Actual mixed two-account same-second outbound/inbound+WAITING/CANCELLED:50→100→133 unique source/id keys (one intermediate100 render observation), secondary account65 exact; historical FAILED no retry. Fresh Query10/Mailbox41 cover counts/date/direction/rank/cursor and retry→SENT union. `pagination/final.json`. |
+| R-12 | `python3 mime-proof.py`; `python3 meeting-mime-proof.py` | Native MIME0; meeting first1 due temporary MySQL-client output charset decode, corrected evidence reader0. Three native surfaces exactly1 actual MIME each, subject/HTML/text/thread equal frozen snapshot, no premature DATA. Text/plain LF→CRLF normalization separately disclosed O-6. Meeting ordinary DRAFT13: exact ICS preview/download/wire hash; second.bin5 bytes then first.bin6 bytes, exact stored/download/wire SHA/order; SMTP due+966ms and1 MIME. `native-mime-proof.json`, `meeting-mime-final.json`. |
+| R-13 | `node visibility-direct.cjs`; `node visibility-direct-rest.cjs` | Core command1 only after completed admin/FULL evidence when separate READ setup interval failed; final tail0. Actual raw-CDP headed Chrome same-window tabs, no Playwright attachment/focus emulation/visibility or clock overrides. Admin1440/FULL390 each32 hidden samples: confirmation0, hidden conversation GET0, automatic mutation POST0; visible fresh GET; job unchanged except serverNow; editor/attachment unchanged; old node detached; legal reopen+explicit confirm exactly1 current-revision POST200 each. Tail retry32 samples has same cleanup/readback, legal fresh reopen exactly1 retry POST200. `visibility-direct-progress.json` (two complete results), `visibility-direct-rest-final.json` (retry), `E/native-visibility-consolidated.json`. |
+| R-14 | `node visibility-direct-rest.cjs` | 0. Separate READ branch uses actual readonly renderer `[data-delay-id]`, waits current content before hiding.32 genuine hidden samples/no conversation GET/no actions or confirmation; visible immediate GET, unchanged job apart from serverNow, no automatic mutation. `visibility-direct-rest-final.json` READ result. |
+| R-15 | `node source-anchor-corrected/source-native.cjs` | 0;6.679s. No-draft OUTBOUND omits optional raw anchor; server binds930020. Insert newer SENT930021 after cancellation, then reload/native restore/requeue retains actual930020, original UUID/raw HTML/raw text whitespace/ordered binary IDs/no draftRef, same job/new revision;1440/390 no overflow. |
+| R-16 | `node list-only.cjs` | 0;62.887s. Real451 after full60s, icon appears by live list polling while0 selected messages. Native Tab/Shift+Tab makes parent focus-visible and approved generic tooltip「有1封邮件发送异常，打开会话查看」display; no card-specific reason substituted. `list-only-final.json`, screenshot/network. |
+
+Actual Chrome157.0.8103.39. Desktop1440/mobile390 computed layout: existing footer,12px action gap,7px confirmation gap,11px/16.5px status, keyboard2px blue outline/2px offset, mobile buttons44px, no inline styles/dialog/overflow. `native-retry/desktop1440-keyboard-layout.json`, `mobile390-keyboard-layout.json`; R-6 actual17px/red error icon. Current screenshots independently inspected: ordinary/delegated late-confirm, raw hidden/resume admin/FULL, fixed public error. UI preserves editor and frozen review rather than introducing a separate form.
+
+Actual network-served/current-source SHA256 equality on ordinary/REVIEW/FULL/READ/revocation/dismissal surfaces:
+
+| Asset | Current served and source SHA256 |
+|---|---|
+| index.html | `29f20cf6ee25d9edd3c155dc4785b08c09f378fa8ebf5505cacfbcbcfd018d45` |
+| mailbox-chat.js | `a9a112eeaef082280837949292cb083e9d9f8c935e38bbeafb19dd98d36be07d` |
+| mailbox-chat.css | `9ac18fb00fcf5d565cb05489c4c77bde963f45a016ff614191f82569de38df24` |
+| styles.css | `464ebaf5206af9e699a850758568e1f776f5fc785564bbb596e6b02a13b122b7` |
+
+Manifest/raw bodies: `R/native-retry/native-served-sources.json`, `browser-served-*`. All20 original versioned references use `20261106-manual-reply-visibility`, same order/URLs; task runtime remains unversioned. No historical08 SHA treated as current.
+
+#### Failed probes and environmental interruptions — preserved
+
+- Initial N-5 sandbox target-write EPERM retained alongside successful authorized rerun; no code changed to make it pass.
+- macOS17:31:33 Clamshell Sleep, repeated Sleep/DarkWake,20:00:31 FullWake: `E/host-sleep-wake.log`. Runtime Hikari43m37s/34m17s/1h10m54s starvation/clock-leap warnings and stale MySQL connections match the pause. C-3 actual elapsed9102.648s retained. R-4 final read WAITING, original R-6 timeout, R-7 Chrome launch timeouts, R-8 login timeout, R-10 closed-browser failure are not PASS. Only unfinished/invalidated branches were completed after wake; earlier three-host late409,673.624s real crash recovery and conflict proof were not rerun or borrowed. Temporary owned `caffeinate -i -t3600` used for completion, then terminated; no permanent power setting changed.
+- R-9's first IMAP call initialized the real mailbox cursor without importing history, so fetched0. RAG/direct prefix had already passed. New inbound tail completed the missing automatic/batch scenarios; original assertion1 remains. The disposable account had been corrected to actual `sender@example.test` inbox before probes; an initial diagnostic used a nonexistent `email_accounts` table and made no change, followed by exact `mail_sender_account` fixture correction. No product or real mailbox changed.
+- `visibility-fresh.cjs` exited1 before scenario because initial unauthenticated logout was401 (helper only allowed200/204). `visibility-recovery.cjs` then timed out waiting actual hidden under Playwright-attached Chrome, which remained visible/continued polling; neither is hidden evidence. Raw CDP replaced that facility.
+- `visibility-direct.cjs` completes admin/FULL and preserves every sample/readback/native action before READ's selection-to-render setup produced an interrupted hidden interval. Separate tail initially failed before behavior on a rewritten evidence-reader path (`ENOENT`); corrected tail then waited for a writable-host `data-message-key` that the independent readonly renderer does not have. These failures remain in `visibility-direct-tail*` and `visibility-direct-complete*`. Final `visibility-direct-rest.cjs` uses observed readonly `data-delay-id`, waits current card, and completes only READ/retry. No admin/FULL repetition, fabricated visibility or substituted response; wrapper1 is never called0. Final consolidated successful intervals contain128 actual hidden samples across four branches.
+- Meeting MIME reader initially let mysql client output use its default charset; a Chinese draft meeting-context field caused UTF-8 decode failure before assertions. Added only `--default-character-set=utf8mb4` to temporary SQL reader, preserving initial helper/log and DB bytes. Exact wire binary/ICS proof then passes; no data normalization.
+- Current R-5 helper initially prepared to expect documented empty DTO id/contentnull/version0, and current list-only helper uses approved generic list text/native keyboard modality before running. Historical epoch2 failures from those helpers are not replayed or presented as fresh evidence. All reused harness source identities/adaptations are in `E/harness-reuse.json`; copies of unused old diagnostic scripts are not executed evidence.
+- Read-only diagnostic attempts at nonexistent `src/main/java` paths were corrected to this Kotlin repository; no source mutation. Application optional ES profile404 warnings before fixture indices are nonfatal; actual ES non-target scenario later succeeds. Native late409 surfaces report pageErrors0; asynchronous observer response reads after page closure are harness lifecycle errors, not product script exceptions.
+
+`E/interrupted-probes/` preserves pre-completion copies of JSON/logs/screenshots where a rerun uses the same result filename. Original command logs, failed exits, assertions and event streams remain in the archive. No mandatory check is left dependent solely on a failed probe.
+
+### Contract Matrix
+
+All machine rows below are mandatory unless explicitly marked otherwise. Source authority: governing master Requirements/Invariants/Acceptance; style S-1–S-4 from06; C-1–C-7 from07-source;08 as recorded A31/A32. Human acceptance remains separate PENDING; machine exercise never supplies a human signature.
+
+| ID | Requirement / required evidence | Verdict | Fresh evidence |
+|---|---|---|---|
+| O-1 | Three manual entry paths, durable server60s | PASS | C-2 E2E30, Lifecycle44; R-2/R-3/R-4/R-7/R-8/R-15 |
+| O-2 | Footer cancel/retry confirmation and real explicit action | PASS | N-1/N-2/N-3; R-2 late409, R-4 dismiss/cancel/retry; R-13 actual hidden clears stale controls and permits new explicit action |
+| O-3 | List/card fixed public failure; UNKNOWN never retry | PASS | R-4/R-6/R-16; Query10; Node full |
+| O-4 | Preserve ordinary original/attachments and frozen APPROVED | PASS | R-5 conflict+clean native, R-8; ordinary/review binding and restore source inspected |
+| N-1 | Bulk/auto/expert template/old meeting paths unchanged | PASS | R-9 real ES/IMAP/SMTP; no non-target delay jobs; full write-entry diff and unchanged meeting service path |
+| N-2 | Permissions, files/source/current thread, review context | PASS | Guard11, Controller16, Lifecycle44, E2E30; real READ/403/context R-2/R-8/R-15 |
+| N-3 | Final HTML/text, safety, ordered QA/RAG, bytes/ICS, quota | PASS | C-2/C-3; R-9 manual quota/facts, R-12 exact binary/ICS; O-6 text-wire normalization disclosed |
+| N-4 | Only SENT success/close/calendar; no HTTP timeout duplication | PASS | Attempt62/Lifecycle44 atomic failure injection and idempotence; R-3 actual kill+unknown; R-4 |
+| N-5 | Filters/counts/pagination/account isolation/READ/mobile | PASS | Query10, Mailbox41, R-11 133 unique rows/two accounts; R-2/R-14/R-15; V-1 repaired without collation alteration |
+| I-1 | DB+60000ms; no early claim; original repeated due; retry full round | PASS | DelayedManualReplyService.kt:116/287/364; Lifecycle real CAS; R-2/R-3/R-4/R-8 actual time |
+| I-2 | Cancel/claim exclusive, deadline CAS, SMTP after commit | PASS | DelayedManualReplyService.kt:241/364; Lifecycle races; worker transaction separation; actual late409 three hosts |
+| I-3 | Original fingerprint, UUID/Message-ID, origin/actor/revision | PASS | ManualReplySendAttemptService.kt:185/248; Attempt62; Lifecycle44; R-7/R-15 same job/UUID/new revision; HTTP stale403/409 |
+| I-4 | Complete frozen whitelist payload, restart/bytes/size contract | PASS | Models.kt:255/659, Pending.kt:978/990/1028; Snapshot14, E2E30; R-1 exact413 and zero effects; R-3/R-12 |
+| I-5 | Atomic success, definite fail vs UNKNOWN, no auto retry | PASS | ManualReplySendAttemptService.kt:630/803; Lifecycle trigger-induced QA/RAG/calendar/job/review rollback; R-3/R-4/R-6/R-8 |
+| I-6 | All draft writers guarded; precise release/restore; review APPROVED | PASS | DraftService/Repo, ReviewService/Repo, Service enqueue/cancel; C-2; R-5 preserves new version/body/ordered files, R-8 frozen review |
+| I-7 | Current HTTP permission, persisted actor preflight, no null admin | PASS | Guard, Controller, Pending rehydrate1028, Query; suppression mixed rules R-1, real READ/403 R-2, context R-8; post-SMTP finalize independent of later grant |
+| I-8 | Stable rank3/job.id/createdAt; one union row/count; raw review context | PASS | MailboxRepo.kt:290 and UI/raw union; DelayedManualReplyService.kt:280/424; Query10/Mailbox41; R-4 retry→SENT one record/card; R-11/R-8 |
+| I-9 | Server-authoritative UI, owner/generation, polling lifecycle cleanup | PASS | Current stopDelayPolling renders only existing action footer after clearing confirmation; N-2 discriminators; R-10 stale/offline/logout; R-13/R-14 actual hidden/resume and unchanged job; R-16 list polling |
+| I-10 | Six job states, unchanged attempts, fixed public errors/historical no retry | PASS | Models/codec/DTO; Flyway49; R-6 fixed errors/UNKNOWN, R-11 historical failed no action |
+| I-11 | Defaultfalse, independent bounded worker, old jobs survive, no Rabbit | PASS | Worker.kt:30–41/108; properties/application.yml; R-3 true600000ms crash/restart and disabled-new sync path; no Rabbit service |
+| S-1 | Existing footer and wrap-capable inline confirmation | PASS | Literal CSS/DOM and actual1440/390 R-2/R-15; R-13 current footer-only lifecycle cleanup, editor unchanged |
+| S-2 | 17px/#c53e32, tooltip/aria, keyboard/mobile44px | PASS | R-2/R-6/R-16 computed styles/native focus; no horizontal overflow |
+| S-3 | Existing components and default-preserve conflict warning | PASS | R-5 native warning before legacy mount, exact draft preserved; no overlay/new editor introduced |
+| S-4 |20 original resources/same key, source actually served | PASS | Fresh served bytes/source manifest, index current repair key; N-1/N-2/N-3 style/DOM test; task runtime unversioned |
+| C-1 | Nullable raw OUTBOUND input separate from verified actual anchor | PASS | Models factory/codec; Snapshot14/E2E30; R-15 omitted input→930020 and later930021 does not replace it |
+| C-2 | Typed mutually exclusive legacy source, old snapshot compatibility | PASS | Models codec/source predicates; Snapshot14, Controller16, Lifecycle44; R-7 both types |
+| C-3 | UUID changes cannot bypass source lock/actor/account identity | PASS | Lifecycle44 real source locking; E2E30; source delta checked; no new identity scheme |
+| C-4 | Restore only with permission/current source; no private public projection | PASS | Controller restore validation, READ Query path; R-1/R-2/R-5/R-15 |
+| C-5 | Existing renderer/no fake draft, newer content conflict preservation | PASS | R-5 INBOUND two independent browsers; R-7/R-15 OUTBOUND native; correct null-id/version0 target |
+| C-6 | Raw reuse only if text+HTML unchanged; retain original UUID/ordered files | PASS | N-3 direct format-only/edited-input regressions; R-15 actual unchanged raw HTML/text whitespace/ordered files/old anchor exact; R-12 MIME |
+| C-7 | Owner/target/epoch/revision lifecycle; disabled switch only admission | PASS | C-2/R-3 server/source/disabled contract; R-7/R-15 original sources; R-13/R-14 cleanup without new action authority |
+| 08 I-1 | Admission before due distinct from continuing already open confirmation | PASS | R-2 three native late409, expired dismiss no reopen; N-2 fresh expired canCancel=false vs stale true |
+| 08 I-2 | Writable/owner/job/revision/state/known-error checks retained | PASS | N-2; real READ/revocation403 cleanup R-2; no authority inferred from stale canCancel |
+| 08 I-3 | One captured POST409, action-owned GET, no false cancel/no replay | PASS | R-2 per-surface request logs and actual states; node busy/network/401/403 tests |
+| 08 I-4 | Hidden/switch/logout/unmount cleanup, original timers and locked content | PASS | Fresh native R-13 admin/FULL/retry plus R-14 READ:128 real hidden samples total; R-10 switch/logout; R-2 review locked content; N-2 stale reference and current affordance regression |
+| 08 I-5 / S-1/S-2 | Original CSS/DOM/resources, actual current assets | PASS | Current repair changes only helper, regression test and20 existing version values; exact served hash equality; literal style/resource tests; native layout |
+| Required command gate | Every prescribed range freshly executed; actual failures retained | PASS execution; raw C-2/C-3 FAIL | C-1; C-2/C-3 combined583 run/578 pass/3fail/2error/0skip; O-1/O-2 unchanged-base causal identity, O-3 optional fixture boundary; N-1…N-6 freshly pass after disclosed sandbox rerun |
+| 05 mandatory WriteSeam | Exact owner write-site guard | PASS | C-3 1/1, repaired exact controller line pins237/1169; no whitelist expansion |
+| AUTH-SCOPE | Cumulative58 and current repair3 files inside explicit authority | PASS | Complete diff/identity-scope; per-file amendment table below |
+| NON-GOALS | No arbitrary scheduling/autoretry/SMTP recall/bulk-recall/push | PASS | Complete cumulative diff; no new shared-table fields/enums or unrelated feature introduced |
+| HUMAN A-1–A-12 | Named human/date/results on exact final boundary | PENDING | All twelve retained; no machine result substituted for human acceptance |
+
+
+### Write/read and cross-plan chain audit
+
+The full58-file combined diff, direct callers/writers and all changed tests were inspected independently, including complete new snapshot/lifecycle/worker/query/controller/end-to-end/frontend regressions. Tests are evidence, not inferred correctness from green counts.
+
+1. Three existing HTTP paths retain preparation/safety/current actor/current source/account/attachment validation before shared admission. Defaultfalse preserves synchronous admission. Typed frozen source carries raw nullable OUTBOUND input separately from verified real anchor; no invented draft, alternate identity or fallback synchronous path when enabled.
+2. Snapshot factory/strict codec freeze whitelisted final HTML/text/thread/QA/RAG/ordered file and ICS data, excluding secrets. UTF-8 encoded4MiB limit uses a dedicated size marker for413; malformed input remains distinct. Rehydration verifies original bytes/hash/source and persisted actor without rendering current templates again. R-1 real oversize zero-side-effect and R-12 exact wire proof supplement Snapshot14/E2E30.
+3. Lock order remains source→attempt→job, DB time60000ms, exact revision/token/state CAS. First draft admission rejects stale version; requeue/retry refresh only the authorized current source and excludes another unresolved job. Cancel and worker claim are mutually exclusive; SMTP runs after commit, outside short transaction. Lifecycle44 and actual three-host late409 cover these paths.
+4. Every ordinary/review draft writer is guarded while queued; cancel releases only matching binding and preserves original content. Success transaction includes mail_record, ordered QA/RAG, meeting calendar, attempt, ordinary/review state, and job. Fault-injection transaction tests establish rollback boundaries; after-commit work cannot downgrade committed SENT. Actual ordinary meeting draft closes only on SENT, calendar0→1; crash never creates false success.
+5. Independent worker uses bounded one-thread/SynchronousQueue execution, no Rabbit dependency; old jobs run even with admission disabled, stale SENDING recovers after600000ms to UNKNOWN without resend. Real process kill/restart R-3 confirms DB recovery and unchanged due/Message-ID behavior.
+6. Query projection batches at most100 current page/contact/account ids, preserves stable rank3/job.id/createdAt and suppresses the linked record exactly once. Raw review-context rows are separate from display union. READ avoids private snapshot/file authority. Mixed-collation suppression comparison coerces only the parameter expression without altering indexed column/schema; source audit plus Query10 and live original mixed metadata prove the repair.
+7. Frontend uses current server job/revision/capabilities, owner/session/target/generation, readback after403/409, and cleanup on hidden/switch/logout/unmount. A31 permits continuing an already admitted late confirmation, while fresh expired opening remains forbidden. Current repair only synchronizes existing footer when clearing non-null confirmation in stopDelayPolling; no timeline/editor repaint.89 added regression lines prove DOM removal, detached stale click0POST, unchanged job/serverNow-only resume, usable new confirmation and retry. R-13/R-14 supplies independent actual native behavior.
+
+Current repair diff:3 files,113 insertions/21 deletions (`E/current-repair-0.txt`, full diff `E/current-repair-1.txt`). `mailbox-chat.js` adds conditional confirm clearing plus `renderDelayActions()`; test gains89 lines; index changes20 existing cache values. No backend, schema, worker, CSS, permission, polling interval, countdown/deadline or draft semantics change in this repair.
+
+### Amendment authority and individual amended-file assessment
+
+A1–A32 exact before/after identities, master rule, concrete reason and original approval text are in the unchanged hashed fast ledger. Specific authority: A1 RAG success transaction; A2–A4 review revision moved into03; A5/A6 necessary existing-test compatibility; A7/A8 original legacy inputs; A11 internal read-only interfaces; A15 source/response contract completion; A31/A32 explicit HUMAN:2026-11-06「按总 A-5 补齐」. Standing approvals do not authorize unrecorded paths or broaden behavior. A31's five-file08 follows07 and preserves every original manual item, production defaultfalse and combined release gate; no authority conflict or unapproved amendment found.
+
+Prefixes below are relative to exact W: K=`src/main/kotlin/com/weibo/talentintroduction/`; T=`src/test/kotlin/com/weibo/talentintroduction/`; S=`src/main/resources/static/`; J=`src/test/js/`. Every row is mandatory and assessed individually; shared-file rows retain every applicable amendment. PASS in this table means the change follows the recorded amendment's rule; all current behavioral decisions are independently established by the fresh matrix above; V-5 is now resolved.
+
+| Amended file | Authority / master rule | Individual assessment and current proof |
+|---|---|---|
+| Tmail/RagSendBridgeTest.kt | A1 / I-5 | PASS. Assertions follow fact persistence into final transaction, not after-commit success; C-3 11/11. |
+| Kmail/service/MailReviewDraftModels.kt | A2/A3/A4 / I-3,I-6 | PASS. Only already-approved delayExpectedRevision DTO handoff/strict current round; no new user capability. C-2 review/E2E. |
+| Tmail/repository/MailReplyDraftRepositoryIT.kt | A5/A6 / I-2,I-6 | PASS. Real READ_COMMITTED transaction wrapper satisfies production lock contract; existing state/content assertions retained,8/8. |
+| Kmail/service/DelayedManualReplyModels.kt | A7/A8,A23/A24 / I-4,I-6,I-7 | PASS. White-listed original request/meeting restore inputs and typed nullable OUTBOUND source preserve frozen sending/old schema compatibility; missing old restore input fails closed. Snapshot14/R-15; repair size marker is narrower than generic invalid snapshot. |
+| Tmail/service/DelayedManualReplySnapshotTest.kt | A9/A10,A23/A24 / I-4,I-6 | PASS. Prepared fixtures now carry required original input; both legacy source/old compatibility/normalization/limits retain real expectations;14/14. |
+| Kmail/service/OutboundAttachmentService.kt | A11/A12 / I-7,I-10 | PASS. readVerifiedFile visibility private→internal only, body unchanged; no new file access authority. Attachment28 and live bytes. |
+| Kmail/repository/MailReplyDraftRepository.kt | A13/A14 / I-7,I-10 | PASS. Bounded current-contact/account/page-id read API reuses canonical mapper; no locks/writes/new lifecycle. Query10, Repo8. |
+| Kmail/repository/MailReviewDraftRepository.kt | A13/A14 / I-7,I-10 | PASS. Same bounded read-only mapper reuse for review; existing events/state intact; Review19/Query10. |
+| Kmail/controller/DelayedManualReplyController.kt | A15/A16,A23/A24 / I-6,I-7 | PASS. Validated original processing/actual anchor only on privileged restore response; public READ projection unchanged; Controller16/R-5/R-15. |
+| Tmail/controller/DelayedManualReplyControllerTest.kt | A15/A16,A23/A24 / I-6,I-7 | PASS. Direct positive/negative source restoration, permissions and status contract;16/16; not fixture-only source claims. |
+| JmailboxChatBehavior.test.js | A17/A18 / I-9,S-4 | PASS. Monotonic clock/SVG namespace/teardown supports added production timer; business assertions retained; N-4. |
+| JmailboxReadOnly.test.js | A17/A18,A19/A20 / I-7,I-9 | PASS. Timer/clock fixture updates and retirement of obsolete no-refresh expectation follow required focus refresh; content/scroll/permission/coalescing remain. N-2/N-4/R-14. |
+| JmailboxMailReadAccess.test.js | A19/A20 / I-7,I-9 | PASS. Single macrotask drain/clock avoids infinite fake polling while preserving permission semantics; N-4. |
+| JmailboxOutboundAttachments.test.js | A19/A20 / I-4,I-6 | PASS. Same bounded timer compatibility; attachment order/download/ownership assertions retained; N-4/R-5/R-12. |
+| JmailboxReplyIdentity.test.js | A19/A20 / I-3,I-9 | PASS. Supplies new closure dependencies without loosening owner/source identity assertions; N-4. |
+| JmailboxSuspension.test.js | A19/A20 / I-9 | PASS. Clock/single-turn fixture supports periodic read; original suspension assertions retained; N-4. |
+| JmeetingConfirmationIntegration.test.js | A19/A20 / N-3,I-4 | PASS. Timer/clock support only; preview/content/ICS integration assertions retained; N-4 and actual R-12. |
+| JauthFlow.test.js | A21/A22 / I-7,I-9 | PASS. Supplies closure-local legacy map to extracted-function sandbox; auth/logout behavior preserved; N-4/R-10. |
+| JmailReviewReader.test.js | A21/A22 / I-7,I-9 | PASS. Removes only old focus-only-access request assumption, retains editor identity/body/CAS/reload assertions; N-4/R-14. |
+| Kmail/service/DelayedManualReplyService.kt | A23/A24 / I-3,I-6,I-7 | PASS. Existing predicates/source identity accept typed legacy source while preserving transaction and locks; Lifecycle44/R-15. |
+| Kmail/service/PendingMailOperationService.kt | A23/A24 / O-1,I-4,I-6 | PASS. Captures actual source separately from optional raw input and restores raw text/HTML only under unchanged-content guard; no alternate delivery path. E2E30/R-7/R-15. |
+| Smailbox-chat.js | A23/A24,A31/A32 / I-6,I-7,I-9,A-5 | PASS. Narrow existing renderer/source consumer and admitted-confirm predicate follow A31. Native raw/anchor/late409 pass; current bounded footer cleanup closes V-5 under I-9, with actual admin/FULL/retry R-13. |
+| Sindex.html | A23/A24,A31/A32 / S-4 | PASS. Existing20 version values updated together, same order/URLs; unversioned task runtime and DOM intact. Current repair cache key also limited to same set. |
+| Tmail/service/DelayedManualReplyLifecycleIT.kt | A23/A24 / I-3,I-6,I-7 | PASS. Real dual-source exclusion, identity collisions, retry/recovery/token and transaction regressions retain all previous invariants;44/44. |
+| JmailboxDelayedReply.test.js | A23/A24,A31/A32 / I-6,I-9,A-5 | PASS. Native-source/late-confirm/conflict regressions remain relevant; current89-line repair regression also asserts visible DOM cleanup, detached stale POST0, unchanged-job resume and usable new confirmation/retry. N-1/N-2/N-3 and independent R-13/R-14 pass. |
+| JmailboxChatStyle.test.js | A25/A26 / S-4 | PASS. Retires old06 cache-key coupling while preserving20 refs/same key/literal CSS/real DOM; no new key pinned; N-1/N-2/N-3. |
+| Kmail/controller/MailReviewDraftController.kt | A27/A28 / I-3,I-7 | PASS. Revision allowlist/strict value forwarding and exact delayed exception status only; no permission expansion. E2E30/R-8. |
+| Kmail/service/ManualReplySendAttemptService.kt | A27/A28 / I-1,I-3,I-5 | PASS. Internal pure existing-payload lookup and explicit queued-read preparation preserve original strict sync claim and identity; Attempt62/E2E30. |
+| Kmail/service/MailReviewDraftService.kt | A27/A28 / I-3,I-6,I-7 | PASS. Defaultfalse queued-read mode enabled only in two approved preparation callers; UNKNOWN and source/context permission remain strict; Review19/R-8. |
+| Tmail/service/DelayedManualReplyWorkerTest.kt | A29/A30 / I-11 | PASS. Only final properties use real defaultfalse instance, overrides win, remaining mocks/assertions unchanged;9/9. |
+| JmailReviewAdmin.test.js | A31/A32 / A-5,I-6,I-9 | PASS. Shared late-confirm direct consumer/local clock fixture retains APPROVED read-only/body/version restrictions; N-2 and actual REVIEW native R-2. |
+| JexpertAccessWorkspace.test.js | A31/A32 / A-5,I-7,I-9 | PASS. Existing delegated FULL/READ host tests directly prove late-confirm and revocation boundaries; native delegated/READ R-2/R-14. |
+
+### Complete cumulative58-file scope
+
+Every path below is in current MASTER_BASE→product diff and independently reconciled to governing child Files/amendment authority. All58 are authorized; no extra product/test file. Scope PASS does not relabel old optional/baseline test failures. K=`src/main/kotlin/com/weibo/talentintroduction/`; T=`src/test/kotlin/com/weibo/talentintroduction/`; S=`src/main/resources/static/`; J=`src/test/js/`.
+
+| File | Governing Files authority | Scope verdict |
+|---|---|---|
+| Kconfig/ManualReplyDelayProperties.kt | 01-storage | PASS |
+| Kmail/controller/DelayedManualReplyController.kt | 04-worker-api,06-frontend,07-source-contract | PASS |
+| Kmail/controller/MailReviewDraftController.kt | 07-activation | PASS |
+| Kmail/controller/MailboxConversationController.kt | 05-query,07-activation | PASS |
+| Kmail/controller/UnmatchedInboundMailController.kt | 07-activation | PASS |
+| Kmail/repository/DelayedManualReplyRepository.kt | 01-storage,03-lifecycle,05-query | PASS |
+| Kmail/repository/MailReplyDraftRepository.kt | 03-lifecycle,05-query | PASS |
+| Kmail/repository/MailReviewDraftRepository.kt | 03-lifecycle,05-query | PASS |
+| Kmail/repository/MailboxConversationRepository.kt | 05-query | PASS |
+| Kmail/service/DelayedManualReplyModels.kt | 01-storage,02-preparation,04-worker-api,07-source-contract | PASS |
+| Kmail/service/DelayedManualReplyService.kt | 03-lifecycle,07-source-contract | PASS |
+| Kmail/service/DelayedManualReplyWorker.kt | 04-worker-api | PASS |
+| Kmail/service/ExpertMailPermissionGuard.kt | 04-worker-api | PASS |
+| Kmail/service/MailReplyDraftService.kt | 03-lifecycle | PASS |
+| Kmail/service/MailReviewDraftModels.kt | 03-lifecycle | PASS |
+| Kmail/service/MailReviewDraftService.kt | 03-lifecycle,07-activation | PASS |
+| Kmail/service/MailReviewSendService.kt | 07-activation | PASS |
+| Kmail/service/MailboxConversationService.kt | 05-query | PASS |
+| Kmail/service/ManualReplySendAttemptService.kt | 02-preparation,03-lifecycle,07-activation | PASS |
+| Kmail/service/OutboundAttachmentService.kt | 05-query | PASS |
+| Kmail/service/PendingMailOperationService.kt | 02-preparation,04-worker-api,07-source-contract,07-activation | PASS |
+| src/main/resources/application.yml | 07-activation | PASS |
+| src/main/resources/db/migration/V174__create_delayed_manual_reply.sql | 01-storage | PASS |
+| Sapp.js | 06-frontend | PASS |
+| Sindex.html | 06-frontend,07-source-contract,08-deadline-confirmation | PASS |
+| Smailbox-chat.css | 06-frontend | PASS |
+| Smailbox-chat.js | 06-frontend,07-source-contract,08-deadline-confirmation | PASS |
+| Smailbox-readonly.js | 06-frontend | PASS |
+| JauthFlow.test.js | 06-frontend | PASS |
+| JexpertAccessWorkspace.test.js | 08-deadline-confirmation | PASS |
+| JmailReviewAdmin.test.js | 06-frontend,08-deadline-confirmation | PASS |
+| JmailReviewReader.test.js | 06-frontend | PASS |
+| JmailboxChatBehavior.test.js | 06-frontend | PASS |
+| JmailboxChatStyle.test.js | 06-frontend,07-source-contract | PASS |
+| JmailboxDelayedReply.test.js | 06-frontend,07-source-contract,08-deadline-confirmation | PASS |
+| JmailboxMailReadAccess.test.js | 06-frontend | PASS |
+| JmailboxOutboundAttachments.test.js | 06-frontend | PASS |
+| JmailboxReadOnly.test.js | 06-frontend | PASS |
+| JmailboxReplyIdentity.test.js | 06-frontend | PASS |
+| JmailboxServerDrafts.test.js | 06-frontend | PASS |
+| JmailboxSuspension.test.js | 06-frontend | PASS |
+| JmeetingConfirmationIntegration.test.js | 06-frontend | PASS |
+| Tcampaign/OperatorStatusWriteSeamGuardTest.kt | 05-query | PASS |
+| Tcampaign/repository/FlywayMigrationIntegrationTest.kt | 01-storage | PASS |
+| Tmail/RagSendBridgeTest.kt | 02-preparation | PASS |
+| Tmail/controller/DelayedManualReplyControllerTest.kt | 04-worker-api,06-frontend,07-source-contract | PASS |
+| Tmail/repository/DelayedManualReplyQueryIT.kt | 05-query | PASS |
+| Tmail/repository/MailReplyDraftRepositoryIT.kt | 03-lifecycle | PASS |
+| Tmail/repository/MailboxConversationRepositoryIT.kt | 05-query | PASS |
+| Tmail/service/DelayedManualReplyLifecycleIT.kt | 03-lifecycle,07-source-contract | PASS |
+| Tmail/service/DelayedManualReplySnapshotTest.kt | 02-preparation,04-worker-api,07-source-contract | PASS |
+| Tmail/service/DelayedManualReplyWorkerTest.kt | 04-worker-api,07-activation | PASS |
+| Tmail/service/ExpertMailPermissionGuardTest.kt | 04-worker-api | PASS |
+| Tmail/service/ExpertMailReadAccessIT.kt | 01-storage | PASS |
+| Tmail/service/InboundPendingOwnerIT.kt | 01-storage | PASS |
+| Tmail/service/ManualReplyDelayEndToEndIT.kt | 07-activation | PASS |
+| Tmail/service/ManualReplySendAttemptServiceTest.kt | 02-preparation | PASS |
+| Tmail/service/PendingMailOperationServiceTest.kt | 02-preparation,07-activation | PASS |
+
+All individual amendment-rule assessments above are mandatory, including retroactively authorized tests; original explicit approvals and exact before/after identities remain in hashed fast ledger A1–A32. Current three-file repair has its own exact human approval/durable handoff and does not transfer future repair authority.
+
+### Finding Lineage
+
+| Finding | Prior state | Current state | Independent fresh evidence |
+|---|---|---|---|
+| V-1 P1 mixed-collation messages500 | RESOLVED in epoch2 | RESOLVED | C-2 Query10 includes original/unified metadata; R-1 original mixed server/contact/suppression schema GET200, matching/unrelated suppression and READ semantics; no schema normalization. |
+| V-2 P1 oversized snapshot400 instead of413 | RESOLVED in epoch2 | RESOLVED | C-2 E2E30; R-1 two actual legal oversized endpoint bodies413 SNAPSHOT_INVALID and unchanged side-effect counts. Dedicated size marker, no generic malformed-input broadening. |
+| V-3 mandatory P2 write-site guard | RESOLVED in epoch2 | RESOLVED | C-3 exact OperatorStatusWriteSeamGuardTest1/1; unchanged strict write-site checking, no bypass. |
+| V-4 P1 INBOUND restore skips conflict prompt for newer ordinary draft | RESOLVED in epoch2 | RESOLVED | Current discriminating JS suite plus R-5 two independent Chrome processes: native warning before mount, exact new body/context/two ordered files unchanged; clean old restore succeeds without fake draft. |
+| V-5 P1 old confirmation remains visible/inert after hidden/resume | OPEN in epoch2; current authorized repair | RESOLVED | Current stopDelayPolling clears state and renders only action footer. R-13 actual admin/FULL/retry hidden removes old DOM, preserves editor/files/job, resumes with actual GET and allows exactly1 fresh legal POST. N-1/N-2/N-3 added discriminator also checks detached stale reference0POST and only-serverNow change. |
+| B-1 required native hidden/show evidence | RESOLVED in epoch2 | RESOLVED; freshly re-established | R-13/R-14 raw CDP actual same-window hidden/resume across admin/FULL/READ/retry,128 samples; every accepted interval hidden,0conversation GET/0automatic mutation, visible prompt GET. Playwright visible-only attempts explicitly excluded. |
+
+Convergence **PROGRESSING** rests on root-cause/behavioral closure of the sole prior open P1 and fresh preservation of earlier repairs, not finding count. `E/causal-provenance.json` records previous helper SHA256 `d587f1a187e5eb33ad9cdb8df31ca749a3548d24354c0a99f3e748726d69f261` versus current `d4fc59751cd762945317757ce4fdcdecff9d7617cadfab17ebdfbe27dbab326c`: the missing footer synchronization is now present. No persistent finding renamed, no repair-induced equal/higher-severity regression established, no mandatory evidence gap remains.
+
+### Findings
+
+#### P1
+
+N/A — V-1,V-2,V-4,V-5 resolved. No new confirmed mandatory implementation violation.
+
+#### P2
+
+N/A — required V-3 resolved. Optional hygiene/fixtures are not promoted to blocking findings or repair scope.
+
+#### Observations
+
+| ID | Current evidence, classification and limits |
+|---|---|
+| O-1 | C-2 MailReviewSendIT18 has1 assertion failure expected Subject/actual Re: Inbound. Entire test SHA identical to MASTER_BASE; actual create block already derives subject from inbound and is byte-identical, hash95aed274…. Exact base/current text and hashes in causal-provenance.json. Pre-existing adjacent expectation conflict by unchanged causal source, not dynamically rerun on base and not a successful test. Included in358, not edited/excluded. |
+| O-2 | C-3 required size100 query case runs and fails “reader never query review table.” Whole test and actual ownDraftRows block are byte-identical to MASTER_BASE, where the block already unions review rows. Fresh Query10/Mailbox41 and current native133-row paging pass. Existing assertion failure retained, no waiver of execution/no out-of-scope repair/no claim of dynamic base reproduction. |
+| O-3 | Supplied optional full InboundPendingOwnerIT8 has1failure/2errors: reflection mock cannot mock final ManualReplyDelayProperties; latch failure downstream of fixture; historical migration leaves aggregate_review at172 so later owner projection cannot find delayed_manual_reply. Exact current failure traces in jvm-failures.json. Mandatory current-schema Flyway49/Query10/Lifecycle44/Repository checks independently ran and pass. Optional full owner/ExpertReadAccess selections do not expand repair authority; no optional rerun or restored-schema success borrowed. |
+| O-4 | Required Maven11.0.15 versus live runtime11.0.32.1 explicitly disclosed. Optional all-JVM old America/Coyhaique timezone suite not run; no result claimed. |
+| O-5 | Current `git diff --check MASTER_BASE CODE -- src` exit0. Whole-document whitespace cleanup remains outside product/repair scope; no docs cleanup or optional all-diff gate added. |
+| O-6 | Existing SMTP transport normalizes text/plain attachment LF toCRLF. Native text attachment comparison is explicitly text-normalized, never exact raw bytes. SMTP implementation unchanged by cumulative diff. Separate R-12 binary attachments and ICS prove exact bytes/order/hash, including ordinary meeting DRAFT closure. |
+| O-7 | Historical08 prose index hash typo remains metadata-only. Current network/source manifest independently matches exact current hashes and current cache key; no old hash passed off as current. |
+| O-8 NEW environment | Actual17:31:33–20:00:31 host clamshell/maintenance sleep interrupted runtime and inflated C-3 timing. Full power/runtime logs, original failures and only necessary completions preserved. Real600000ms crash proof completed before sleep. No clock/timestamp manipulation, product repair or permanent power setting. |
+| O-9 NEW harness | Initial logout401 assumption, Playwright visible-only facility, direct READ initial render race, tail evidence path, readonly selector and mysql output charset diagnostics are retained in raw reports. Current successful native/model/SMTP evidence completes each required branch; failed wrapper statuses remain visible. These are not unexplained product failures or missing mandatory evidence. |
+
+### Fast-p RECORD_ONLY re-evaluation
+
+Every retained RECORD_ONLY entry and repeated historical occurrence was re-evaluated against current master, not accepted from a child verdict. Historical F/P lineage remains historical; no prior negative evidence erased.
+
+| Entry | Governing master rule | Epoch3 disposition |
+|---|---|---|
+| 01 final N/A; historical optional owner boundary | Mandatory compile/Flyway versus optional fixture range | C-1 and C-2 Flyway49 pass; optional O-3 actual failures disclosed, no invented mandatory waiver. |
+| 02 O-1 unused injected RAG repository | No proven mandatory behavior violation | Observation only. Constructor compatibility retained; no cleanup. |
+| 02 O-2 deliverPrepared parameter name claim/claimedAttempt | Positional preparation/delivery contract | Observation only; identical positional API, no caller/named-argument break. |
+| 02 O-3 no-draft conversation snapshot gap | O-1/I-3/I-4/I-6/I-7 | A23/A24 governing typed legacy source; Snapshot14/E2E30 and R-7/R-15 actual nullable-input/real-anchor recovery close the gap. |
+| 02 O-4 later rehydration dependency | I-4/I-5/I-7 | Full current Pending/worker/source inspected; Worker9, real frozen MIME, actual process restart prove implemented rehydration. |
+| 03 historical P-1 DTO authority pause | I-3/I-6; A2/A3/A4 | Recorded authorization places revision DTO in03 and consumption in07. Current strict revision validation/forwarding and current tests/native stale/current requests pass; not unapproved now. |
+| 03 O-1;04 O-2;07 O07E2-01 size100 | N-5/I-8 and required original range | Fresh C-3 actual O-2 failure retained with exact unchanged-base causal identity. Full required query selection executed. |
+| 03 O-2;04 O-2 optional tzdata | Environment/optional full-suite boundary | O-4; no optional whole JVM result asserted. |
+| 04 O-1 component-only SMTP at child stage | O-1/I-5/I-11 | Full current application/socket SMTP/MySQL R-2/R-3/R-4/R-6 and real60s/600s completed. Component test not substituted. |
+| 05 final N/A; deferred integrated query/runtime | I-8/API/query | Query10/Mailbox41, original mixed live GET and133-row/two-account actual browser paging complete deferment. |
+| 06 O06-01 activation/restart later stage | O-1/I-9/I-11 | Three actual public surfaces, restart/disabled/UNKNOWN and current raw-CDP hidden/resume complete required master matrix. |
+| 07-source O07SC-01 pre-activation sync500 containing422 | I-3/source compatibility | Historical result retained; actual current activated INBOUND/OUTBOUND requeue and original-null-anchor→newer-anchor chain pass R-7/R-15. No old sync exception mapping changed out of scope. |
+| 07-source F06-01 closed | I-6/C-6 original input versus edited content | Complete current app.js/delay consumer audit and focused JS unchanged/text-edited/format-only regressions; R-7/R-15 actual restore/raw use and current MIME remain valid. V-4 separately resolved; no label-based reopening. |
+| 07 O07E2-02 Subject | Original review regression range | Fresh C-2 O-1 failure and unchanged-base causal proof, no exclusion. |
+| 07 O07E2-03 native A-5 gap before08 | A31/A32/A-5/I-1/I-2/I-9 | Current ordinary/REVIEW/FULL each actual59→61s one POST409→action GET R-2. API-only409 not used. Original negative history retained. |
+| 08 O08-01 index-hash prose | S-4/evidence identity | Actual current served/source hash equality; metadata O-7 only. |
+| Deferred whole-plan human acceptance | A-1…A-12 | All PENDING; machine exercises are not human approval. |
+
+### Evidence Boundaries and manual gate
+
+No unavailable mandatory machine evidence remains. PASS applies to the exact reviewed product boundary and governing approved contract; it does not claim all raw commands green. O-1/O-2 are evidenced pre-existing causal paths; O-3 optional fixture diagnostics; every required command was executed with actual counts and opt-ins. Native hidden evidence uses real Chrome document.hidden/visibilityState; Playwright visible-only probes are excluded. Runtime SMTP/database/IMAP/ES are disposable local systems; no production deployment or real-mail acceptance inferred. Optional global executor identity, optional all-JVM suite and human acceptance are not manufactured.
+
+| Human item | Machine exercise mapping | Human status |
+|---|---|---|
+| A-1 ordinary draft/attachment, refresh/switch,40/50s cancellation | R-4 ordinary DRAFT body/txt/unchanged version and due; R-5 restore preservation | PENDING |
+| A-2 meeting/ICS/two ordered files/final close | R-2 ordinary delivery; R-4 ordinary meeting DRAFT SENT/contentnull/calendar0→1; R-12 exact MIME/download | PENDING |
+| A-3 temporary failure/retry/dismiss/new60s | R-4 original451+explicit retry and same-job completion; R-13 retry cleanup; R-16 list | PENDING |
+| A-4 permanent failure/UNKNOWN/no duplicate retry | R-6 real550/DATA disconnect; R-3 real crash/UNKNOWN | PENDING |
+| A-5 three-host native59→61s late409 | R-2 ordinary/REVIEW/FULL native clicked POST409→GET; exact timings retained | PENDING |
+| A-6 review frozen/body/version/context change | R-8 real new IMAP→context error→confirm/retry/60s SENT; R-2 frozen view | PENDING |
+| A-7 READ/FULL/revoke/current permission | R-1/R-2/R-14; Controller16/Guard11/Lifecycle44/E2E30 | PENDING |
+| A-8 restart/disabled-new/old jobs/no duplicate | R-3 actual process kill and unchanged600000ms recovery | PENDING |
+| A-9 list/filter/count/pagination/account | R-11 actual133 unique rows/secondary65; Query10/Mailbox41 | PENDING |
+| A-10 non-target/manual quota/QA-RAG | R-9 real RAG/direct template/IMAP automatic/ES batch, no non-target delay jobs | PENDING |
+| A-11 desktop/mobile/keyboard/fixed errors | R-2/R-6/R-16 current screenshots/computed styles/keyboard; R-13 mobile hidden resume | PENDING |
+| A-12 cross-browser newer draft conflict | R-5 two independent Chrome processes exact body/context/ordered files preserved and original recoverable | PENDING |
+
+Machine exercise mapping is not a human step-by-step execution signature. All12 require human-originated results at product SHA `60f4a5389e032aac50d1a8f0d8eab0519edc3ad7`. No human approval, merge/release acceptance, publish or branch completion recorded by this reviewer.
+
+### Archive, cleanup and final state
+
+- Raw archive: `/tmp/aggregate-epoch3-evidence.tar.gz`; SHA256 **9c67763c19e923d982eaa1c9b3d77127a363dec21f1691aaf4f024afc36ed83a**; 12,499,211 bytes; 554 files. Commands/scripts/JUnit/logs/HTTP/network/MIME/current screenshots/failed probes/source-and-identity receipts/DB dumps/cleanup included.
+- Manifest: `E/manifest.json`; SHA256 **c4cb2fb61de1f8de9c47e73395004498b71bcb9343afe3c82d95fb33f95c02a2**. Chrome profile caches and report-drafting files excluded, not behavioral evidence. Complete report returned separately to avoid self-hash recursion. Archive receipt `/tmp/aggregate-epoch3-archive-receipt.json`.
+- Both `aggregate_runtime` and `aggregate_review` SQL dumps completed before cleanup. Exact owned application/SMTP/caffeinate processes terminated; three epoch3 containers removed; no owned Chrome/server process remains. `E/cleanup.json`, `E/owned-processes-before-cleanup.txt`. Unrelated services untouched; no persistent power-setting change, product scaffolding or real recipient.
+- Final `E/final-repository-state.json`: HEAD `39bfd10890e94b531f46e54c251f35d9ecd9fc4f`, branch `fast/manual-reply-delay-master`, index empty, `git diff 60f4a5389e032aac50d1a8f0d8eab0519edc3ad7 -- src` empty. All50 protected master/child/fast/repair/handoff artifact hashes equal entry. Only dirty path is controller's selected review ledger. Reviewer did not edit product/tests/approved plans/fast evidence/tracked review report/ledger/repair; no staging, commit, HEAD or branch operation.
+- Return destination, controller-only: `W/docs/plans/review/manual-reply-delay-master/machine-verification.md`. Reviewer complete return saved `/tmp/aggregate-epoch3/report.md`; controller can persist it verbatim. No evidence write to that tracked destination by reviewer.
+
+Repair planning: N/A — verify-p PASS; no repair-p run, no repair artifact update, no new approval or implementation loop.
+
+### Next Action
+
+Perform deferred human A-1–A-12 acceptance for exact product SHA `60f4a5389e032aac50d1a8f0d8eab0519edc3ad7`. All human statuses remain PENDING; machine PASS supplies no human acceptance or release approval.
+
+No product code was modified.
