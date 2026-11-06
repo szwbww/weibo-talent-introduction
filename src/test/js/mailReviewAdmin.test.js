@@ -18,7 +18,7 @@ function deferred() { let resolve, reject; const promise = new Promise((a, b) =>
 async function setup(extra = {}, mount = {}) {
     const rows = extra.rows || [draft(11), draft(12), draft(21, 2)];
     const state = { rows, token: "initial", hook: null, summaryFail: false, confirmations: [], sends: [], events: [], ...extra };
-    const h = await H.bootChat({ draftServer: state.draftServer, authMe: state.authMe, contact: H.contactA(), messages: H.messagesA(), route(url, method, raw, entry, next) {
+    const h = await H.bootChat({ clock: state.clock, performance: state.performance, draftServer: state.draftServer, authMe: state.authMe, contact: H.contactA(), messages: H.messagesA(), route(url, method, raw, entry, next) {
         const body = raw ? JSON.parse(raw) : null;
         if (state.hook) { const value = state.hook(url, method, body); if (value !== undefined) return value; }
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
@@ -520,5 +520,43 @@ test("queued approved reply remains immutable and cancelled resubmit carries ser
     assert.ok(!action(h, "send") || action(h, "send").disabled);
     assert.match(h.host.textContent, /已加入发送队列/);
     assert.equal(h.host.querySelector('[data-action="mc-send-manual"]'), null);
+    finish(h);
+});
+
+test("APPROVED shared footer crosses deadline, rereads 409 without changing review content or version", async () => {
+    let now = 0;
+    const approved = draft(11, 1, { state: "APPROVED", approvedContextToken: "initial", sendStatus: "PREPARED" });
+    const frozen = clone(approved), requests = [];
+    let delayed = { id: 77, originKind: "REVIEW", originId: 11, status: "WAITING", revision: 9, dueAtMs: 60000, canCancel: true };
+    const h = await setup({ rows: [approved], performance: { now: () => now }, hook(url, method, body) {
+        const projection = () => ({ ...delayed, serverNowMs: now });
+        if (url.includes("/delayed-replies?")) return Promise.resolve([projection()]);
+        if (url.includes("/conversations/1/messages")) return Promise.resolve({ ...H.messagesA(), items: [
+            ...H.messagesA().items, { id: 77, source: "DELAYED_MANUAL_REPLY", direction: "OUTBOUND", subject: approved.subject,
+                body: approved.text, delayedReply: projection() }
+        ] });
+        if (url.includes("/delayed-replies/77")) {
+            requests.push({ method, body });
+            if (method === "POST") {
+                delayed = { ...delayed, status: "SENT", canCancel: false };
+                return Promise.reject(Object.assign(Error("已超过撤回期限"), { status: 409 }));
+            }
+            return Promise.resolve(projection());
+        }
+    } });
+    await select(h, "review:11");
+    now = 59000;
+    H.click(h.host.querySelector('[data-action="mc-delay-cancel-open"]')); await H.flush();
+    now = 61000; delayed.canCancel = false;
+    h.runTimers(); await H.flush();
+    assert.ok(h.host.querySelector('[data-action="mc-delay-confirm-submit"]'));
+    assert.equal(editor(h).getAttribute("contenteditable"), "false");
+    H.click(h.host.querySelector('[data-action="mc-delay-confirm-submit"]')); await H.flush();
+    assert.deepEqual(requests, [{ method: "POST", body: { expectedRevision: 9 } }, { method: "GET", body: null }]);
+    assert.deepEqual(approved, frozen);
+    assert.equal(editor(h).getAttribute("contenteditable"), "false");
+    assert.equal(h.host.querySelector('[data-action="mc-send-manual"]'), null);
+    assert.match(h.host.textContent, /已超过撤回期限/);
+    assert.doesNotMatch(h.host.textContent, /已撤回/);
     finish(h);
 });

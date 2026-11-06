@@ -19,10 +19,15 @@ async function boot(extra={}, selected=true) {
         if (url.includes("/delayed-replies?")) return Promise.resolve([]);
         if (/\/delayed-replies\/77/.test(url)) {
             if (url.endsWith("/restore") && state.restore) return typeof state.restore === "function" ? state.restore() : Promise.resolve(state.restore);
-            if (method === "POST") { state.posts.push(JSON.parse(raw)); if (state.conflict) return Promise.reject(Object.assign(Error("代次已变化"),{status:409})); state.job={...state.job,status:"CANCELLED",revision:2,canCancel:false}; }
+            if (method === "POST") {
+                state.posts.push(JSON.parse(raw));
+                if (state.postError) return Promise.reject(state.postError);
+                if (state.conflict) { state.job = { ...state.job, ...state.afterConflict }; return Promise.reject(Object.assign(Error("已超过撤回期限"), { status: 409 })); }
+                state.job = { ...state.job, status: "CANCELLED", revision: 2, canCancel: false };
+            }
             return Promise.resolve({...state.job,serverNowMs:100000+time.now()});
         }
-        if (url.includes("/conversations/1/messages")) return Promise.resolve({...H.messagesA(),items:[...H.messagesA().items,{source:"DELAYED_MANUAL_REPLY",id:77,direction:"OUTBOUND",accountCode:"acc1",subject:"Queued",body:"Frozen",eventAt:"2026-11-05T00:00:00",sendStatus:state.job.status,outboundAttachments:state.attachments || [],delayedReply:{...state.job,serverNowMs:100000+time.now()}}]});
+        if (url.includes("/conversations/1/messages")) return Promise.resolve({...H.messagesA(),items:[...H.messagesA().items,{source:"DELAYED_MANUAL_REPLY",id:77,direction:"OUTBOUND",accountCode:"acc1",subject:"Queued",body:"Frozen",eventAt:"2026-11-05T00:00:00",sendStatus:state.job.status,outboundAttachments:state.attachments || [],delayedReply:state.missing ? null : {...state.job,serverNowMs:100000+time.now()}}]});
         return next(url,method,raw,entry);
     }});
     if (selected) { H.click(h.host.querySelector('[data-action="mc-select-expert"][data-contact-id="1"]')); await H.flush(); }
@@ -38,16 +43,96 @@ test("two-stage footer cancel opens and dismisses without POST, repeated confirm
     H.click(button(h,"mc-delay-cancel-open")); const confirm=button(h,"mc-delay-confirm-submit"); H.click(confirm); H.click(confirm); await H.flush();
     assert.equal(h.state.posts.length,1); assert.equal(h.state.posts[0].expectedRevision,1); assert.equal(h.state.job.status,"CANCELLED"); finish(h);
 });
-test("deadline uses monotonic server offset and never claims SENT at zero",async()=>{
-    const h=await boot(); H.click(button(h,"mc-delay-cancel-open")); await h.time.advance(61000);
-    assert.equal(h.state.posts.length,0); assert.equal(button(h,"mc-delay-confirm-submit"),null);
-    const card = h.host.querySelector('[data-message-key="DELAYED_MANUAL_REPLY:77"]');
-    assert.match(card.textContent,/等待发送/); assert.doesNotMatch(card.textContent,/已发送/); finish(h);
+for (const fresh of [false, true]) {
+    for (const actualStatus of ["WAITING", "SENDING", "SENT"]) {
+        test(`59s admitted confirmation survives timer and redraw at 61s; fresh=${fresh}, authoritative=${actualStatus}`, async () => {
+            const h = await boot({ originKind: fresh ? "DRAFT" : "LEGACY" });
+            h.state.attachments = [{ id: "file-1", filename: "retained.txt", byteLength: 4 }];
+            await h.time.advance(59000);
+            H.click(button(h, "mc-delay-cancel-open")); await H.flush();
+            if (fresh) h.state.job.canCancel = false;
+            await h.time.advance(2000);
+            assert.ok(button(h, "mc-delay-confirm-submit"));
+            const card = h.host.querySelector('[data-message-key="DELAYED_MANUAL_REPLY:77"]');
+            assert.match(card.textContent, /等待发送/);
+            assert.doesNotMatch(card.textContent, /已发送/);
+            assert.match(card.textContent, /Frozen/);
+            assert.match(card.textContent, /retained.txt/);
+            assert.equal(h.state.posts.length, 0);
+            h.state.conflict = true;
+            h.state.afterConflict = { status: actualStatus, canCancel: false };
+            const start = h.calls.api.length, submit = button(h, "mc-delay-confirm-submit");
+            H.click(submit); H.click(submit); await H.flush();
+            assert.deepEqual(h.state.posts, [{ expectedRevision: 1 }]);
+            const actions = h.calls.api.slice(start).filter(x => /\/delayed-replies\/77/.test(x.url));
+            assert.deepEqual(Array.from(actions, x => [x.method, x.url.split("/").pop()]), [["POST", "cancel"], ["GET", "77"]]);
+            assert.equal(button(h, "mc-delay-confirm-submit"), null);
+            assert.match(h.host.textContent, /已超过撤回期限/);
+            assert.match(h.host.textContent, new RegExp({ WAITING: "等待发送", SENDING: "正在发送", SENT: "已发送" }[actualStatus]));
+            assert.doesNotMatch(h.host.textContent, /已撤回/);
+            await h.time.advance(5000);
+            assert.equal(h.state.posts.length, 1);
+            finish(h);
+        });
+    }
+}
+test("expired new open and dismissed confirmation cannot reopen, even with stale capability", async () => {
+    for (const admitted of [false, true]) {
+        const h = await boot(), open = button(h, "mc-delay-cancel-open");
+        if (admitted) H.click(open);
+        await h.time.advance(61000);
+        if (admitted) H.click(button(h, "mc-delay-confirm-dismiss"));
+        H.click(open); await H.flush();
+        assert.equal(button(h, "mc-delay-confirm-submit"), null);
+        assert.equal(h.state.posts.length, 0);
+        finish(h);
+    }
 });
-test("409 rereads exactly once without forced retry",async()=>{
-    const h=await boot(); h.state.conflict=true; H.click(button(h,"mc-delay-cancel-open")); H.click(button(h,"mc-delay-confirm-submit")); await H.flush();
-    assert.equal(h.state.posts.length,1); assert.ok(h.calls.api.some(x=>x.method==="GET"&&x.url.endsWith("/delayed-replies/77"))); assert.match(h.host.textContent,/代次已变化/); finish(h);
-});
+for (const invalidation of ["SENDING", "SENT", "CANCELLED", "FAILED", "UNKNOWN", "revision", "missing", "error", "capability"]) {
+    test(`observed ${invalidation} invalidates admitted cancel without deadline bypass`, async () => {
+        const h = await boot();
+        H.click(button(h, "mc-delay-cancel-open"));
+        const stale = button(h, "mc-delay-confirm-submit");
+        if (invalidation === "revision") h.state.job.revision++;
+        else if (invalidation === "missing") h.state.missing = true; // Same-key authoritative row replaces its missing job projection; pagination omission does not.
+        else if (invalidation === "error") h.state.job.publicErrorMessage = "来源已失效";
+        else if (invalidation === "capability") h.state.job.canCancel = false;
+        else h.state.job.status = invalidation;
+        await h.time.advance(5000);
+        assert.equal(!!button(h, "mc-delay-confirm-submit"), false);
+        await h.time.advance(56000);
+        H.click(stale); await H.flush();
+        assert.equal(h.state.posts.length, 0);
+        finish(h);
+    });
+}
+for (const status of [0, 401, 403]) {
+    test(`late submit ${status || "network"} failure never retries or announces success`, async () => {
+        const h = await boot(); await h.time.advance(59000);
+        H.click(button(h, "mc-delay-cancel-open")); await h.time.advance(2000);
+        h.state.postError = Object.assign(Error("offline or denied"), { status });
+        H.click(button(h, "mc-delay-confirm-submit")); await H.flush();
+        assert.equal(h.state.posts.length, 1);
+        assert.equal(button(h, "mc-delay-confirm-submit"), null);
+        assert.doesNotMatch(h.host.textContent, /已撤回/);
+        if (status) assert.equal(h.host.textContent, "");
+        else assert.match(h.host.textContent, /offline or denied/);
+        finish(h);
+    });
+}
+for (const cleanup of ["hidden", "unmount", "expert"]) {
+    test(`late admitted confirmation is cleared on ${cleanup}`, async () => {
+        const h = await boot(); await h.time.advance(59000);
+        H.click(button(h, "mc-delay-cancel-open")); await h.time.advance(2000);
+        const stale = button(h, "mc-delay-confirm-submit");
+        if (cleanup === "hidden") { h.doc.hidden = true; h.doc.root.dispatchEvent(new H.MiniEvent("visibilitychange")); }
+        if (cleanup === "unmount") finish(h);
+        if (cleanup === "expert") H.click(h.host.querySelector('[data-action="mc-select-expert"][data-contact-id="2"]'));
+        await H.flush(); H.click(stale); await H.flush();
+        assert.equal(h.state.posts.length, 0);
+        finish(h);
+    });
+}
 test("UNKNOWN, permanent failures, and historical errors have no retry capability",async()=>{
     for (const status of ["UNKNOWN","FAILED"]) { const h=await boot({status,canCancel:false,publicErrorMessage:'<img src=x onerror=alert(1)>'});
         assert.equal(button(h,"mc-delay-retry-open"),null); assert.equal(h.host.querySelector('.mc-send-error img'),null); assert.match(h.host.textContent,/img src=x/); finish(h); }

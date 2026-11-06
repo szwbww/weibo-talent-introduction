@@ -1024,13 +1024,22 @@
         function delayErrorIcon(id, reason, list) {
             return `<span class="mc-send-error" role="img"${list ? "" : ' tabindex="0"'} aria-label="发送异常：${escapeText(reason)}" aria-describedby="${escapeText(id)}"><svg class="mc-send-error-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 5.5v5M10 14h.01"></path></svg><span class="mc-send-error-tooltip" id="${escapeText(id)}" role="tooltip">${escapeText(reason)}</span></span>`;
         }
+        function delayConfirmationValid(c, job) {
+            if (!c || !job || !delayWritable() || instance.disposed || c.owner !== delayOwner()
+                || c.id !== job.id || c.revision !== job.revision) return false;
+            if (c.action === "cancel") {
+                return job.status === "WAITING" && !job.publicErrorCode && !job.publicErrorMessage
+                    && (job.canCancel || delayRemaining(job) === 0);
+            }
+            return job.status === "FAILED" && job.canRetry;
+        }
         function delayActions(message, contentsOnly = false) {
             const job = message.delayedReply;
             if (!job) return "";
             const key = `DELAYED_MANUAL_REPLY:${job.id}`;
             const c = delayState.confirm;
-            const valid = c && c.owner === delayOwner() && c.id === job.id && c.revision === job.revision
-                && (c.action !== "cancel" || delayRemaining(job) > 0);
+            const valid = delayConfirmationValid(c, job);
+            if (c && c.id === job.id && !valid) delayState.confirm = null;
             let actions = "";
             if (delayWritable() && valid) {
                 const cancel = c.action === "cancel";
@@ -1075,7 +1084,7 @@
                 if (!c || c.busy || c.owner !== delayOwner()) return;
                 const item = instance.conversation.items.find((m) => m.delayedReply && m.delayedReply.id === c.id);
                 const job = item && item.delayedReply;
-                if (!job || job.revision !== c.revision || !(c.action === "cancel" ? job.canCancel && delayRemaining(job) > 0 : job.canRetry)) {
+                if (!delayConfirmationValid(c, job)) {
                     delayState.confirm = null;
                     await delayRefreshJob(c.id, c.owner);
                     return;
@@ -1106,7 +1115,7 @@
                 return;
             }
             const verb = action === "mc-delay-cancel-open" ? "cancel" : "retry";
-            if (!(verb === "cancel" ? job.canCancel && delayRemaining(job) > 0 : job.canRetry && job.status === "FAILED")) return;
+            if (!(verb === "cancel" ? job.canCancel && job.status === "WAITING" && !job.publicErrorCode && !job.publicErrorMessage && delayRemaining(job) > 0 : job.canRetry && job.status === "FAILED")) return;
             delayState.confirm = { owner: delayOwner(), id: job.id, revision: job.revision, action: verb, busy: false };
             renderDelayActions();
             host.querySelector(`[data-delay-id="${Number(job.id)}"] [data-action="mc-delay-confirm-dismiss"]`)?.focus();
@@ -1236,8 +1245,7 @@
             const c = delayState.confirm;
             if (c && !c.busy) {
                 const item = instance.conversation.items.find((m) => m.delayedReply && m.delayedReply.id === c.id);
-                if (c.owner !== delayOwner() || !item || item.delayedReply.revision !== c.revision
-                    || c.action === "cancel" && delayRemaining(item.delayedReply) === 0) {
+                if (!delayConfirmationValid(c, item && item.delayedReply)) {
                     delayState.confirm = null;
                     renderTimeline();
                 }
