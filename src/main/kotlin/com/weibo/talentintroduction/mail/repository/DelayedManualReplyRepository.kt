@@ -100,7 +100,9 @@ class DelayedManualReplyRepository(private val jdbc: NamedParameterJdbcTemplate)
                    EXISTS(SELECT 1 FROM admin_user au WHERE au.username=j.actor_username) AS actor_exists,
                    EXISTS(SELECT 1 FROM expert_mail_read_access g WHERE g.username=j.actor_username
                      AND g.expert_contact_id=j.expert_contact_id AND g.access_level='FULL') AS actor_full,
-                   EXISTS(SELECT 1 FROM email_suppression es WHERE es.email=LOWER(TRIM(c.expert_email))) AS suppressed,
+                   -- A coercible RHS preserves indexed es.email's own collation across mixed schemas.
+                   EXISTS(SELECT 1 FROM email_suppression es
+                     WHERE es.email=JSON_UNQUOTE(JSON_QUOTE(LOWER(TRIM(c.expert_email))))) AS suppressed,
                    p.id AS inbound_id, p.expert_contact_id AS inbound_contact,
                    p.sender_account_code AS inbound_account, p.message_id AS inbound_message,
                    anchor.id AS anchor_id, anchor.expert_contact_id AS anchor_contact,

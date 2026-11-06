@@ -249,8 +249,11 @@ data class DelayedManualReplySnapshot(
 )
 
 /** 快照编解码失败（含未知版本、缺关键字段、超限）。入口映射为固定公开错误码。 */
-class DelayedManualReplySnapshotException(message: String, cause: Throwable? = null) :
-    IllegalArgumentException(message, cause)
+class DelayedManualReplySnapshotException(
+    message: String,
+    cause: Throwable? = null,
+    val sizeLimitExceeded: Boolean = false
+) : IllegalArgumentException(message, cause)
 
 /**
  * 显式白名单 JSON 编解码。
@@ -651,7 +654,10 @@ object DelayedManualReplySnapshotCodec {
 
     private fun requireSize(json: String) {
         if (json.toByteArray(Charsets.UTF_8).size > DELAYED_MANUAL_REPLY_MAX_SNAPSHOT_BYTES) {
-            fail("Delayed manual reply snapshot exceeds $DELAYED_MANUAL_REPLY_MAX_SNAPSHOT_BYTES bytes")
+            throw DelayedManualReplySnapshotException(
+                "Delayed manual reply snapshot exceeds $DELAYED_MANUAL_REPLY_MAX_SNAPSHOT_BYTES bytes",
+                sizeLimitExceeded = true
+            )
         }
     }
 

@@ -448,3 +448,124 @@ for (const editedDuringMount of [false, true]) {
         finish(h);
     });
 }
+
+function inboundRestore() {
+    return { id: 77, originKind: "LEGACY", sourceKind: "INBOUND", inboundProcessingId: 101,
+        expectedCancelledRevision: 2, originalInput: { subject: "Withdrawn subject",
+            htmlBody: "<p>Withdrawn inbound original</p>", textBody: "Withdrawn inbound original",
+            qaRuleIds: [9], attachmentIds: ["cancelled-attachment"] } };
+}
+
+function installInboundRestoreAdapter(h) {
+    const api = h.sandbox.api, mounts = [];
+    h.sandbox.state = { authIdentity: "admin:admin", mailbox: {} };
+    h.sandbox.legacyDelayedReplies = new Map();
+    h.sandbox.manualReplyQaContext = null;
+    h.sandbox.$ = selector => h.host.querySelector(selector);
+    h.sandbox.window = { MailboxMeeting: h.sandbox.MailboxMeeting };
+    h.sandbox.api = (url, options) => url === "/api/mail/unmatched-inbound/101"
+        ? Promise.resolve({ record: { expertContactId: 1, senderAccountCode: "acc1" } }) : api(url, options);
+    h.sandbox.mcHostMountUnmatchedDetail = async (host, id) => {
+        mounts.push(id);
+        h.sandbox.state.mailbox.detailContext = { id };
+        host.innerHTML = '<div id="unmatchedDetailPanel"><input id="manualReplySubject"><div id="manualRichReplyEditor" contenteditable="true"></div></div>';
+    };
+    const start = app.indexOf("async function mcHostRestoreDelayedReply(");
+    const end = app.indexOf("\nconst preflightState", start);
+    assert.ok(start >= 0 && end > start, "real restore adapter source is present");
+    vm.runInContext(app.slice(start, end), h.sandbox);
+    return mounts;
+}
+
+function ordinaryTarget(h) {
+    const request = h.draftServer.requests.find(entry => entry.method === "GET" && entry.url.includes("/target?"));
+    assert.ok(request, "the real consumer loaded its ordinary target");
+    const params = new URL(request.url, "https://test.invalid").searchParams;
+    return { contactId: Number(params.get("contactId")), kind: params.get("kind"),
+        processingId: Number(params.get("processingId")) || 0, accountScope: params.get("accountScope") || "" };
+}
+
+for (const conflict of ["latest server draft", "saved local draft", "unsaved input"]) {
+    test(`inbound restore consumer protects ${conflict} before legacy adapter mount`, async () => {
+        const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+        const snapshot = inboundRestore();
+        h.state.restore = snapshot;
+        const mounts = installInboundRestoreAdapter(h), target = ordinaryTarget(h);
+        if (conflict === "latest server draft") {
+            // Another browser saves after this consumer has loaded an empty ordinary draft.
+            h.draftServer.seed("admin", target, { subject: "New ordinary subject",
+                html: "<p>New ordinary body</p>", text: "New ordinary body", context: {
+                    outboundAttachmentDraft: { revision: 4, items: [
+                        { id: "new-file-1", key: "file-1", filename: "first.txt", state: "ready" },
+                        { id: "new-file-2", key: "file-2", filename: "second.txt", state: "ready" }
+                    ] }
+                } }, { version: 7 });
+        } else {
+            editorOf(h).innerHTML = "<p>New ordinary local body</p>";
+            if (conflict === "saved local draft") {
+                inputEvent(h);
+                await h.time.advance(1000);
+                await h.api.flushDrafts();
+            }
+        }
+        const serverBefore = h.draftServer.get("admin", target), editorBefore = editorOf(h).innerHTML;
+        const writesBefore = h.draftServer.requests.filter(entry => entry.method !== "GET").length;
+        const frozenBefore = JSON.stringify(snapshot);
+        if (conflict !== "unsaved input") assert.equal(serverBefore.state, "ACTIVE");
+        H.click(button(h, "mc-delay-restore")); await H.flush();
+        assert.ok(h.calls.status.some(entry => /当前已有新草稿或未保存输入.*未覆盖.*撤回内容仍保留/.test(entry.message)),
+            "warn before entering the legacy editor; retaining only the server row is insufficient");
+        assert.deepEqual(mounts, [], "conflict must not mount or fill the legacy editor");
+        assert.equal(h.host.querySelector("#manualRichReplyEditor"), null);
+        assert.equal(editorOf(h).innerHTML, editorBefore);
+        assert.deepEqual(h.draftServer.get("admin", target), serverBefore, "body, version and ordered attachments remain intact");
+        assert.equal(h.draftServer.requests.filter(entry => entry.method !== "GET").length, writesBefore);
+        assert.equal(h.state.job.status, "CANCELLED");
+        assert.equal(JSON.stringify(await h.sandbox.api("/api/mail/mailbox/conversations/1/delayed-replies/77/restore")), frozenBefore,
+            "cancelled original remains readable, independently of the ordinary draft");
+        finish(h);
+    });
+}
+
+test("inbound restore consumer without ordinary conflict reaches real adapter and preserves cancelled snapshot", async () => {
+    const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+    h.state.restore = inboundRestore();
+    const mounts = installInboundRestoreAdapter(h), target = ordinaryTarget(h);
+    const frozenBefore = JSON.stringify(h.state.restore);
+    H.click(button(h, "mc-delay-restore")); await H.flush();
+    assert.deepEqual(mounts, [101]);
+    assert.equal(h.host.querySelector("#manualRichReplyEditor").innerHTML, h.state.restore.originalInput.htmlBody);
+    assert.equal(h.host.querySelector("#manualReplySubject").value, "Withdrawn subject");
+    assert.equal(h.draftServer.get("admin", target).state, null, "legacy restoration never manufactures an ordinary draft");
+    assert.equal(h.draftServer.requests.filter(entry => entry.method !== "GET").length, 0);
+    assert.equal(h.state.job.status, "CANCELLED");
+    assert.equal(JSON.stringify(h.state.restore), frozenBefore);
+    finish(h);
+});
+
+for (const stage of ["snapshot", "ordinary lookup"]) {
+    for (const change of ["expert", "unmount", "editor", "revision"]) {
+        test(`late inbound restore consumer rejects ${change} during ${stage}`, async () => {
+            const h = await boot({ status: "CANCELLED", revision: 2, canCancel: false });
+            const snapshot = inboundRestore(), mounts = installInboundRestoreAdapter(h);
+            let resolve;
+            h.state.restore = stage === "snapshot" ? () => new Promise(r => { resolve = () => r(snapshot); }) : snapshot;
+            if (stage === "ordinary lookup") {
+                h.draftServer.intercept = (entry, execute) => entry.method === "GET" && entry.url.includes("/target?")
+                    ? new Promise(r => { resolve = () => r(execute()); }) : execute();
+            }
+            H.click(button(h, "mc-delay-restore")); await H.flush();
+            assert.ok(resolve, "restore must await the current ordinary server draft before mounting");
+            h.draftServer.intercept = null;
+            if (change === "expert") H.click(h.host.querySelector('[data-action="mc-select-expert"][data-contact-id="2"]'));
+            if (change === "unmount") finish(h);
+            if (change === "editor") { editorOf(h).innerHTML = "<p>Late ordinary input</p>"; inputEvent(h); }
+            if (change === "revision") { h.state.job = { ...h.state.job, revision: 3, status: "WAITING" }; await h.time.advance(5000); }
+            resolve(); await H.flush();
+            assert.deepEqual(mounts, []);
+            assert.doesNotMatch(h.host.textContent, /Withdrawn inbound original/);
+            if (change === "editor") assert.match(editorOf(h).textContent, /Late ordinary input/);
+            if (change !== "unmount") finish(h);
+        });
+    }
+}

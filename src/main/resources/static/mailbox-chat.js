@@ -1147,14 +1147,31 @@
                         : JSON.stringify(readManualValues()) === before) &&
                     latest?.revision === revision && latest?.status === "CANCELLED";
             };
+            const hasOrdinaryConflict = (ordinary) => {
+                const values = readManualValues();
+                const edited = values && rec?.baseline && (values.subject !== rec.baseline.subject ||
+                    values.html !== rec.baseline.html || values.text !== rec.baseline.text);
+                if (getDraft(key) || edited || ordinary?.state === "ACTIVE" && ordinary.content ||
+                    rec?.conflict || rec?.closed || rec && rec.seq !== rec.ack) {
+                    hostShowStatus("当前已有新草稿或未保存输入，未覆盖；撤回内容仍保留在原任务中。", "error");
+                    return true;
+                }
+                return false;
+            };
             try {
                 if (rec && rec.loading) await rec.loading;
                 if (!current()) return;
+                // Preserve unsaved input before flushing can change its revision or persist it.
+                if (hasOrdinaryConflict()) return;
                 await flushDrafts();
                 if (!current()) return;
                 const data = await hostApi()(delayPath(job.id) + "/restore");
                 if (!current() || Number(data.id) !== Number(job.id) ||
                     Number(data.expectedCancelledRevision) !== Number(job.revision)) return;
+                if (!key || !rec) throw new Error("发送内容无法恢复，请联系管理员");
+                const ordinary = await hostApi()(draftTargetUrl(rec.target));
+                if (!current()) return;
+                if (hasOrdinaryConflict(ordinary)) return;
                 if (data.sourceKind === "INBOUND") {
                     const adapter = hostFn("mcHostRestoreDelayedReply");
                     try {
@@ -1176,13 +1193,6 @@
                     throw new Error("发送内容无法恢复，请联系管理员");
                 if ((data.outboundAttachments || []).some((item) => !data.attachmentDownloads?.[item.id]))
                     throw new Error("附件恢复信息不完整，请重新读取");
-                const ordinary = await hostApi()(draftTargetUrl(rec.target));
-                if (!current()) return;
-                if (getDraft(key) || ordinary?.state === "ACTIVE" && ordinary.content ||
-                    rec.conflict || rec.closed || rec.seq !== rec.ack) {
-                    hostShowStatus("当前已有新草稿或未保存输入，未覆盖；撤回内容仍保留在原任务中。", "error");
-                    return;
-                }
                 const restored = { ...rec, map: new Map(), id: null, version: 0, state: null,
                     seq: 0, ack: 0, timer: null, inflight: null, loading: null, loaded: true,
                     uploads: new Set(), detail: null, error: "", conflict: false, closed: false,

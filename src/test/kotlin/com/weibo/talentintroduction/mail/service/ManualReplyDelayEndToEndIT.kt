@@ -209,6 +209,21 @@ class ManualReplyDelayEndToEndIT {
     private fun reviewBody(review: MailReviewDraftDetail) =
         linkedMapOf<String, Any?>("expectedVersion" to review.version, "safetyWarningConfirmed" to true)
 
+    @Test fun oversizedSnapshotReturns413WithoutSideEffects() {
+        val html = "<p>Hello</p><!--" + "界".repeat(1_400_000) + "-->"
+        val sentBefore = count("mail_record", "send_status='SENT'")
+        for ((path, input) in listOf(INBOUND to body(), OUTBOUND to outboundBody())) {
+            input["htmlBody"] = html
+            val response = request(path, input, "user1", status = 413)
+            assertEquals("SNAPSHOT_INVALID", response["code"].asText())
+            assertEquals(0, count("delayed_manual_reply"))
+            assertEquals(0, count("mail_send_attempt"))
+            assertEquals(sentBefore, count("mail_record", "send_status='SENT'"))
+            assertEquals(0, count("meeting_calendar_event"))
+            assertEquals(0, smtp.sent.size)
+        }
+    }
+
     @Test fun `enabled legacy inbound freezes actual actor and dispatches once with atomic facts`() {
         val response = request(INBOUND, body(), "user1")
         val view = queued(response)

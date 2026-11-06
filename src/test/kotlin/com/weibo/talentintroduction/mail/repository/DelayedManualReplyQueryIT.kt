@@ -245,6 +245,85 @@ class DelayedManualReplyQueryIT {
         assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) { messages("user1") }
     }
 
+    @Test fun unicodeContactAnd0900SuppressionKeepMessagesReadable() =
+        mixedCollationMessages("utf8mb4_unicode_ci", "utf8mb4_0900_ai_ci")
+
+    @Test fun contact0900AndUnicodeSuppressionKeepMessagesReadable() =
+        mixedCollationMessages("utf8mb4_0900_ai_ci", "utf8mb4_unicode_ci")
+
+    private fun mixedCollationMessages(contactCollation: String, suppressionCollation: String) {
+        // V1 inherits the database default; V30 explicitly selects utf8mb4 and can inherit
+        // a different server default. Exercise both directions, never homogenize the tables.
+        fun collation(table: String, column: String) = jdbc.queryForObject(
+            """SELECT COLLATION_NAME FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?""",
+            String::class.java, table, column)!!
+        fun contactColumn(value: String) = jdbc.execute(
+            "ALTER TABLE expert_contact MODIFY expert_email VARCHAR(255) CHARACTER SET utf8mb4 COLLATE $value NOT NULL")
+        fun suppressionColumn(value: String) = jdbc.execute(
+            "ALTER TABLE email_suppression MODIFY email VARCHAR(320) CHARACTER SET utf8mb4 COLLATE $value NOT NULL COMMENT '归一化邮箱(小写trim)'")
+        val originalContact = collation("expert_contact", "expert_email")
+        val originalSuppression = collation("email_suppression", "email")
+        val file = upload("user1")
+        val failed = job("mixed-collation-retry", "FAILED", attachments = listOf(file), actor = "user1")
+        val waiting = job("mixed-collation-cancel", actor = "user1")
+        // Keep cancellation eligibility independent of wall-clock time spent in ALTER TABLE.
+        jdbc.update("UPDATE delayed_manual_reply SET due_at_ms=? WHERE id=?", delayed.currentTimeMs() + 600000, waiting.id)
+        jdbc.update("UPDATE expert_contact SET expert_email='  ExPeRt1@Example.Test  ' WHERE id=1")
+        jdbc.update("INSERT INTO email_suppression(email,source) VALUES('other@example.test','MANUAL')")
+        val controller = MailboxConversationController(service, Mockito.mock(ExpertFollowService::class.java),
+            Mockito.mock(ExpertRepliedDismissalService::class.java), Mockito.mock(PendingMailOperationService::class.java),
+            Mockito.mock(MailboxSuspensionService::class.java))
+        val mvc = MockMvcBuilders.standaloneSetup(controller).build()
+        try {
+            contactColumn(contactCollation)
+            suppressionColumn(suppressionCollation)
+            assertEquals(contactCollation, collation("expert_contact", "expert_email"))
+            assertEquals(suppressionCollation, collation("email_suppression", "email"))
+            assertNotEquals(contactCollation, suppressionCollation)
+            // The complete production message path must succeed, not a standalone SQL probe.
+            mvc.perform(get("/api/mail/mailbox/conversations/1/messages").sessionAttr(AuthSessionKeys.USERNAME, "admin"))
+                .andExpect(status().isOk)
+            Mockito.clearInvocations(named)
+            val allowed = messages()
+            val queryCount = queries().size
+            assertTrue(allowed.items.single { it.source == "DELAYED_MANUAL_REPLY" && it.id == failed.id }.delayedReply!!.canRetry)
+            assertTrue(allowed.items.single { it.source == "DELAYED_MANUAL_REPLY" && it.id == waiting.id }.delayedReply!!.canCancel)
+            assertEquals(file.id, allowed.items.single { it.source == "DELAYED_MANUAL_REPLY" && it.id == failed.id }.outboundAttachments.single().id)
+            assertTrue(retryFromFullUser(failed.id))
+
+            // Suppression is normalized like EmailSuppressionService: lowercase and trim.
+            jdbc.update("INSERT INTO email_suppression(email,source) VALUES('expert1@example.test','MANUAL')")
+            mvc.perform(get("/api/mail/mailbox/conversations/1/messages").sessionAttr(AuthSessionKeys.USERNAME, "admin"))
+                .andExpect(status().isOk)
+            Mockito.clearInvocations(named)
+            val blocked = messages()
+            assertEquals(queryCount, queries().size)
+            assertFalse(blocked.items.single { it.source == "DELAYED_MANUAL_REPLY" && it.id == failed.id }.delayedReply!!.canRetry)
+            assertFalse(blocked.items.single { it.source == "DELAYED_MANUAL_REPLY" && it.id == waiting.id }.delayedReply!!.canCancel)
+            assertFalse(retryFromFullUser(failed.id))
+
+            jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE username='user1'")
+            Mockito.clearInvocations(named, attachmentService)
+            val read = messages("user1")
+            assertEquals(setOf(failed.id, waiting.id), read.items.filter { it.source == "DELAYED_MANUAL_REPLY" }.map { it.id }.toSet())
+            assertTrue(read.items.all { it.outboundAttachments.isEmpty() && it.calendarAttachment == null && it.attachmentCount == 0 })
+            assertTrue(read.items.mapNotNull { it.delayedReply }.all { !it.canRetry && !it.canCancel })
+            assertTrue(queries().none { it.contains("j.snapshot_json") || it.contains("email_suppression") ||
+                it.contains("outbound_mail_attachment") || it.contains("mailbox_review_draft_event") })
+            assertTrue(Mockito.mockingDetails(attachmentService).invocations.none { it.method.name.startsWith("readVerifiedFile") })
+            jdbc.update("DELETE FROM expert_mail_read_access")
+            assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) { messages("user1") }
+        } finally {
+            // DDL commits independently of transactions. Restore both columns even on the
+            // expected pre-repair 1267 failure so other QueryIT methods retain their schema.
+            try { suppressionColumn(originalSuppression) } finally { contactColumn(originalContact) }
+        }
+    }
+
+    private fun retryFromFullUser(id: Long) =
+        messages("user1").items.single { it.source == "DELAYED_MANUAL_REPLY" && it.id == id }.delayedReply!!.canRetry
+
     @Test fun pageQueriesDoNotGrowAndLimitsRemainPerJob() {
         val files = (1..MAX_FILES).map { upload(text = it.toString().repeat(1024 * 1024)) }
         val first = job("batch-first", "FAILED", attachments = files)

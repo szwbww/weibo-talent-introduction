@@ -984,8 +984,15 @@ class PendingMailOperationService(
         val actor = prepared.authenticatedUsername?.takeIf { it.isNotBlank() }
             ?: throw DelayedManualReplyException(401, "UNAUTHORIZED", "请先登录")
         expertMailPermissionGuard.requireDelayedActor(actor)
-        return when (val outcome = lifecycle.enqueue(
-            DelayedManualReplySnapshotFactory.fromPrepared(prepared), actor, expectedRevision)) {
+        val outcome = try {
+            lifecycle.enqueue(DelayedManualReplySnapshotFactory.fromPrepared(prepared), actor, expectedRevision)
+        } catch (ex: DelayedManualReplySnapshotException) {
+            if (!ex.sizeLimitExceeded) throw ex
+            throw DelayedManualReplyException(
+                413, DelayedReplyPublicError.SNAPSHOT_INVALID.code, DelayedReplyPublicError.SNAPSHOT_INVALID.message
+            )
+        }
+        return when (outcome) {
             is DelayedEnqueueOutcome.AlreadySent -> completedDraftResult(
                 prepared.source.contactId,
                 checkNotNull(manualReplySendAttemptService.findCompletedAttempt(outcome.attemptId)))
