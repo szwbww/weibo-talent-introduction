@@ -421,7 +421,7 @@ class InboundPendingOwnerIT {
         setup()
         jdbc.update("INSERT INTO expert_mail_read_access(username,expert_contact_id,granted_by,created_at,access_level) VALUES('user1',?,'admin',NOW(),'FULL')", contactId)
         jdbc.update("INSERT INTO inbound_mail_processing (sender_account_code,imap_uid,from_email,received_at,process_status,process_reason,expert_contact_id) VALUES ('owner-test',900,'expert@example.test','2099-01-01','MANUAL_REVIEW','LEGACY',9201),('owner-test',901,'expert@example.test','2000-01-01','PROCESSED','LEGACY',9201)")
-        val result = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).load().migrate()
+        val result = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).target("172").load().migrate()
         assertEquals("172", result.targetSchemaVersion)
         assertEquals(2, result.migrationsExecuted)
         assertEquals(listOf("user1", "admin"), jdbc.queryForList("SELECT pending_owner_username FROM inbound_mail_processing ORDER BY imap_uid", String::class.java))

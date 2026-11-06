@@ -959,6 +959,7 @@ function createChatSandbox(options) {
     const sandbox = {
         console,
         URLSearchParams,
+        performance: require("node:perf_hooks").performance,
         setTimeout: opts.clock ? opts.clock.setTimeout : (fn) => { const id = ++timerSequence; timers.push(() => { if (!cancelledTimers.has(id)) fn(); }); return id; },
         clearTimeout: opts.clock ? opts.clock.clearTimeout : (id) => { cancelledTimers.add(id); },
         escapeHtml: escapeHtmlLike,
@@ -1152,7 +1153,7 @@ function createChatSandbox(options) {
         draftServer,
         calls,
         timers,
-        runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
+        runTimers: () => { const ready = timers.splice(0); ready.forEach((fn) => fn()); }
     };
 }
 

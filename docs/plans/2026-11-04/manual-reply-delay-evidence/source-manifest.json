@@ -1,0 +1,1031 @@
+{
+  "head": "a224623c8dc17bdad1ce80e1c4391637bf7ee5ca",
+  "date": "2026-11-04",
+  "sources": [
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt",
+      "sha256": "181a5cfee487328e48838e9c0037ea1211aa892db8c34ab65ee2b5344a2e1b8f",
+      "lines": 67
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt",
+      "sha256": "de5fd53e20351355d584927fae7de35f2f78264bb1308d1438a850a6e61c29da",
+      "lines": 207
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt",
+      "sha256": "cc90a11a22334ea3d5996899beb13d4f7e0c66f7ab6656698d62be2844248270",
+      "lines": 323
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt",
+      "sha256": "9c8610d9ad5b1b4c947edf0c051c259eda856dbc6ac21bbc7295949056561bc2",
+      "lines": 89
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordQaRuleRepository.kt",
+      "sha256": "a0994d985cdfac3f37b235dfdc57a8f0c1fe4638b0d8d36d675d3b15cbbc3813",
+      "lines": 8
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt",
+      "sha256": "a44c13af04c18b97a7df88f166f192e64ec979eb0250eade9076254dd414bed5",
+      "lines": 114
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRagFactRepository.kt",
+      "sha256": "75bf3d0838d7fdb54003112befca06592e5d10bb25b56beefc873afa274e0cf2",
+      "lines": 12
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt",
+      "sha256": "243bff56bdcd2df69eac967121d58d4b0de4bdd5e77aaafc868a170bb3af2f67",
+      "lines": 1070
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt",
+      "sha256": "a8876fe58f09e528012a41e25677e093c579512d754f6c0f1b954ddb4ad4fd91",
+      "lines": 928
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt",
+      "sha256": "87d31a96899ce5e97978e44d2c8333c6ffafff19ffdaa8c63c910a9a5a055941",
+      "lines": 221
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt",
+      "sha256": "8a2e7a510fc0620bbc259d3be925d6e36ef008d19886d38767094c8767b390b6",
+      "lines": 470
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt",
+      "sha256": "60491f6226f23ad24f5120403bcb1da10153a6710be2866578161ad2a0a003b7",
+      "lines": 1246
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt",
+      "sha256": "e141c16cab06128edabe22503ca3bdf02ae2cf801bd644a358ae41afb0112097",
+      "lines": 2048
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt",
+      "sha256": "9bbfb013e9a38fb47a91264809ea914187ab38212262a561d74f357ba92143be",
+      "lines": 282
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt",
+      "sha256": "d99e8a524c34bbd81c8f214eb7b034e7085d75dc8af2f4c3df70db44dba1602a",
+      "lines": 209
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt",
+      "sha256": "6bfacefac59b90dae366965d4c7fee3ff5cad3d5c8786d1c3a3c427fcaa84d5d",
+      "lines": 360
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt",
+      "sha256": "1427a72bdc57d857a83686e6525dfbe33d0b8ff9b2882ab433790d2b549c45e4",
+      "lines": 184
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftService.kt",
+      "sha256": "c7eb221b6659e2da311d511081d6b01cdfe60a16915211dd9eeb863611167001",
+      "lines": 250
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpConnectionRetrySender.kt",
+      "sha256": "86956af21dc50dbedfd918cb20f86b95f8e31f59daeef7e8cbfa56fdb00da48e",
+      "lines": 36
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt",
+      "sha256": "cd945a8d7169c74c75302f374615f302bf7ef8ae0381c442e5294608978a1322",
+      "lines": 25
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt",
+      "sha256": "051c77e6d842f63b0b65e0ab6fc159fb341b155b26a5a955066839b4331f349f",
+      "lines": 89
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt",
+      "sha256": "caa75fb0f222c0c454a6759dbd12836026ed6ad8be3b4f6b90b1937a011062ff",
+      "lines": 799
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftModels.kt",
+      "sha256": "29cf9d4d85a3cee1b917255d78c30f90870b09849f42b5d2d59ba333e7060a35",
+      "lines": 102
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt",
+      "sha256": "0947aafc38fb96aac1160b8ef46966429af87ae1ec2160657bde94704987166d",
+      "lines": 628
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/auth/config/MailReadOnlyPolicy.kt",
+      "sha256": "6927953b1cdeea2994f75910ecc56ff76f218bec34201c45cdad7f164a130896",
+      "lines": 126
+    },
+    {
+      "path": "src/main/resources/db/migration/V78__decouple_compose_templates_from_qa_rule.sql",
+      "sha256": "2d39bd8c1e3c60e3115dd064357286d0de4a3d7162f5ec0dd5aabc002ad0de48",
+      "lines": 10
+    },
+    {
+      "path": "src/main/resources/db/migration/V171__add_inbound_pending_owner.sql",
+      "sha256": "0f097df929f9f597224e1ca290389d0aa9ccfb0d6cca78e07420a6e42205fd72",
+      "lines": 3
+    },
+    {
+      "path": "src/main/resources/db/migration/V100__add_task_execution_indexes.sql",
+      "sha256": "b1dd4c56f8f4534d8cf8bdf886a86e277a6e962209d3215d074dcd644f76604f",
+      "lines": 5
+    },
+    {
+      "path": "src/main/resources/db/migration/V34__add_sender_account_warmup_fields.sql",
+      "sha256": "e37580c07db50d009f08a34b665e4aee2b786fdf225955e954258b51c9a5f2e9",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V67__create_content_variant.sql",
+      "sha256": "e968bcdb1800506f1830da6d3a2de4da329d802060093d33074e1537f794daec",
+      "lines": 11
+    },
+    {
+      "path": "src/main/resources/db/migration/V51__add_follow_up_marked.sql",
+      "sha256": "dc6f38a55a62b82095f9cee7cede8d31ea464a310231e556cac0413f2526f763",
+      "lines": 3
+    },
+    {
+      "path": "src/main/resources/db/migration/V159__create_discovery_paper_archive.sql",
+      "sha256": "647a4fe823c09a42ad59b6e6e9621fd90d050ff89182d7064e7ebc43122bec3f",
+      "lines": 56
+    },
+    {
+      "path": "src/main/resources/db/migration/V69__curate_ai_training_dialogue_styles.sql",
+      "sha256": "a08b898f07d338abfb2af1fce312fb387d7ebe4e333a49fe26c71e18b747351c",
+      "lines": 58
+    },
+    {
+      "path": "src/main/resources/db/migration/V135__add_batch_sender_account_codes.sql",
+      "sha256": "f731f3492c4e36b57a8f11527aa61c1a54bc6ae86f7981e2e38f3c3ff03322eb",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql",
+      "sha256": "0824e5fe13f6357004b3b98dc5887dc391d58ddb57821a267b142bc4d86222e9",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V1__create_business_tables.sql",
+      "sha256": "944a8c45d9005871df30db4fb527320b191d943aff7c6a3a290e7f84d33d2235",
+      "lines": 128
+    },
+    {
+      "path": "src/main/resources/db/migration/V94__backfill_operator_status_for_manual_sends.sql",
+      "sha256": "922bd3be2b8bea6c73043655b7ae652d247e4f9e2ec0c0101304ba0d3bd8ea42",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V38__restructure_qa_categories_and_seed_new_rules.sql",
+      "sha256": "608bfc956cde320c38f132a5eea11a64b396cc78c9f2bd1e50c11ae812db26dd",
+      "lines": 138
+    },
+    {
+      "path": "src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql",
+      "sha256": "9950f28da0b7b49a2d8d6679605734026878929819b164ea9041aeda90b2371d",
+      "lines": 9
+    },
+    {
+      "path": "src/main/resources/db/migration/V124__widen_expert_application_promotion_triggered_by.sql",
+      "sha256": "7eea6b97b602dd49f82fe5eb9ac6e5e38835245a9ee38efcc15d9d4c0cb115d7",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V133__create_discovery_paper_queue.sql",
+      "sha256": "9aa7b6d5c490990bc72474648984e69be4288c423ce2948ff54a5cc255089bc1",
+      "lines": 153
+    },
+    {
+      "path": "src/main/resources/db/migration/V57__qa_material_tiering_and_funding.sql",
+      "sha256": "bae092ed56d137175f16c75ec16ae34e6044c0c53d5185c161eaa20885e015d6",
+      "lines": 67
+    },
+    {
+      "path": "src/main/resources/db/migration/V5__create_inbound_mail_processing.sql",
+      "sha256": "f7d08b96902eeed587f7b3a8f0e08ab68d514f0515458c56f0f7a3206d4299d0",
+      "lines": 20
+    },
+    {
+      "path": "src/main/resources/db/migration/V121__create_expert_follow.sql",
+      "sha256": "80edf9480b9c6eba5275f50f5c46160520ffcdc93068850014440cca5d21e77a",
+      "lines": 18
+    },
+    {
+      "path": "src/main/resources/db/migration/V52__qa_trust_and_gap_rule_optimization.sql",
+      "sha256": "0d4b0c9480919d925de38fefb1848787193251935e04585563363b5c4aa24b76",
+      "lines": 63
+    },
+    {
+      "path": "src/main/resources/db/migration/V93__add_regions_to_batch_send_task_config.sql",
+      "sha256": "2cd0b69d2ed9e7f4da1852c7220fc464aad8b374a56f521ef1152357f1bd83c4",
+      "lines": 3
+    },
+    {
+      "path": "src/main/resources/db/migration/V54__create_ai_training_qa.sql",
+      "sha256": "4abd0eab6e5c118891aff3a47f0deaaef96ae59a89701728fdcebd6d5a0c141f",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V149__add_expert_follow_progress_status.sql",
+      "sha256": "07be9b68faaea2f26d74057f0c8e9a88aaf941d9a630f052a8120ead114fd444",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V61__create_mail_compose_template.sql",
+      "sha256": "66a69f43585c76e1d1f61ecd06f7de69e19d12f7cc6b8dd2f517edfca1582fd9",
+      "lines": 19
+    },
+    {
+      "path": "src/main/resources/db/migration/V49__create_mail_inbox_cursor.sql",
+      "sha256": "0bf8810dda61089fb67c1a8b90a6d82074790363041d9f770c2657d30c10fc8a",
+      "lines": 8
+    },
+    {
+      "path": "src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql",
+      "sha256": "6d98c6d9a4c456081020148a6986749694c3d5df2afbca030ec300cbcecd1a29",
+      "lines": 35
+    },
+    {
+      "path": "src/main/resources/db/migration/V106__add_remuneration_keyword_to_funding_support.sql",
+      "sha256": "0de17c9fa7b23cf11e74a537390cbca310f1e5e73755a10f2d3d1d8a71665d4d",
+      "lines": 17
+    },
+    {
+      "path": "src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql",
+      "sha256": "df6939a7baa0869bc03b89c7c06b3bd4c3f8328563b21e7ece5cbe3f14f481de",
+      "lines": 49
+    },
+    {
+      "path": "src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql",
+      "sha256": "8ebdeb9aa2c92887049d4e1db3058c2300a5c2886798d7a5a719e137a975f5a7",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V88__rewrite_unsubscribe_line_wording.sql",
+      "sha256": "5c500955723adbbf961632322c34887199525518e162e55d2d25307caff70ddb",
+      "lines": 18
+    },
+    {
+      "path": "src/main/resources/db/migration/V129__add_material_request_codes.sql",
+      "sha256": "2438d53af5a13abd7434f7b5d8e2c38ad7e21eba1ae4e57f24973a48259fa008",
+      "lines": 51
+    },
+    {
+      "path": "src/main/resources/db/migration/V11__expert_contact_auto_reply_flag.sql",
+      "sha256": "59d3b04aeeeec8257ae41bf3ad7f68ba6c1fda70ffb1c0de4a1ef2e041ec538e",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V27__create_batch_send_setting.sql",
+      "sha256": "a8e6430fda158adfce6b2a54d59ee264db91448a55c8d1fa01ef19e08cba2576",
+      "lines": 18
+    },
+    {
+      "path": "src/main/resources/db/migration/V77__complete_company_identity_keywords.sql",
+      "sha256": "5fe6e12e49f6cf141ddef31aae3cf84c6b8bc540526f1eeb175c3a6ddce6be0a",
+      "lines": 22
+    },
+    {
+      "path": "src/main/resources/db/migration/V37__create_dmarc_report.sql",
+      "sha256": "f1291b86d53340a3624bb82c95a8e3d4d4547bac05f51ef94fa517ecdd19369e",
+      "lines": 15
+    },
+    {
+      "path": "src/main/resources/db/migration/V158__create_discovery_verification.sql",
+      "sha256": "855a85c27da96e252c95e2e9e58d9d566fe7eb6c0452d1bed18977f7563592c5",
+      "lines": 75
+    },
+    {
+      "path": "src/main/resources/db/migration/V105__add_programme_identity_facts.sql",
+      "sha256": "822a9f36089652da19d274950ce56244754f59a500432f99476fa1ba5766a09d",
+      "lines": 75
+    },
+    {
+      "path": "src/main/resources/db/migration/V84__add_required_keys_to_compose_template.sql",
+      "sha256": "a53ac47872bdbd95841f87e8c1857948feb7c9cf8a223e0fde916ab553874271",
+      "lines": 7
+    },
+    {
+      "path": "src/main/resources/db/migration/V26__eligibility_filter_settings.sql",
+      "sha256": "27037a584c7eef2aaab888d30fd0b3d09d45cb0363b8d90da33333e9819a4e1d",
+      "lines": 20
+    },
+    {
+      "path": "src/main/resources/db/migration/V89__create_unsubscribe_token.sql",
+      "sha256": "859e4098377a18f7716d302a5fb8a7fe71602eda56438deb8f99b87f9d4c7bca",
+      "lines": 15
+    },
+    {
+      "path": "src/main/resources/db/migration/V32__create_discovery_source_cursor.sql",
+      "sha256": "55b5c35d40fbfc76f0077154cd5a699f5770ca7e67c3630fc63533a7045e9b43",
+      "lines": 9
+    },
+    {
+      "path": "src/main/resources/db/migration/V166__create_expert_mail_read_access.sql",
+      "sha256": "49e492e30936ee62bc6d58cf8a2a773826fd6e6407b4dd2db1213fc4fb83ac04",
+      "lines": 25
+    },
+    {
+      "path": "src/main/resources/db/migration/V8__add_expert_contact_status_history.sql",
+      "sha256": "d35cb15bcc52adf4a9429ad22e28f2d72c9c8612a8614be2621f2c964db5adbd",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V148__create_expert_discovery_review.sql",
+      "sha256": "12ae20055c6b0ee79d1ae827b7c336b01b6ccbb3389cc2d30a0d7c43e9a41078",
+      "lines": 53
+    },
+    {
+      "path": "src/main/resources/db/migration/V31__add_mail_record_created_at_index.sql",
+      "sha256": "78cd571bfb269dfb63ab4229c14b264a617404473733d24cf8916532ce2e7fb5",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V92__drop_daily_cap_from_batch_send_task_config.sql",
+      "sha256": "8cbe574c3de341d1dfc7d55cdc2a44880c1cd5e2d809a89bd9682d1e13a31c49",
+      "lines": 1
+    },
+    {
+      "path": "src/main/resources/db/migration/V123__add_mail_record_calendar_attachment.sql",
+      "sha256": "bee6d7dfb1ae216de9cbdf9b7d54d6e3bcca5a1f1299a3559eb492d5c2734ecf",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V155__create_expert_meeting_record.sql",
+      "sha256": "47f401419ae2ccf0475a4f2134ec6023648b8250d26694b91231633196c1a2e6",
+      "lines": 20
+    },
+    {
+      "path": "src/main/resources/db/migration/V2__seed_mail_templates.sql",
+      "sha256": "4a7c5f061a3dcc6aa98e3ae0fd2cf17209333161b6f9178b118a4c3d9364a65a",
+      "lines": 40
+    },
+    {
+      "path": "src/main/resources/db/migration/V71__update_material_reminder_template.sql",
+      "sha256": "19bd96dc9e97d953bda9f386d83ac6641afcdc2a70edb994380485c5133264b7",
+      "lines": 52
+    },
+    {
+      "path": "src/main/resources/db/migration/V141__create_mail_open_tracking.sql",
+      "sha256": "70a124b59ed2057c024d66a0531b68ebb44e81ef54733c11d43d3f741f5982de",
+      "lines": 15
+    },
+    {
+      "path": "src/main/resources/db/migration/V173__create_discovery_paper_reprocess.sql",
+      "sha256": "7e21726358e0ab107cff9878e720e3e3edf481f4923909d55c29fd29d78f3d29",
+      "lines": 53
+    },
+    {
+      "path": "src/main/resources/db/migration/V83__create_trust_reply_workbench_state.sql",
+      "sha256": "91de0ba5fb5cda980f4a34b5c1434a14c13d063261ef1a25bad78ee8eac4d35a",
+      "lines": 24
+    },
+    {
+      "path": "src/main/resources/db/migration/V16__simulator_campaign.sql",
+      "sha256": "c122dc421afa80c9fec96bbab8a89757872455bfcce9850dd8bb62505546ffe8",
+      "lines": 29
+    },
+    {
+      "path": "src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql",
+      "sha256": "62a74c8543f3075315327e91796d8e88e685dea83e0f76a99ba5965381f041c0",
+      "lines": 58
+    },
+    {
+      "path": "src/main/resources/db/migration/V28__add_sender_account_auto_pause.sql",
+      "sha256": "72a184db52a5b76ac1f45f6f2790c607d3983762b489bd2bffe91ede35ea6e65",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql",
+      "sha256": "5e8c390b1d30b7285e9a164beefc50df6b4937ccdf81ecc54e8559b246a90a4f",
+      "lines": 22
+    },
+    {
+      "path": "src/main/resources/db/migration/V99__add_gate_filter_enabled_to_batch_send_task_config.sql",
+      "sha256": "7b2ac2c50a5c980be564d61ccafeb7a8a6a680f7b582bd24e5e1dfc1393f7cb3",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V144__create_discovery_schedule_setting.sql",
+      "sha256": "624feeddf811fd2c6accf0b46c096aadef5f2612d69f334b9fa0b8c64eac30da",
+      "lines": 12
+    },
+    {
+      "path": "src/main/resources/db/migration/V70__tighten_ai_reply_action_boundaries.sql",
+      "sha256": "81f23794e12a4e99dfce0371c693b2f2d40b55f25abe02696e5769af2a7955fe",
+      "lines": 51
+    },
+    {
+      "path": "src/main/resources/db/migration/V81__ai_reply_due_diligence_keyword_parity.sql",
+      "sha256": "9c9a8eeb13e775240ea39ce53a7e40fbafe9bfec17d45dcbca65ea0cd48a431a",
+      "lines": 51
+    },
+    {
+      "path": "src/main/resources/db/migration/V86__add_expert_contact_sender_change_mark.sql",
+      "sha256": "db8f1bb359d5504caae8c96dec9384d7ddd2dfb65a0dcf79d666bc32677c9ed2",
+      "lines": 7
+    },
+    {
+      "path": "src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql",
+      "sha256": "392cf32955da708eb35f124ad82095ad8d69c906d7693c987e186e21b9ecc5d9",
+      "lines": 67
+    },
+    {
+      "path": "src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql",
+      "sha256": "12660076fa4e92e6b6798b76ca4f437b8592598cca5a9f818520449d72489bac",
+      "lines": 41
+    },
+    {
+      "path": "src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql",
+      "sha256": "8b12da1a47b84dc62374f7910e6222df296942a0d7703e7bb99e3725a15bf4fa",
+      "lines": 138
+    },
+    {
+      "path": "src/main/resources/db/migration/V66__create_ai_training_dialogue.sql",
+      "sha256": "b0065a829c928b2f1018a8da49260d379255b3be4ed5a9902238baed3b385da3",
+      "lines": 11
+    },
+    {
+      "path": "src/main/resources/db/migration/V114__create_rag_fact_audit.sql",
+      "sha256": "2b0026b4d546c8cabe56d0d620abcc969432e5aad23bff9bbb8831359e0e0ba2",
+      "lines": 36
+    },
+    {
+      "path": "src/main/resources/db/migration/V168__scope_inbound_notification_by_folder.sql",
+      "sha256": "0ee21afa2b6d4eaba5121938c9e0fdc54bbc1b6256d034baa846a046d7f45882",
+      "lines": 5
+    },
+    {
+      "path": "src/main/resources/db/migration/V29__create_bounce_record.sql",
+      "sha256": "fd813a22994e0b46145c935d6aed8d0d7a46ad181bbed80006f13df574ebb19d",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V63__qa_more_details_overview_keyword.sql",
+      "sha256": "c957b4fa0086d3d8ba81eea237d9ffc984d7f4d589fce6bb725df8fd53ad02a0",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V47__create_reply_snippet.sql",
+      "sha256": "98be81618a6bc495ff404b92304d922cc2dff735b8c4b94d3457dc6820e48464",
+      "lines": 22
+    },
+    {
+      "path": "src/main/resources/db/migration/V150__create_expert_contact_note.sql",
+      "sha256": "f4ff4ad8841d03b39b69d40be2e8f0306e5e430cd08f673407075bbc64736b9b",
+      "lines": 9
+    },
+    {
+      "path": "src/main/resources/db/migration/V161__discovery_recheck_history.sql",
+      "sha256": "1d1f09ecc2720b76035c14a5cd288dd2b14fc184cf33943fc2940d3bbd6c82d2",
+      "lines": 35
+    },
+    {
+      "path": "src/main/resources/db/migration/V111__create_expert_material_status.sql",
+      "sha256": "99c42f6ec45e5b53650ca05e03e041b4e8ae081dda46603ebcf6454703b0adf3",
+      "lines": 21
+    },
+    {
+      "path": "src/main/resources/db/migration/V58__update_ai_training_qa_material_tiering.sql",
+      "sha256": "efa0b0455f6c57c8480c46b92e13869b7f3b8b89ffde25dbe4a1a7086d79d0f8",
+      "lines": 51
+    },
+    {
+      "path": "src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql",
+      "sha256": "6f1255d4cd19d7bf84494f1dbe915d49af87db870fd677bebfe70f3d035b3f2b",
+      "lines": 50
+    },
+    {
+      "path": "src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql",
+      "sha256": "1db178c23c57f6307880a9543661763c51297d1a56f051985610e280a14dbe5c",
+      "lines": 125
+    },
+    {
+      "path": "src/main/resources/db/migration/V136__add_compose_subject_snippet_id.sql",
+      "sha256": "d130fe79d7c750fb51c09041315a8cb557623945c3333fa0c07e5282f4963e52",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V165__discovery_review_query_snapshot.sql",
+      "sha256": "d33810bf04a5fb681df566f7c3d53b88d0f1e74f0557945bd6dd173d8fc0f910",
+      "lines": 20
+    },
+    {
+      "path": "src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql",
+      "sha256": "c6a025dbefd7ede3fc321757a0387d36334658490818a8a8f8b56a02d3ba1957",
+      "lines": 28
+    },
+    {
+      "path": "src/main/resources/db/migration/V33__seed_require_orcid_setting.sql",
+      "sha256": "b08a3cfeb9704f7dff730b7d6e55241627e5b355d8a4308cbf8b4ba2876624d1",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql",
+      "sha256": "290bb5e788c4faa0f4a54ffd2b0d35d1db0b64889b3f4fbb615e89405683ee94",
+      "lines": 31
+    },
+    {
+      "path": "src/main/resources/db/migration/V169__create_mailbox_review_draft.sql",
+      "sha256": "b89cf5fc7138fbad02838c101d2f13a8d7550fa85b4951e230f5bd6692dfdbed",
+      "lines": 49
+    },
+    {
+      "path": "src/main/resources/db/migration/V97__add_email_domains_to_batch_send_task_config.sql",
+      "sha256": "cbe5ca65f5d40ba4cf3cfff55bfaa01eab92b26866a4f821f12f98b58d487694",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V62__unify_mail_templates.sql",
+      "sha256": "a3e00582ec1fa02395d1dde981bf4f79324aeb458299716443d73c212ffad442",
+      "lines": 69
+    },
+    {
+      "path": "src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql",
+      "sha256": "b82d8991bb13a190f8bde008cbe9e5a12e04b57582f6dc31bf86f886523da19d",
+      "lines": 7
+    },
+    {
+      "path": "src/main/resources/db/migration/V125__create_meeting_calendar_event.sql",
+      "sha256": "28e4afa466f26cb1867e28883fe14e7a25a02e0b1ca5d6f5c04d62321e6da820",
+      "lines": 20
+    },
+    {
+      "path": "src/main/resources/db/migration/V42__mail_record_qa_rule.sql",
+      "sha256": "98fe1af6517908e0843778d0b3b2326a37d7cf4c8d3be2e90785fd5c192009b6",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V103__add_reachability_filter_to_batch_send_task_config.sql",
+      "sha256": "0befea85d2f546f37b6d22661d8b0db9376b9066b31e366a7e3534181edb5d81",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V104__create_auto_reply_confidence_log.sql",
+      "sha256": "89024a9e6a1cb74b2ae9bad9bb587597da67a45caf53363df12aea4e4d4e8b9e",
+      "lines": 30
+    },
+    {
+      "path": "src/main/resources/db/migration/V65__qa_rule_dedup_keyword_fix_and_overview.sql",
+      "sha256": "a4d0d03f8695a39bae312f978700f667d911829c6802dfb81ca4ec822d4da609",
+      "lines": 130
+    },
+    {
+      "path": "src/main/resources/db/migration/V170__add_expert_mail_access_level.sql",
+      "sha256": "e0738c42d53ba68cd54264f17a40631d1a48ce4f3fe42bd151f990e5363ffdd0",
+      "lines": 3
+    },
+    {
+      "path": "src/main/resources/db/migration/V134__shared_inbox_owner.sql",
+      "sha256": "a54c78f0fd731b8aa55462c12511a00cc27a82267718ea6e88e7cd3b7533835d",
+      "lines": 33
+    },
+    {
+      "path": "src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql",
+      "sha256": "fc169c67fc4043bb9f9624614480a98642d839a25d191e88e04c3aacfc694c93",
+      "lines": 32
+    },
+    {
+      "path": "src/main/resources/db/migration/V74__repair_batch_send_task_config_encoding.sql",
+      "sha256": "3c9a444ef0fd8d483816d581247f36ad182460b22760fc3867a02d8ad80e89a0",
+      "lines": 17
+    },
+    {
+      "path": "src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql",
+      "sha256": "cf87fa629057e60e9fe7e40fab1a9e1219588e11c44cc26dd4348fc774420ca0",
+      "lines": 53
+    },
+    {
+      "path": "src/main/resources/db/migration/V128__add_research_direction_filter_to_batch_send_task_config.sql",
+      "sha256": "4521c9c836558e337213e032914e751bf6a5de6bb7600dc2cec09e9db18bffa3",
+      "lines": 6
+    },
+    {
+      "path": "src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql",
+      "sha256": "3122c289afe71d722234bb53207419990e44255e0e576076bfcdbc2840f460a4",
+      "lines": 9
+    },
+    {
+      "path": "src/main/resources/db/migration/V43__add_bounce_record_failed_recipient.sql",
+      "sha256": "d0101d25553712e514062e25bcc5683ca376d05e7117d07361c0a3236254091f",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V96__add_name_to_reply_snippet.sql",
+      "sha256": "ab653b30a1bd4e6286f5373197660a02f6216bb547508b0d29118016ada647de",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V40__qa_rule_section_title.sql",
+      "sha256": "5a54ef873772fdf92f08733baf88189657156b6d12afe77c0abc6a6555fdb24b",
+      "lines": 37
+    },
+    {
+      "path": "src/main/resources/db/migration/V55__create_ai_prompt_config.sql",
+      "sha256": "3c2014135166f586afd018994424d742ec46adeb82b54950101cb6a1381d62bb",
+      "lines": 8
+    },
+    {
+      "path": "src/main/resources/db/migration/V87__append_unsubscribe_line_to_cold_outreach_templates.sql",
+      "sha256": "d67195ec2dd14fdec65bc7b0e84913550e58aaa973794426d2b5360ee42bdea3",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql",
+      "sha256": "c73b270c0ed12b60d86528d2504d1da989604359634e1a72df37121603415eb7",
+      "lines": 71
+    },
+    {
+      "path": "src/main/resources/db/migration/V59__create_expert_analysis_result.sql",
+      "sha256": "efdc65ade95fffa4f4102db5eb77a31bf7dbfc19759868ef13d327a3b4d97d86",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V50__add_global_auto_reply_setting.sql",
+      "sha256": "1ff6fb82e44a847d094ee1be665981639a851c51b412ef818c394041f111db76",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V44__repair_qa_new_rule_display_names_encoding.sql",
+      "sha256": "cc7d506927bbc0bb7269227e7c530f438f8c3fe47c6fa321a88717a4efb9ca40",
+      "lines": 26
+    },
+    {
+      "path": "src/main/resources/db/migration/V79__add_qa_answer_body.sql",
+      "sha256": "ebe87b3d622e6570321471e32a060c0abb6b430f037d1864439cda9f7f1013f2",
+      "lines": 10
+    },
+    {
+      "path": "src/main/resources/db/migration/V163__paper_archive_lookup_indexes.sql",
+      "sha256": "579d0ff877da5f676fffa913f1923e72d770c70fbe41a381c695bde4a5f07e3d",
+      "lines": 16
+    },
+    {
+      "path": "src/main/resources/db/migration/V95__add_operator_status_to_batch_send_task_config.sql",
+      "sha256": "7275782b8604af2ff6fa3dfc78c80314d03ddba0843db648b3e6086e9f090563",
+      "lines": 6
+    },
+    {
+      "path": "src/main/resources/db/migration/V110__require_expert_types_on_batch_send_task_config.sql",
+      "sha256": "ce6b4a8b5aa8cbd5f6861ee8cd41f9b804d85e24ef3c89406064ad5391ba5600",
+      "lines": 8
+    },
+    {
+      "path": "src/main/resources/db/migration/V91__add_rounds_per_run_to_batch_send_task_config.sql",
+      "sha256": "764526e68680a8eba3bb4ed1cc0170ab82f232c8ff16ffd9dc5c84dea24de507",
+      "lines": 6
+    },
+    {
+      "path": "src/main/resources/db/migration/V56__material_reminder_template.sql",
+      "sha256": "006bbf265141c873309c3a999027e00fc6453c811ebd0c0214c75d5bcc7a28a9",
+      "lines": 33
+    },
+    {
+      "path": "src/main/resources/db/migration/V60__create_domain_reputation_history.sql",
+      "sha256": "861dedd74972f99a095f1a84fbb606731d8354fc46f758952fd562071b83bcd4",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V98__add_operator_statuses_to_batch_send_task_config.sql",
+      "sha256": "b2f1288d6ad02e715204f8bd5fe02ab7890023fdc83001bd567427810d3278c3",
+      "lines": 12
+    },
+    {
+      "path": "src/main/resources/db/migration/V145__add_batch_email_verification_allowed_states.sql",
+      "sha256": "e38a9d086382881e594971cd16b17c596f08f3c92ca91a5de938d234c1281bca",
+      "lines": 7
+    },
+    {
+      "path": "src/main/resources/db/migration/V147__create_expert_mailbox_suspension.sql",
+      "sha256": "8c204d56b10170940029a712e7c23ad2f79a72dcdeba6553a0e17926588da743",
+      "lines": 19
+    },
+    {
+      "path": "src/main/resources/db/migration/V76__add_qa_rule_coverage_keys.sql",
+      "sha256": "0d50c7c34e1ea73a1bd6e947b3cda8289c66c70753ddc4819db6bea9543bc70f",
+      "lines": 85
+    },
+    {
+      "path": "src/main/resources/db/migration/V64__add_subject_variants_and_snippet_variant_group.sql",
+      "sha256": "120079d75b66a17849b83362670aa23b39132dd103fcc9d18de466d3c575aacc",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V162__add_batch_exclude_tags.sql",
+      "sha256": "7a74854a35fd698aa52ef2cd905db903bd1ba723a640d27c7e2f5903beb820f3",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V127__add_outbound_attachments_snapshot.sql",
+      "sha256": "090c87ba8acf2a3acafc759f93fa03b7db7810ebee01c14742fa66fbdb54c636",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V157__create_discovery_person_outreach.sql",
+      "sha256": "60c4fea1011168f293792108d1756318a23aa93813999c7698a736f852f49479",
+      "lines": 42
+    },
+    {
+      "path": "src/main/resources/db/migration/V68__qa_keyword_gap_and_contract_ip_rule.sql",
+      "sha256": "8bab02a1aea43d069fb45dccfa04305f3bc11f8ae4d21297a665b3d3c6cbe151",
+      "lines": 67
+    },
+    {
+      "path": "src/main/resources/db/migration/V53__inbound_mail_tag.sql",
+      "sha256": "bc94d8fb92988ca2983870921de19fd1ff85b766c523cf9433b5204b006a455b",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V117__convert_bounce_rate_pause_to_warning.sql",
+      "sha256": "3f87c5441d4577d20ab3b770e6a7afa6d826527df9202eb02346e4dcf9df9d28",
+      "lines": 6
+    },
+    {
+      "path": "src/main/resources/db/migration/V172__transfer_existing_full_access_pending.sql",
+      "sha256": "db50742bc06e5171f2e3cfd72b4d1027b56eb1ce6819eb882006c0f722cb462e",
+      "lines": 8
+    },
+    {
+      "path": "src/main/resources/db/migration/V164__recheck_preparation_inputs.sql",
+      "sha256": "448537362819192867939c5f1d2a3f3347848e4298fb49aec3fbafd55bd89b70",
+      "lines": 8
+    },
+    {
+      "path": "src/main/resources/db/migration/V140__reuse_batch_email_verification.sql",
+      "sha256": "ed4f9553fbb042cc2a617327487a5f5391cdcecdad21e0409f2cd3db183af60f",
+      "lines": 5
+    },
+    {
+      "path": "src/main/resources/db/migration/V20__disable_orphan_simulator_mail_account.sql",
+      "sha256": "f65df0cc03ddfdcdcb668681b51c84d2da4db06315585a29c7dd76913080fad2",
+      "lines": 6
+    },
+    {
+      "path": "src/main/resources/db/migration/V142__add_exclude_verified_unavailable_emails.sql",
+      "sha256": "bc0c05dcbb52bcb750b0eb96234e51bb5312227bd50edf4cf01af303d25c971a",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V18__repair_qa_rule_display_names_encoding.sql",
+      "sha256": "db8ed4cefc79f04be82fc5c125fb6ff5e815d56d2d618ecf437ca26820948a89",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V108__add_expert_types_to_batch_send_task_config.sql",
+      "sha256": "2b37c755610aacfbcb162350a289e6ad45e5011893c954c64db0a228bb3a0e1a",
+      "lines": 6
+    },
+    {
+      "path": "src/main/resources/db/migration/V72__create_batch_send_task_config.sql",
+      "sha256": "8e262a792b0f711a0d440e9273d1dbbb57fa9b2ae9db487f6ba539b596f4afee",
+      "lines": 140
+    },
+    {
+      "path": "src/main/resources/db/migration/V41__qa_overview_supersede.sql",
+      "sha256": "acc024cfbedaa85fa2117ed80e58aacf498b548942d0b286a16ca40ea0f09ace",
+      "lines": 19
+    },
+    {
+      "path": "src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql",
+      "sha256": "923883d3d7699eae36ea874a73d92f02a98a9c1cd4a8481309937c905154d37a",
+      "lines": 19
+    },
+    {
+      "path": "src/main/resources/db/migration/V75__split_company_identity_from_agency_credentials.sql",
+      "sha256": "1672130c57eac296c083952220656a3ccae40d137170a255d31a2f6b0640e264",
+      "lines": 40
+    },
+    {
+      "path": "src/main/resources/db/migration/V122__seed_manual_meeting_confirmation_template.sql",
+      "sha256": "30852c0dccacabdc247de3f2d201349893645b75184e9ef55c87c47392dcda4d",
+      "lines": 75
+    },
+    {
+      "path": "src/main/resources/db/migration/V48__add_country_to_expert_contact.sql",
+      "sha256": "401d6ee8205e9ced7f4c9384e3a3d41c68fceeea00e6b4cafd314d5ca18b5be5",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V167__scope_inbound_by_folder.sql",
+      "sha256": "38620d86fc5121a7ed9f706b6f0c5b727ae7603760f7caed369046c652d063dc",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql",
+      "sha256": "f46e3fa7fb45adf33f208f8f6f9c24c2f66465da973916c3ea9fb66faa586aab",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql",
+      "sha256": "17efb02e266f4df27390003f5220a98e605bb63d0bdc2b7644495880b60e53d4",
+      "lines": 52
+    },
+    {
+      "path": "src/main/resources/db/migration/V109__qa_fact_supply_and_controlled_key_repair.sql",
+      "sha256": "107963b81aa03ee7f41d7d382dd66c8d34badd9bd4ddac0bff9b48fcab82cf9b",
+      "lines": 148
+    },
+    {
+      "path": "src/main/resources/db/migration/V4__create_task_execution.sql",
+      "sha256": "ed6c873baabe4a9c0b0851cf52c6fbc238e09b4f5309b78fe260cc0b833c3ac6",
+      "lines": 15
+    },
+    {
+      "path": "src/main/resources/db/migration/V160__create_discovery_apollo_setting.sql",
+      "sha256": "ad93bb96fdc3ae2c36bd798a377b936702f68d95c5869b74588ccc955d8fd984",
+      "lines": 12
+    },
+    {
+      "path": "src/main/resources/db/migration/V39__qa_category_compose_order.sql",
+      "sha256": "871a930dff40047aa5929ff6baa6000f75b71b3d3030cd5998275e78f4d67d24",
+      "lines": 11
+    },
+    {
+      "path": "src/main/resources/db/migration/V112__create_rag_knowledge_base.sql",
+      "sha256": "cc0904c4b37068ef5ddd1e2b7a246bb95ae9af66c7c11922c64d9287c92eb992",
+      "lines": 323
+    },
+    {
+      "path": "src/main/resources/db/migration/V12__expert_contact_first_reply.sql",
+      "sha256": "269156d0ef3e6d711dd0adba340dc2c144689f1acb38f5a52f05cea816173c64",
+      "lines": 3
+    },
+    {
+      "path": "src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql",
+      "sha256": "e3fbc0681833a5476680d55cf7c244c2c5cf262e116aa804b5fc65b163e1f999",
+      "lines": 54
+    },
+    {
+      "path": "src/main/resources/db/migration/V132__create_openalex_budget.sql",
+      "sha256": "6efe1e85a3d4a14944f53b01d1ad1b904ba654b0ef8fabd339da02fa5a827190",
+      "lines": 86
+    },
+    {
+      "path": "src/main/resources/db/migration/V107__strip_controlled_keys_from_program_overview.sql",
+      "sha256": "48cdf27f09d47f3c61cc5dc24e5198cb8b4d0dcd529542ce44598eb33200e33a",
+      "lines": 10
+    },
+    {
+      "path": "src/main/resources/db/migration/V151__create_expert_inbound_notification.sql",
+      "sha256": "9f56570bc3ea5e2db369b0f8c9696ae81b77b5a9fcb1f671f54a630d34ea8243",
+      "lines": 38
+    },
+    {
+      "path": "src/main/resources/db/migration/V35__add_task_progress_batch_reject_reasons.sql",
+      "sha256": "c824536700184f730a07a5ccea3eea55fc34005c110063160fd9e63be88b3711",
+      "lines": 2
+    },
+    {
+      "path": "src/main/resources/db/migration/V25__create_admin_user.sql",
+      "sha256": "3ae065d6d6019e990f2cacf3d8b12b1207108eea97592e1023025ee5ce65ae9b",
+      "lines": 10
+    },
+    {
+      "path": "src/main/resources/db/migration/V30__create_email_suppression.sql",
+      "sha256": "530bd39eb4e17577937d9fa01d81d670ff78baab4611fa4191318a77b2d603ce",
+      "lines": 9
+    },
+    {
+      "path": "src/main/resources/db/migration/V116__repair_rag_fact_encoding.sql",
+      "sha256": "1e796d3c646329639b2970a8d96f3ccc098c684aeec09bcb02ad8c714a1dcd53",
+      "lines": 46
+    },
+    {
+      "path": "src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql",
+      "sha256": "72b07416d0270edd2f7c64aa848f6a3fa3c05b18773a7765062ca3a3cbf1d6e9",
+      "lines": 21
+    },
+    {
+      "path": "src/main/resources/db/migration/V21__add_email_validation_cache.sql",
+      "sha256": "76c8447487cb112bf763578c79b40841c8135894656b7c2b52cdb56139c536a4",
+      "lines": 15
+    },
+    {
+      "path": "src/main/resources/db/migration/V115__create_rag_prompt_config.sql",
+      "sha256": "d695a48c877938cf35ffb49bc8028ec008fa5b4e13399f2873ec8cfb286d652c",
+      "lines": 31
+    },
+    {
+      "path": "src/main/resources/db/migration/V22__create_task_progress_log.sql",
+      "sha256": "4040250858458506e4523aee6f23758b942f7b07d7f9a90a69464faa37eb5d60",
+      "lines": 19
+    },
+    {
+      "path": "src/main/resources/db/migration/V46__qa_reply_body_paragraphs.sql",
+      "sha256": "09ced22c720378e6baab1c1ae325d7bd3b756e7affb138b5854a91024954709b",
+      "lines": 62
+    },
+    {
+      "path": "src/main/resources/db/migration/V17__seed_qa_rule_display_names.sql",
+      "sha256": "181389e4cf9d30274b74843029d4ebfc9a3ccc1f8aef72e163e1a69c55b2c051",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/db/migration/V154__create_expert_meeting_video.sql",
+      "sha256": "010fe861175e050fdd38bbff7e2a831fc0e2575a2cf08d10711b63c9e3ee5ec1",
+      "lines": 23
+    },
+    {
+      "path": "src/main/resources/db/migration/V146__create_expert_contact_location.sql",
+      "sha256": "866c13af10ab8887c1242c0aeb3b5bf44163d20e5254f1417edeaef721b1b238",
+      "lines": 9
+    },
+    {
+      "path": "src/main/resources/db/migration/V45__repair_qa_reply_body_encoding.sql",
+      "sha256": "442f962f4a88fa09e88124d19c0dd8fec802bc1b6067dc0af336b71a61042ddd",
+      "lines": 13
+    },
+    {
+      "path": "src/main/resources/db/migration/V3__seed_qa_rules.sql",
+      "sha256": "59e78d4fa0f9b193410396a055ede167bdca8af10ca263db5dfa9e1d6a7aa9e1",
+      "lines": 36
+    },
+    {
+      "path": "src/main/resources/db/migration/V138__create_batch_email_verification.sql",
+      "sha256": "552da18fcb9b8029505c8f70d8789fea114bc3b349064a5bfdc30aafeedf444a",
+      "lines": 64
+    },
+    {
+      "path": "src/main/resources/db/migration/V153__create_expert_manual_profile.sql",
+      "sha256": "304d7b38cda26954d8c73cbaabf032551d25934d0373933711d267c8bd838491",
+      "lines": 29
+    },
+    {
+      "path": "src/main/resources/db/migration/V139__add_batch_email_verification_enabled.sql",
+      "sha256": "6002c006620f54027d19180f7a6e6f64c28d7a047325297412225cd8c04f1f13",
+      "lines": 4
+    },
+    {
+      "path": "src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql",
+      "sha256": "e0ba4fafaa762d7bc2ac4f4c4e1ce15348b325cb19912e6b9fd4aa702e7a70e6",
+      "lines": 17
+    },
+    {
+      "path": "src/main/resources/db/migration/V156__create_discovery_person.sql",
+      "sha256": "dd76f3da01de85e9600f1dacfa2634e2420e5b8d212dfbe79088971a6162d1d3",
+      "lines": 51
+    },
+    {
+      "path": "src/main/resources/db/migration/V143__create_expert_replied_dismissal.sql",
+      "sha256": "d5b182213e8de60e1e615fbfb5ee09deb3c66263d0134860929d10b84dca7baa",
+      "lines": 10
+    },
+    {
+      "path": "src/main/resources/db/migration/V80__add_qa_reply_policy.sql",
+      "sha256": "258543fa9fa38f303d8ad04bc9b1499b14689ce617e54fad0177faa222b86010",
+      "lines": 14
+    },
+    {
+      "path": "src/main/resources/static/mailbox-chat.js",
+      "sha256": "1af5f138c56ff26067a3e29967148d306dd75f274a51828c53a332fa7f2edd25",
+      "lines": 10685
+    },
+    {
+      "path": "src/main/resources/static/mailbox-chat.css",
+      "sha256": "0c3298eda234d313432ed3cb98ed5bfd71b9fccec983e445d79d9f8cf2a7dc1e",
+      "lines": 317
+    },
+    {
+      "path": "src/main/resources/static/mailbox-readonly.js",
+      "sha256": "9a4b1a0c79590daa16ff79c39af8d0ee2a39fc7c2628fdb454db3c8bc9ad06e0",
+      "lines": 1337
+    },
+    {
+      "path": "src/main/resources/static/app.js",
+      "sha256": "59ec81deef85c32988a1952d20350d8a426b0d0755ea7796b5621f12632b7d50",
+      "lines": 28294
+    },
+    {
+      "path": "src/main/resources/static/styles.css",
+      "sha256": "464ebaf5206af9e699a850758568e1f776f5fc785564bbb596e6b02a13b122b7",
+      "lines": 13634
+    },
+    {
+      "path": "src/main/resources/static/index.html",
+      "sha256": "4dfafb6a0791b9d7c71b784cf8169cfb66bd8f55a488043dadf218e2990d0380",
+      "lines": 2561
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundPendingOwnerIT.kt",
+      "sha256": "2236a8fa46f1392b9c12d8ec6db285cafc591c8d7ef28e63238bccaa892f3798",
+      "lines": 432
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt",
+      "sha256": "0dda37063aa04825e776cb99512451ffd374e59c0867b424b8bc39725685db1a",
+      "lines": 642
+    }
+  ]
+}

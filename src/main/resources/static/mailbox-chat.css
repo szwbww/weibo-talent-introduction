@@ -315,3 +315,21 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
 .mail-chat .mc-comment-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
 
 .mail-chat[data-role="readonly-mailbox"] .mc-reader-draft{grid-column:1 / -1}
+
+/* manual-reply-delay-contract:start */
+.mail-chat .mc-message footer.mc-delay-footer{flex-wrap:wrap}
+.mail-chat .mc-delay-actions{display:inline-flex;align-items:center;flex-wrap:wrap;gap:12px;min-width:0}
+.mail-chat .mc-delay-confirm{display:inline-flex;align-items:center;flex-wrap:wrap;gap:7px;min-width:0}
+.mail-chat .mc-delay-confirm>span{color:#8a9bb2;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.mail-chat .mc-delay-status{color:#8a9bb2;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.mail-chat .mc-delay-actions .mc-text-button:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+@media(max-width:760px){.mail-chat .mc-delay-actions .mc-text-button{min-height:44px}.mail-chat .mc-delay-confirm>span{flex-basis:100%}.mail-chat .mc-delay-actions{max-width:100%}}
+/* manual-reply-delay-contract:end */
+
+/* manual-reply-error-contract:start */
+.mail-chat .mc-send-error{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:17px;height:17px;color:#c53e32;vertical-align:middle;cursor:help}
+.mail-chat .mc-send-error-icon{display:block;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.mail-chat .mc-send-error-tooltip{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:max-content;max-width:min(260px,70vw);padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#475569;box-shadow:0 2px 6px #334b7210;font-size:11px;font-weight:400;line-height:1.5;white-space:normal;text-align:left;overflow-wrap:anywhere}
+.mail-chat .mc-send-error:hover .mc-send-error-tooltip,.mail-chat .mc-send-error:focus .mc-send-error-tooltip,.mail-chat .mc-person-main:focus-visible .mc-send-error-tooltip{display:block}
+.mail-chat .mc-send-error:focus-visible{outline:2px solid #3b82f6;outline-offset:2px;border-radius:3px}
+/* manual-reply-error-contract:end */

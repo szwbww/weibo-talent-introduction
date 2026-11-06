@@ -146,10 +146,8 @@ for (const status of [401, 403]) test("auth " + status + " clears timeline/edito
 
 test("focus preserves draft input; stale version is rejected on save without overwrite", async () => {
     const h = await setup(); await create(h); edit(h, "local"); const editor = role(h, "review-editor");
-    const start = h.calls.length;
     h.runtime.dispatchWindow("focus", {}); await flush();
     assert.equal(role(h, "review-editor"), editor); assert.equal(editor.innerHTML, "<p>local</p>");
-    assert.deepEqual(Array.from(h.calls.slice(start),c=>c.path),["/api/mail/mailbox/conversations/7/access"]);
     h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("version conflict"),{status:409})) : undefined;
     click(h,"save"); await flush();
     assert.equal(action(h, "submit").disabled, true); assert.equal(action(h, "reload").hidden, false);

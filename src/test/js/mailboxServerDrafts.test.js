@@ -784,3 +784,26 @@ describe("review editor preserves original server draft ownership", () => {
         assert.equal(read(server).content.text, "Admin A");
     });
 });
+
+describe("delayed replies retain authoritative saved drafts", () => {
+    it("WAITING locks editing autosave discard and send without clearing original content", async () => {
+        const server = H.createDraftServer();
+        server.seed("admin", inbound(), content("keep original", { context: { schemaVersion: 1, qa: { ragFactCodes: ["fact"], ragCorpusFingerprint: "fp" } } }));
+        const ctx = await boot(server);
+        ctx.sandbox.mcHostSendRichReply = async (_id, _body, onResult) => {
+            onResult({ sendStatus: "WAITING", delayedReply: { id: 77, revision: 1, status: "WAITING" } });
+            return true;
+        };
+        H.click(action(ctx, "mc-send-manual")); await H.flush();
+        assert.equal(editor(ctx).getAttribute("contenteditable"), "false");
+        assert.equal(action(ctx, "mc-discard-draft").disabled, true);
+        assert.equal(action(ctx, "mc-send-manual").disabled, true);
+        const before = puts(server).length;
+        H.inputEvent(editor(ctx)); await ctx.api.flushDrafts(); await H.flush();
+        assert.equal(puts(server).length, before);
+        assert.equal(read(server).state, "ACTIVE");
+        assert.equal(read(server).content.text, "keep original");
+        assert.equal(read(server).content.context.qa.ragCorpusFingerprint, "fp");
+        ctx.api.unmount();
+    });
+});

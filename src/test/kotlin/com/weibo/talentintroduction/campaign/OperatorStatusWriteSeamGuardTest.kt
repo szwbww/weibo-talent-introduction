@@ -50,7 +50,7 @@ class OperatorStatusWriteSeamGuardTest {
         // javax.servlet.http.HttpServletRequest(:47) 两行，使本噪声行 :219 平移至 :221，path/context 不变。
         // 01b (A3, 行号钉随授权改动平移 +5): 94378f6 重写 markResolved（:171-192，会话身份校验 +
         // MarkResolvedResponse 返回）净增 5 行，使本噪声行 :221 平移至 :226，path/context 不变。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 236, "operatorStatus = request.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 237, "operatorStatus = request.operatorStatus"),
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
         // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
@@ -66,13 +66,13 @@ class OperatorStatusWriteSeamGuardTest {
         // 01b (A3, 行号钉随授权改动平移 +11): 94378f6 在同一文件 markResolved 段（:171-192）净增 5 行、
         // MarkResolvedRequest 默认值 + 新增 MarkResolvedResponse（:897-911）净增 6 行，合计使本噪声行
         // :1137 平移至 :1148，path/context 不变。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1163, "operatorStatus = operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1169, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         // 2026-11-05 材料签名过滤 03：新增共享规则 import，:168 → :169；path/context 不变。
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 169, "operatorStatus = summary.operatorStatus"),
         // 邮箱会话列表响应 DTO 构造：读取 findAllById 得到的 expert_contact 行原样透传到出参，
         // 该文件只有 findById/findAllById 读取，无 save（53ea83f 新增本投影时未登记，导致守卫误报）
-        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxConversationService.kt", 255, "operatorStatus = sharedContacts[row.expertContactId]?.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxConversationService.kt", 262, "operatorStatus = sharedContacts[row.expertContactId]?.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
         // （plan 01 新增 materials GET/PUT 端点与 UpdateExpertMaterialStatusRequest DTO 使 :549 偏移至 :564）
         // （repair R-11 行号钉随授权改动平移：listContacts 的人物核验分组分支新增核验/回退说明与

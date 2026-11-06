@@ -46,6 +46,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.ExceptionHandler
 import com.weibo.talentintroduction.mail.service.MailReplyDraftException
+import com.weibo.talentintroduction.mail.service.DelayedManualReplyException
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import javax.servlet.http.HttpServletRequest
 import java.time.LocalDateTime
@@ -298,12 +299,17 @@ class UnmatchedInboundMailController(
             // 06 (T1/I-1): 透传附件 id 与会话身份；identity 绝不取请求体 operatorName。
             attachmentIds = request.attachmentIds,
             authenticatedUsername = servletRequest.sessionUsernameOrNull(),
-            draftRef = request.draftRef
+            draftRef = request.draftRef,
+            delayExpectedRevision = request.delayExpectedRevision
         )
 
     @ExceptionHandler(MailReplyDraftException::class)
     fun draftError(ex: MailReplyDraftException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
         mapOf("code" to ex.code,"message" to ex.message,"currentVersion" to ex.currentVersion,"currentState" to ex.currentState))
+
+    @ExceptionHandler(DelayedManualReplyException::class)
+    fun delayedError(ex: DelayedManualReplyException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
+        mapOf("code" to ex.code, "message" to ex.message))
 
     private fun HttpServletRequest?.sessionUsernameOrNull(): String? = this
         ?.getSession(false)

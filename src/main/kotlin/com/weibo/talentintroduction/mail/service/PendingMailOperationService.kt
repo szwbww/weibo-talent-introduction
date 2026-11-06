@@ -8,10 +8,11 @@ import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.config.ManualReplyDelayProperties
+import com.weibo.talentintroduction.mail.controller.ConversationManualRichReplyRequest
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
-import com.weibo.talentintroduction.mail.domain.MailRecordRagFact
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
@@ -90,14 +91,26 @@ class PendingMailOperationService(
     // 03b (I-40/I-41/I-43): RAG 发送路径的协作件。可空默认 null 仅为让既有的直接
     // 构造单元测试（不触碰 RAG 分支）保持零改动；Spring 运行时按主构造器完整注入，
     // RAG 分支入口 requireNotNull 防御性校验。
+    // fast-p 02 (T3/I-5)：RAG 存证写入已移入 ManualReplySendAttemptService.finalizeSuccess
+    // 的 SENT 事务，本类不再直接写 mail_record_rag_fact；参数保留以维持既有构造签名
+    // （RagSendBridgeTest 等直接构造点），RAG 门禁仍使用下方 ragKnowledgeBase。
     private val mailRecordRagFactRepository: MailRecordRagFactRepository? = null,
     private val ragKnowledgeBase: RagKnowledgeBase? = null,
     // 06 (I-1/I-2): 通用附件原件解析/元数据读取（04）。与上方两个 RAG 协作件同款：
     // Spring 运行时按主构造器完整注入，可空默认值只让既有的直接构造单元测试零改动；
     // 携带附件的入口在 claim 之前用 requireNotNull 防御性校验，绝不静默放行。
     private val outboundAttachmentService: OutboundAttachmentService? = null,
-    private val mailReplyDraftService: MailReplyDraftService? = null
+    private val mailReplyDraftService: MailReplyDraftService? = null,
+    private val mailReviewDraftService: MailReviewDraftService? = null,
+    private val manualReplyDelayProperties: ManualReplyDelayProperties? = null,
+    private val delayedManualReplyService: DelayedManualReplyService? = null
 ) {
+    init {
+        check(manualReplyDelayProperties?.enabled != true || delayedManualReplyService != null) {
+            "Delayed manual replies are enabled but not wired"
+        }
+    }
+
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
         const val AI_REPLY_PREFLIGHT_SOURCE_CHANGED = "AI_REPLY_PREFLIGHT_SOURCE_CHANGED"
@@ -192,8 +205,10 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftRef: MailReplyDraftRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
+        reviewSendRef: MailReviewSendRef? = null,
+        delayExpectedRevision: Long? = null
     ): PendingMailSendResult {
+        require(delayExpectedRevision == null || delayExpectedRevision > 0) { "Invalid delayExpectedRevision" }
         if (draftRef != null && reviewSendRef != null)
             throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
@@ -380,7 +395,15 @@ class PendingMailOperationService(
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft,
-            reviewSendRef = reviewSendRef
+            reviewSendRef = reviewSendRef,
+            delayExpectedRevision = delayExpectedRevision,
+            originalInput = PendingManualRichReplyRequest(
+                senderAccountCode, subject, htmlBody, textBody, operatorName,
+                qaRuleIds, suggestedRuleIds, ackSnippetId, edited, freeTextPreview, useVariants,
+                templateTextBody, templateHtmlBody, trustReplyAssembly, ragFactCodes,
+                ragCorpusFingerprint, safetyWarningConfirmed, strongConfirmationText,
+                meeting, previewAttachmentSha256, attachmentIds, draftRef
+            )
         )
     }
 
@@ -409,8 +432,10 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftRef: MailReplyDraftRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
+        reviewSendRef: MailReviewSendRef? = null,
+        delayExpectedRevision: Long? = null
     ): PendingMailSendResult {
+        require(delayExpectedRevision == null || delayExpectedRevision > 0) { "Invalid delayExpectedRevision" }
         if (draftRef != null && reviewSendRef != null)
             throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val contact = expertContactRepository.findById(contactId)
@@ -513,7 +538,12 @@ class PendingMailOperationService(
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft,
-            reviewSendRef = reviewSendRef
+            reviewSendRef = reviewSendRef,
+            delayExpectedRevision = delayExpectedRevision,
+            originalConversationInput = ConversationManualRichReplyRequest(
+                requestId, accountScope, anchorMailRecordId, subject, htmlBody, textBody,
+                operatorName, safetyWarningConfirmed, strongConfirmationText, attachmentIds, draftRef
+            )
         )
     }
 
@@ -596,13 +626,15 @@ class PendingMailOperationService(
     }
 
     /**
-     * 人工富文本发送共同实现（T2.4）：两条路径共享「占位符校验 → 最终渲染 → 最终文本
-     * 安全检查 → suppression → claim → SMTP → 分类 → 持久化 → after-commit audit」
-     * 生命周期（I-9）。来信路径（source.inboundProcessingId != null）保留 QA/RAG/
-     * assembly/archive/旧审计语义（I-8）；会话回信路径（null）只跑通用纯文本风险检查，
-     * 不运行依赖来信语义的 QA/意图检查，审计 target 为联系人（I-11）。
+     * 人工富文本发送的冻结准备阶段（fast-p 02 T1/I-3/I-4）：两条路径共享「占位符校验 →
+     * 最终渲染 → 最终文本安全检查 → suppression → 幂等完成收敛」的全部既有顺序，产出
+     * 可持久化的 [PreparedManualReply]（含已解析账号/原件）或明确的完成命中。
+     *
+     * 本阶段不 claim attempt、不调用 SMTP、不落库：这些副作用由同步入口随后经
+     * `prepareAndClaim → deliverPrepared` 执行，或在后续阶段由延迟 worker 从持久快照
+     * 执行。返回值是显式判别类型，绝不用 null 兼作「已完成」和「无条件发送」。
      */
-    private fun executeManualRichSend(
+    internal fun prepareManualRichSend(
         source: ManualRichSendSource,
         rawSubject: String,
         htmlBody: String,
@@ -621,8 +653,10 @@ class PendingMailOperationService(
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
         draftSendRef: ValidatedDraftSendRef? = null,
-        reviewSendRef: MailReviewSendRef? = null
-    ): PendingMailSendResult {
+        reviewSendRef: MailReviewSendRef? = null,
+        originalInput: PendingManualRichReplyRequest? = null,
+        originalConversationInput: ConversationManualRichReplyRequest? = null
+    ): PreparedManualReplyOutcome {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
@@ -806,7 +840,21 @@ class PendingMailOperationService(
             // 06 (I-1)：与 ComposedMail.outboundAttachments 同一文件集合导出的有序快照；
             // 05 的 finalize 四分支据此写 mail_record.outbound_attachments_json。
             outboundAttachments = attachmentFileSet.snapshots
-        ).also { it.draftSendRef = draftSendRef; it.reviewSendRef = reviewSendRef }
+        ).also {
+            it.draftSendRef = draftSendRef
+            it.reviewSendRef = reviewSendRef
+            // fast-p 02 (T3/I-5)：RAG 存证随 payload 传入成功事务 —— 服务端 internal 字段，
+            // 不进入 computeFingerprint 字节流；由 finalizeSuccess 在 SENT 同一事务内落库，
+            // 不再在 Pending 事务外二次写入。空 fact_code 列表表示无 RAG 证据。
+            it.ragEvidence = evidence.ragFactCodes?.let { codes ->
+                ManualReplySendAttemptService.RagEvidence(
+                    factCodes = codes,
+                    corpusFingerprint = requireNotNull(evidence.ragFingerprintAtSend) {
+                        "RAG fingerprint must be present after gate validation"
+                    }
+                )
+            }
+        }
 
         val persistInReplyTo = source.persistInReplyTo
         if (persistInReplyTo != null && persistInReplyTo.length > 255) {
@@ -828,14 +876,304 @@ class PendingMailOperationService(
         // non-draft inbound payload may bypass a newly introduced identity reminder.
         if (draftSendRef == null && (source.inboundProcessingId != null || reviewSendRef != null)) {
             manualReplySendAttemptService.findCompletedByPayload(payload)?.let {
-                return completedDraftResult(source.contactId, it)
+                return PreparedManualReplyOutcome.Completed(completedDraftResult(source.contactId, it))
             }
         }
         if (identityFindings.isNotEmpty() && !safetyWarningConfirmed) {
             throw ManualSendSafetyBlockedException(findings)
         }
 
-        val claim = manualReplySendAttemptService.prepareAndClaim(payload)
+        return PreparedManualReplyOutcome.Ready(
+            PreparedManualReply(
+                source = source,
+                payload = payload,
+                renderedSubject = renderedSubject,
+                finalTextBody = finalTextBody,
+                finalHtmlBody = finalHtmlBody,
+                calendarSnapshot = calendarSnapshot,
+                attachmentFileSet = attachmentFileSet,
+                evidence = evidence,
+                operatorName = operatorName,
+                authenticatedUsername = authenticatedUsername,
+                requiresStrong = requiresStrong,
+                safetyWarningConfirmed = safetyWarningConfirmed,
+                strongConfirmationText = strongConfirmationText,
+                bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
+                    .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500),
+                auditNote = auditNote(
+                    inboundProcessingId = source.inboundProcessingId,
+                    contactId = source.contactId,
+                    findings = findings,
+                    requiresStrong = requiresStrong
+                ),
+                rawSubject = trimmedSubject,
+                rawHtmlBody = htmlBody,
+                rawTextBody = textBody,
+                draftSendRef = draftSendRef,
+                reviewSendRef = reviewSendRef,
+                originalInput = originalInput,
+                originalConversationInput = originalConversationInput
+            )
+        )
+    }
+
+    /** Canonical preparation precedes either queue admission or the legacy synchronous claim. */
+    private fun executeManualRichSend(
+        source: ManualRichSendSource,
+        rawSubject: String,
+        htmlBody: String,
+        textBody: String?,
+        operatorName: String?,
+        safetyWarningConfirmed: Boolean,
+        strongConfirmationText: String?,
+        evidence: ManualReplyEvidenceContext,
+        meeting: MeetingInput? = null,
+        previewAttachmentSha256: String? = null,
+        attachmentIds: List<String> = emptyList(),
+        authenticatedUsername: String? = null,
+        draftSendRef: ValidatedDraftSendRef? = null,
+        reviewSendRef: MailReviewSendRef? = null,
+        originalInput: PendingManualRichReplyRequest? = null,
+        originalConversationInput: ConversationManualRichReplyRequest? = null,
+        delayExpectedRevision: Long? = null
+    ): PendingMailSendResult {
+        val outcome = prepareManualRichSend(
+            source = source,
+            rawSubject = rawSubject,
+            htmlBody = htmlBody,
+            textBody = textBody,
+            operatorName = operatorName,
+            safetyWarningConfirmed = safetyWarningConfirmed,
+            strongConfirmationText = strongConfirmationText,
+            evidence = evidence,
+            meeting = meeting,
+            previewAttachmentSha256 = previewAttachmentSha256,
+            attachmentIds = attachmentIds,
+            authenticatedUsername = authenticatedUsername,
+            draftSendRef = draftSendRef,
+            reviewSendRef = reviewSendRef,
+            originalInput = originalInput,
+            originalConversationInput = originalConversationInput
+        )
+        val prepared = when (outcome) {
+            is PreparedManualReplyOutcome.Completed -> return outcome.result
+            is PreparedManualReplyOutcome.Ready -> outcome.prepared
+        }
+        val existing = manualReplySendAttemptService.findExistingByPayload(prepared.payload)
+        val queued = existing?.id?.let(manualReplySendAttemptService::delayedJobFor)
+        if (manualReplyDelayProperties?.enabled == true || queued != null) {
+            return enqueuePrepared(prepared, existing, delayExpectedRevision)
+        }
+        val claim = manualReplySendAttemptService.prepareAndClaim(prepared.payload)
+        // A concurrent enabled process may have queued after the read. The synchronous
+        // attempt guard still owns that race; converge through the same lifecycle, not SMTP.
+        if (claim.result != ManualReplySendAttemptService.ClaimResult.CLAIMED &&
+            claim.result != ManualReplySendAttemptService.ClaimResult.SAFE_RETRY_CLAIMED &&
+            manualReplySendAttemptService.delayedJobFor(claim.attemptId) != null) {
+            return enqueuePrepared(prepared, existing, delayExpectedRevision)
+        }
+        return deliverPrepared(prepared, claim)
+    }
+
+    private fun enqueuePrepared(
+        prepared: PreparedManualReply,
+        existing: com.weibo.talentintroduction.campaign.domain.MailSendAttempt?,
+        expectedRevision: Long?
+    ): PendingMailSendResult {
+        val lifecycle = checkNotNull(delayedManualReplyService) { "Delayed manual replies are not wired" }
+        val actor = prepared.authenticatedUsername?.takeIf { it.isNotBlank() }
+            ?: throw DelayedManualReplyException(401, "UNAUTHORIZED", "请先登录")
+        expertMailPermissionGuard.requireDelayedActor(actor)
+        val outcome = try {
+            lifecycle.enqueue(DelayedManualReplySnapshotFactory.fromPrepared(prepared), actor, expectedRevision)
+        } catch (ex: DelayedManualReplySnapshotException) {
+            if (!ex.sizeLimitExceeded) throw ex
+            throw DelayedManualReplyException(
+                413, DelayedReplyPublicError.SNAPSHOT_INVALID.code, DelayedReplyPublicError.SNAPSHOT_INVALID.message
+            )
+        }
+        return when (outcome) {
+            is DelayedEnqueueOutcome.AlreadySent -> completedDraftResult(
+                prepared.source.contactId,
+                checkNotNull(manualReplySendAttemptService.findCompletedAttempt(outcome.attemptId)))
+            is DelayedEnqueueOutcome.Queued -> {
+                val attempt = existing
+                    ?: checkNotNull(manualReplySendAttemptService.findExistingByPayload(prepared.payload)) {
+                        "Queued reply has no durable attempt"
+                    }
+                PendingMailSendResult(
+                    contactId = prepared.source.contactId,
+                    senderAccountCode = prepared.source.accountCode,
+                    mailType = "MANUAL_RICH_REPLY",
+                    subject = prepared.renderedSubject,
+                    sendStatus = outcome.job.status.name,
+                    messageId = attempt.messageId,
+                    delayedReply = outcome.job
+                )
+            }
+        }
+    }
+
+    /**
+     * 投递阶段（fast-p 02 T2/I-3/I-4/I-5）：只接受**已经持久 claim** 的 attempt。
+     *
+     * 复用既有 `ComposedMail` 构造、SMTP 线程头分支、[classifyDelivery] 分类、成功后
+     * finalize/审计/ES 归档与失败分类。这里不再渲染变量、不再选择事实、不再生成第二份
+     * ICS —— 全部读 [prepared] 的冻结值。绝不再次调用两个 public send 入口（否则
+     * 同步路径会循环入队）；[delayedRef] 是后续延迟 worker 的 server-only 任务令牌，
+     * 本阶段无队列行时保持 null 并沿旧完成逻辑。
+     */
+    /** Rebuild runtime resources only. Restore-only request data never authorizes delivery. */
+    @Transactional
+    internal fun rehydrateDelayed(snapshot: DelayedManualReplySnapshot, actor: String, forRetry: Boolean = false): PreparedManualReply {
+        fun fail(reason: DelayedReplyPublicError): Nothing =
+            throw DelayedManualReplyException(422, reason.code, reason.message)
+        fun <T> checked(reason: DelayedReplyPublicError, block: () -> T): T =
+            try { block() } catch (ex: DelayedManualReplyException) { throw ex }
+            catch (_: com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException) {
+                fail(DelayedReplyPublicError.ACCESS_CHANGED)
+            }
+            catch (ex: MailReviewDraftException) {
+                fail(when {
+                    ex.status == 403 -> DelayedReplyPublicError.ACCESS_CHANGED
+                    ex.code == "REVIEW_CONTEXT_CHANGED" -> DelayedReplyPublicError.REVIEW_CONTEXT_CHANGED
+                    else -> DelayedReplyPublicError.SOURCE_CHANGED
+                })
+            }
+            catch (ex: MailReplyDraftException) {
+                fail(if (ex.status == HttpStatus.FORBIDDEN) DelayedReplyPublicError.ACCESS_CHANGED else DelayedReplyPublicError.SOURCE_CHANGED)
+            }
+            catch (_: Exception) { fail(reason) }
+        checked(DelayedReplyPublicError.SNAPSHOT_INVALID) { DelayedManualReplySnapshotCodec.validate(snapshot) }
+        val p = snapshot.payload
+        val s = snapshot.source
+        checked(DelayedReplyPublicError.SNAPSHOT_INVALID) {
+            p.calendarAttachment?.let { calendar ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(calendar.icsText.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+                require(digest == calendar.sha256)
+            }
+        }
+        checked(DelayedReplyPublicError.ACCESS_CHANGED) {
+            require(actor == "admin" || actor == "user1")
+            expertMailPermissionGuard.requireDelayedActor(actor)
+            expertMailPermissionGuard.requireFull(actor, p.contactId)
+        }
+        val contact = checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+            expertContactRepository.findById(p.contactId).orElseThrow().also {
+                require(it.orcidId == p.orcidId && it.expertEmail.trim().lowercase() == p.normalizedRecipient)
+            }
+        }
+        val account = checked(DelayedReplyPublicError.ACCOUNT_UNAVAILABLE) {
+            mailSenderAccountService.getManualSendAccount(p.accountCode).also {
+                require(it.enabled && it.accountCode == p.accountCode && it.accountCode != "SIMULATOR_NOOP")
+            }
+        }
+        if (emailSuppressionService.isSuppressed(contact.expertEmail)) fail(DelayedReplyPublicError.RECIPIENT_SUPPRESSED)
+        val inbound = p.inboundProcessingId?.let { id ->
+            checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+                inboundMailProcessingRepository.findById(id).orElseThrow().also {
+                    require(it.expertContactId == p.contactId && it.senderAccountCode == p.accountCode)
+                    require(it.messageId == p.inReplyTo && it.messageId?.takeIf(String::isNotBlank) == s.sourceMessageId)
+                    require(s.smtpInReplyTo == null && s.smtpReferences == null)
+                }
+            }
+        }
+        val anchor = s.anchorMailRecordId?.let { id ->
+            checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+                resolveIdentityConversationAnchor(p.contactId, p.accountCode, id).also {
+                    val messageId = it.messageId?.trim()?.takeIf { value -> value.isNotBlank() && value.length <= 255 }
+                    val references = messageId?.let { message ->
+                        listOfNotNull(it.inReplyTo?.trim()?.takeIf(String::isNotBlank), message).joinToString(" ")
+                    }
+                    require(messageId == p.inReplyTo && messageId == s.smtpInReplyTo && references == s.smtpReferences)
+                    require(it.messageId?.takeIf(String::isNotBlank) == s.sourceMessageId)
+                }
+            }
+        }
+        var draftRef: ValidatedDraftSendRef? = null
+        var reviewRef: MailReviewSendRef? = null
+        when (val restore = snapshot.restore) {
+            is DelayedDraftRestore -> checked(DelayedReplyPublicError.SOURCE_CHANGED) {
+                require(restore.owner == actor)
+                val source = requireNotNull(mailReplyDraftService).lockDelayedSource(actor, restore)
+                require(source.contentMatches)
+                draftRef = requireNotNull(source.ref)
+            }
+            is DelayedReviewRestore -> checked(DelayedReplyPublicError.REVIEW_CONTEXT_CHANGED) {
+                require(actor == "admin" && restore.actor == actor)
+                val service = requireNotNull(mailReviewDraftService)
+                reviewRef = if (forRetry) {
+                    val current = service.lockDelayedReviewForRetry(actor, restore)
+                    MailReviewSendRef(current.first, actor, current.second)
+                } else {
+                    MailReviewSendRef(service.lockDelayedReview(actor, restore, restore.confirmationEventId),
+                        actor, restore.confirmationEventId)
+                }
+            }
+            is DelayedLegacyRestore -> Unit
+        }
+        val files = checked(DelayedReplyPublicError.ATTACHMENT_UNAVAILABLE) {
+            resolveOutboundAttachmentFileSet(p.contactId, p.outboundAttachments.map { it.id }, actor).also {
+                require(it.snapshots == p.outboundAttachments)
+            }
+        }
+        val payload = ManualReplySendAttemptService.SendPayload(
+            orcidId = p.orcidId, contactId = p.contactId, inboundProcessingId = p.inboundProcessingId,
+            accountCode = p.accountCode, normalizedRecipient = p.normalizedRecipient, subject = p.subject,
+            finalText = p.finalText, finalHtml = p.finalHtml, inReplyTo = p.inReplyTo,
+            canonicalQaRuleIds = p.canonicalQaRuleIds, primaryRuleId = p.primaryRuleId,
+            sourceAnchor = p.sourceAnchor, idempotencyRequestId = p.idempotencyRequestId,
+            calendarAttachment = p.calendarAttachment,
+            meetingEvent = p.meetingEvent?.let {
+                com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput(
+                    Instant.ofEpochMilli(it.startUtcMs), Instant.ofEpochMilli(it.endUtcMs), it.meetingLink)
+            }, outboundAttachments = p.outboundAttachments
+        ).also {
+            it.draftSendRef = draftRef
+            it.reviewSendRef = reviewRef
+            it.ragEvidence = snapshot.evidence.ragFactCodes.takeIf { codes -> codes.isNotEmpty() }?.let { codes ->
+                ManualReplySendAttemptService.RagEvidence(codes, snapshot.evidence.ragCorpusFingerprint)
+            }
+        }
+        val e = snapshot.evidence
+        return PreparedManualReply(
+            source = ManualRichSendSource(contact, p.contactId, p.inboundProcessingId, inbound, account,
+                p.accountCode, p.inReplyTo, s.smtpInReplyTo, s.smtpReferences, s.anchorMailRecordId,
+                p.idempotencyRequestId, anchor),
+            payload = payload, renderedSubject = p.subject, finalTextBody = p.finalText, finalHtmlBody = p.finalHtml,
+            calendarSnapshot = p.calendarAttachment, attachmentFileSet = files,
+            evidence = ManualReplyEvidenceContext(frozenAssembly = e.assembly, carriesQa = e.carriesQa,
+                canonicalFactIds = e.canonicalFactIds, serverSuggestedFactIds = e.serverSuggestedFactIds,
+                ragMode = e.ragFactCodes.isNotEmpty(), ragFactCodes = e.ragFactCodes,
+                ragFingerprintAtSend = e.ragCorpusFingerprint, templateTextBody = e.templateTextBody, edited = e.edited),
+            operatorName = e.operator, authenticatedUsername = actor,
+            requiresStrong = snapshot.confirmation.strongConfirmationRequired,
+            safetyWarningConfirmed = snapshot.confirmation.safetyWarningConfirmed,
+            strongConfirmationText = snapshot.confirmation.strongConfirmationText,
+            bodyPreviewText = e.bodyPreviewText.orEmpty(), auditNote = e.auditNote.orEmpty(),
+            rawSubject = p.subject, rawHtmlBody = p.finalHtml, rawTextBody = p.finalText,
+            draftSendRef = draftRef, reviewSendRef = reviewRef
+        )
+    }
+
+    internal fun deliverPrepared(
+        prepared: PreparedManualReply,
+        claim: ManualReplySendAttemptService.ClaimedAttempt,
+        delayedRef: DelayedDispatchRef? = null
+    ): PendingMailSendResult {
+        val source = prepared.source
+        val contact = source.contact
+        val renderedSubject = prepared.renderedSubject
+        val finalTextBody = prepared.finalTextBody
+        val finalHtmlBody = prepared.finalHtmlBody
+        val calendarSnapshot = prepared.calendarSnapshot
+        val attachmentFileSet = prepared.attachmentFileSet
+        val evidence = prepared.evidence
+        val operatorName = prepared.operatorName
+        val payload = prepared.payload
+        val bodyPreviewText = prepared.bodyPreviewText
+        val auditNote = prepared.auditNote
 
         return when (claim.result) {
             ManualReplySendAttemptService.ClaimResult.CLAIMED,
@@ -861,8 +1199,6 @@ class PendingMailOperationService(
                     outboundAttachments = attachmentFileSet.files,
                     isReply = true
                 )
-                val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
-                    .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
 
                 try {
                     val delivered = mailDeliveryService.send(source.account, mail)
@@ -873,7 +1209,8 @@ class PendingMailOperationService(
                             val id = manualReplySendAttemptService.finalizeSuccess(
                                 payload = payload,
                                 attemptId = claim.attemptId,
-                                messageId = claim.messageId
+                                messageId = claim.messageId,
+                                delayedRef = delayedRef
                             )
                             if (source.inboundProcessingId != null) {
                                 manualReplySendAttemptService.recordSendAudit(
@@ -892,8 +1229,9 @@ class PendingMailOperationService(
                                     serverSuggestedFactIds = evidence.serverSuggestedFactIds,
                                     edited = evidence.edited,
                                     // 04 (I-1/I-7): 仅在该次发送存在 verified assembly 时附加诊断。
-                                    trustReplyDiagnostics = evidence.verifiedAssembly?.response?.diagnostics,
-                                    note = auditNote(inboundProcessingId = source.inboundProcessingId, contactId = source.contactId, findings = findings, requiresStrong = requiresStrong)
+                                    trustReplyDiagnostics = evidence.verifiedAssembly?.response?.diagnostics
+                                        ?: evidence.frozenAssembly?.diagnostics,
+                                    note = auditNote
                                 )
                             } else {
                                 manualReplySendAttemptService.recordConversationSendAudit(
@@ -906,30 +1244,13 @@ class PendingMailOperationService(
                                     sendSubject = renderedSubject,
                                     bodyPreviewText = bodyPreviewText,
                                     operatorName = operatorName,
-                                    note = auditNote(inboundProcessingId = null, contactId = source.contactId, findings = findings, requiresStrong = requiresStrong)
+                                    note = auditNote
                                 )
                             }
-                            // 03b (I-42): 发送成功后按请求中 ragFactCodes 的原始顺序写入
-                            // mail_record_rag_fact 存证；RAG 路径 canonicalFactIds 恒为空，
-                            // 绝不写 mail_record_qa_rule。
-                            if (evidence.ragFactCodes != null) {
-                                val ragEvidenceRepo = requireNotNull(mailRecordRagFactRepository) {
-                                    "MailRecordRagFactRepository is not wired for RAG send"
-                                }
-                                val fingerprintAtSend = requireNotNull(evidence.ragFingerprintAtSend) {
-                                    "RAG fingerprint must be present after gate validation"
-                                }
-                                ragEvidenceRepo.saveAll(
-                                    evidence.ragFactCodes.mapIndexed { ordinal, factCode ->
-                                        MailRecordRagFact(
-                                            mailRecordId = id,
-                                            factCode = factCode,
-                                            ordinal = ordinal,
-                                            corpusFingerprint = fingerprintAtSend
-                                        )
-                                    }
-                                )
-                            }
+                            // fast-p 02 (T3/I-5): RAG 存证已随 payload.ragEvidence 移入
+                            // ManualReplySendAttemptService.finalizeSuccess 的 SENT 事务 ——
+                            // 本处不再二次写入，避免 SENT 提交后的事实写入失败把成功发送
+                            // 误判为 UNKNOWN/重复投递。QA 与 RAG 仍互斥。
                             id
                         } catch (finalizeEx: Exception) {
                             log.warn("finalizeSuccess failed for attempt {}: {}", claim.attemptId, finalizeEx.message)
@@ -939,7 +1260,8 @@ class PendingMailOperationService(
                                     attemptId = claim.attemptId,
                                     messageId = claim.messageId,
                                     resultStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
-                                    errorSummary = "finalize_failure:${finalizeEx.message?.take(400).orEmpty()}"
+                                    errorSummary = "finalize_failure:${finalizeEx.message?.take(400).orEmpty()}",
+                                    delayedRef = delayedRef
                                 )
                             } catch (finalizeFailEx: Exception) {
                                 log.error("finalizeFailure to UNKNOWN also failed for attempt {}: {}",
@@ -959,7 +1281,8 @@ class PendingMailOperationService(
                                 finalTextBody = finalTextBody,
                                 operatorName = operatorName,
                                 outboundMailRecordId = mailRecordId,
-                                verifiedAssembly = evidence.verifiedAssembly
+                                verifiedAssembly = evidence.verifiedAssembly,
+                                frozenAssembly = evidence.frozenAssembly
                             )
                         } else {
                             UnsupportedAnswerIndexArchiveResult()
@@ -981,7 +1304,8 @@ class PendingMailOperationService(
                             attemptId = claim.attemptId,
                             messageId = claim.messageId,
                             resultStatus = classification.attemptStatus,
-                            errorSummary = classification.errorSummary
+                            errorSummary = classification.errorSummary,
+                            delayedRef = delayedRef
                         )
                         if (classification.isUnknown) {
                             throw ResponseStatusException(
@@ -1011,7 +1335,8 @@ class PendingMailOperationService(
                                     attemptId = claim.attemptId,
                                     messageId = claim.messageId,
                                     resultStatus = MailSendAttemptStatus.DELIVERY_UNKNOWN,
-                                    errorSummary = "delivery_error:${deliveryEx.message?.take(400).orEmpty()}"
+                                    errorSummary = "delivery_error:${deliveryEx.message?.take(400).orEmpty()}",
+                                    delayedRef = delayedRef
                                 )
                             } catch (finalizeEx: Exception) {
                                 log.error("finalizeFailure to UNKNOWN failed for attempt {}: {}",
@@ -1307,12 +1632,17 @@ class PendingMailOperationService(
         outboundMailRecordId: Long?,
         // 03 (阶段 4): 直接复用发送前 verifyAssembly 的已验证结果；不再发送成功后
         // 二次 assemble（避免前后两次解析漂移）。
-        verifiedAssembly: VerifiedTrustReplyAssembly?
+        verifiedAssembly: VerifiedTrustReplyAssembly?,
+        frozenAssembly: DelayedReplyAssemblySnapshot? = null
     ): UnsupportedAnswerIndexArchiveResult {
-        if (verifiedAssembly == null || outboundMailRecordId == null) {
+        if (outboundMailRecordId == null) {
             return UnsupportedAnswerIndexArchiveResult()
         }
-        val assembled = verifiedAssembly.response
+        // A persisted archive projection is not a newly verified assembly response. Keep its
+        // deliberately smaller type rather than inventing source versions or a draft hash.
+        val assembled = frozenAssembly ?: verifiedAssembly?.response?.let {
+            DelayedReplyAssemblySnapshot(it.source, it.itemVersions, it.finalParagraphByRequestKey, it.diagnostics)
+        } ?: return UnsupportedAnswerIndexArchiveResult()
         val operatorDirectedCount = assembled.itemVersions.count {
             it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }
@@ -1357,7 +1687,7 @@ class PendingMailOperationService(
                 inboundProcessingId,
                 error.javaClass.simpleName
             )
-            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(verifiedAssembly)))
+            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(assembled)))
         }
     }
 
@@ -1369,8 +1699,8 @@ class PendingMailOperationService(
 
     // Repair R-2 (V-2)：失败归档计数对齐权威资格判定（旧口径只数
     // ANSWER_FROM_OPERATOR_INPUT，与放宽后的允许集合不一致）。
-    private fun eligibleFailureCount(verifiedAssembly: VerifiedTrustReplyAssembly): Int =
-        verifiedAssembly.response.itemVersions.count { version ->
+    private fun eligibleFailureCount(assembly: DelayedReplyAssemblySnapshot): Int =
+        assembly.itemVersions.count { version ->
             unsupportedAnswerIndexService.isArchiveEligible(version)
         }.coerceAtLeast(1)
 
@@ -1888,11 +2218,55 @@ class PendingMailOperationService(
 // ---------------------------------------------------------------------------
 
 /**
+ * 冻结准备结果（fast-p 02 T1）：显式判别类型，绝不以 null 兼作多种状态。
+ * [Completed] 是幂等完成命中（原样返回既有 SENT 结果，不再 claim/投递）；
+ * [Ready] 携带可持久化的 [PreparedManualReply]。
+ */
+internal sealed interface PreparedManualReplyOutcome {
+    data class Completed(val result: PendingMailSendResult) : PreparedManualReplyOutcome
+    data class Ready(val prepared: PreparedManualReply) : PreparedManualReplyOutcome
+}
+
+/**
+ * 一次已通过全部既有校验、尚未 claim/SMTP 的冻结准备结果（fast-p 02 T1/T2/I-4）。
+ *
+ * `source` 含运行时解析出的账号/原件，仅存在于 JVM 内；持久化快照必须走
+ * `DelayedManualReplyModels` 的显式白名单工厂（不序列化本对象）。[payload] 与
+ * [attachmentFileSet] 是既有 SendPayload/文件集合实例，投递与后续 worker 复用同一份，
+ * 绝不重新渲染变量、重新选择事实或生成第二份 ICS。
+ */
+internal data class PreparedManualReply(
+    val source: ManualRichSendSource,
+    val payload: ManualReplySendAttemptService.SendPayload,
+    val renderedSubject: String,
+    val finalTextBody: String,
+    val finalHtmlBody: String,
+    val calendarSnapshot: CalendarAttachmentSnapshot?,
+    val attachmentFileSet: OutboundAttachmentFileSet,
+    val evidence: ManualReplyEvidenceContext,
+    val operatorName: String?,
+    val authenticatedUsername: String?,
+    val requiresStrong: Boolean,
+    val safetyWarningConfirmed: Boolean,
+    val strongConfirmationText: String?,
+    val bodyPreviewText: String,
+    val auditNote: String,
+    /** 原始请求参数（仅用于 LEGACY 恢复快照，不参与投递与指纹）。 */
+    val rawSubject: String,
+    val rawHtmlBody: String,
+    val rawTextBody: String?,
+    val draftSendRef: ValidatedDraftSendRef?,
+    val reviewSendRef: MailReviewSendRef?,
+    val originalInput: PendingManualRichReplyRequest? = null,
+    val originalConversationInput: ConversationManualRichReplyRequest? = null
+)
+
+/**
  * 发送生命周期最小 source context：联系人、可空 inbound id、可空锚点 mail record id、
  * 账号 code、落库 inReplyTo、SMTP inReplyTo/references（T2.4）。会话回信路径
  * inboundProcessingId = null 且携带真实 requestId/anchor；来信路径反向（I-3/I-4）。
  */
-private data class ManualRichSendSource(
+internal data class ManualRichSendSource(
     val contact: ExpertContact,
     val contactId: Long,
     val inboundProcessingId: Long?,
@@ -1916,7 +2290,7 @@ private data class ManualRichSendSource(
  * 来信语义侧的可选证据/归档上下文：QA/RAG/assembly/archive 与模板正文只属于来信路径；
  * 会话回信路径用全默认值（canonical 空、不归档、不跑来信语义检查）。
  */
-private data class ManualReplyEvidenceContext(
+internal data class ManualReplyEvidenceContext(
     val verifiedAssembly: VerifiedTrustReplyAssembly? = null,
     val carriesQa: Boolean = false,
     val canonicalFactIds: List<Long> = emptyList(),
@@ -1932,7 +2306,9 @@ private data class ManualReplyEvidenceContext(
     val inboundText: String = "",
     val researchProfileSufficient: Boolean = false,
     /** T2.7：false 时只跑数字/URL、高风险声明、信任话术通用检查后返回。来信默认 true。 */
-    val runInboundSemanticChecks: Boolean = true
+    val runInboundSemanticChecks: Boolean = true,
+    /** Already-persisted audit/archive projection; never reused as fresh selection authority. */
+    val frozenAssembly: DelayedReplyAssemblySnapshot? = null
 )
 
 data class PendingMailSendResult(
@@ -1944,7 +2320,8 @@ data class PendingMailSendResult(
     val messageId: String?,
     val unsupportedAnswerArchiveStatus: UnsupportedAnswerArchiveStatus = UnsupportedAnswerArchiveStatus.NOT_APPLICABLE,
     val unsupportedAnswerArchivedCount: Int = 0,
-    val unsupportedAnswerArchiveFailedCount: Int = 0
+    val unsupportedAnswerArchiveFailedCount: Int = 0,
+    val delayedReply: DelayedManualReplyView? = null
 )
 
 data class PendingQaReplyRequest(
@@ -1981,7 +2358,8 @@ data class PendingManualRichReplyRequest(
     // 06 (T1/I-1): 通用附件 id（用户选择顺序，04 上传产物）。默认空 = 既有无附件形态逐字
     // 不变；非空时服务端按 (专家 + 会话身份) 重读 04 元数据与原件，越权/缺失在 claim 前失败。
     val attachmentIds: List<String> = emptyList(),
-    val draftRef: MailReplyDraftRef? = null
+    val draftRef: MailReplyDraftRef? = null,
+    val delayExpectedRevision: Long? = null
 )
 
 data class ComposedReplyRequest(
@@ -2047,3 +2425,22 @@ data class SafetyFinding(
 class ManualSendSafetyBlockedException(
     val findings: List<SafetyFinding>
 ) : RuntimeException("发送内容安全校验未通过")
+
+/** Keep synchronous completion unchanged; delayed completion carries the original claim token. */
+private fun ManualReplySendAttemptService.finalizeSuccess(
+    payload: ManualReplySendAttemptService.SendPayload,
+    attemptId: Long,
+    messageId: String,
+    delayedRef: DelayedDispatchRef?
+): Long = if (delayedRef == null) finalizeSuccess(payload, attemptId, messageId)
+else finalizeDelayedSuccess(payload, attemptId, messageId, delayedRef)
+
+private fun ManualReplySendAttemptService.finalizeFailure(
+    payload: ManualReplySendAttemptService.SendPayload,
+    attemptId: Long,
+    messageId: String,
+    resultStatus: String,
+    errorSummary: String?,
+    delayedRef: DelayedDispatchRef?
+): Long = if (delayedRef == null) finalizeFailure(payload, attemptId, messageId, resultStatus, errorSummary)
+else finalizeDelayedFailure(payload, attemptId, messageId, resultStatus, errorSummary, delayedRef)

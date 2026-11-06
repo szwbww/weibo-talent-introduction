@@ -36,8 +36,8 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * 专家会话查询真实 MySQL 集成测试（fast-p 07；G-1 门禁，mysqlIt）。
  *
- * 走 mysqlIt 门禁显式启用（-Pmysql-it）连接 127.0.0.1:3306/talent_introduction
- * （测试 application.yml 数据源；Flyway 启动即迁移到最新含 V121），不依赖内存 mock
+ * 走 mysqlIt 门禁显式启用，运行时须覆盖 datasource 指向隔离的一次性 MySQL；
+ * Flyway 启动即迁移到当前版本，不依赖内存 mock
  * 证明 GROUP BY/分页正确。真实数据覆盖：
  * - I-1：同信只计 processing 一次（INBOUND mail_record 绝不重复计入）；
  * - I-2：mixed 记录口径 + 全历史聚合（日期筛选只限定 membership，不改计数）+
@@ -1423,6 +1423,7 @@ class MailboxConversationRepositoryIT {
     }
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM delayed_manual_reply")
         jdbcTemplate.update("DELETE FROM mailbox_review_draft_event")
         jdbcTemplate.update("DELETE FROM mailbox_review_draft")
         jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
