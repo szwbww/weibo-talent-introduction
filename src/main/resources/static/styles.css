@@ -11880,7 +11880,7 @@ body.preview-available:not(.preview-docked) .preview-rail {
 @media(max-width:760px){.outbound-file{flex-wrap:wrap}.outbound-file-actions{width:100%;padding-left:42px}}
 
 /* Compact attachment picker: built-in resources and local files share one dialog. */
-.mail-chat .outbound-picker{box-sizing:border-box;width:420px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);padding:0;border:1px solid #dce4ef;border-radius:10px;background:#fff;color:#334155;box-shadow:0 12px 42px #0f172a25;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:auto}
+.mail-chat .outbound-picker{box-sizing:border-box;position:fixed;inset:0;margin:auto;height:fit-content;width:420px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);padding:0;border:1px solid #dce4ef;border-radius:10px;background:#fff;color:#334155;box-shadow:0 12px 42px #0f172a25;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:auto}
 .mail-chat .outbound-picker::backdrop{background:#0f172a26}
 .mail-chat .outbound-picker [hidden]{display:none!important}
 .mail-chat .outbound-picker button{font:inherit;cursor:pointer;border:1px solid #dce4ef;border-radius:6px;background:#fff;color:#475569;padding:7px 12px}
@@ -11893,7 +11893,7 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mail-chat .outbound-picker-body{padding:14px 16px}
 .mail-chat .outbound-picker-search{box-sizing:border-box;width:100%;padding:8px 10px;border:1px solid #e0e7f0;background:#f8fafc;border-radius:6px;font:inherit;font-size:12px;color:#334155}
 .mail-chat .outbound-picker-list{max-height:240px;overflow:auto}
-.mail-chat .outbound-picker-file{display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px;border:1px solid #dce4ef;border-radius:6px;cursor:pointer}
+.mail-chat .outbound-picker-file{display:flex;flex-direction:row;align-items:center;text-transform:none;letter-spacing:normal;text-align:left;color:#334155;font-weight:400;line-height:1.5;gap:8px;margin-top:10px;padding:10px;border:1px solid #dce4ef;border-radius:6px;cursor:pointer}
 .mail-chat .outbound-picker-file:has(input:checked){background:#f3f7ff;border-color:#bcd0ff}
 .mail-chat .outbound-picker-file input{width:15px;height:15px;margin:0;flex-shrink:0;accent-color:#2563eb}
 .mail-chat .outbound-picker-pdf{display:grid;place-items:center;flex-shrink:0;width:28px;height:34px;background:#fff0ed;color:#ce6156;border-radius:4px;font-size:10px}
