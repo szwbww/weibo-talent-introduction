@@ -26,7 +26,6 @@ import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexArchiveRes
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexService
 import com.weibo.talentintroduction.llm.service.VerifiedTrustReplyAssembly
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
-import com.weibo.talentintroduction.mail.domain.MailRecordRagFact
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
@@ -472,13 +471,11 @@ class RagSendBridgeTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `rag send succeeds writes ordered rag fact evidence and never touches qa_rule`() {
+    fun `rag send succeeds carries ordered rag evidence to the finalize transaction and never touches qa_rule`() {
+        // fast-p 02 (T3/I-5)：RAG 存证不再由 Pending 在 finalize 之外直写 repo，而是随
+        // SendPayload.ragEvidence 进入 ManualReplySendAttemptService.finalizeSuccess 的
+        // SENT 事务（事务内落库与顺序断言见 ManualReplySendAttemptServiceTest）。
         val capturedPayloads = stubSuccessfulSend()
-        val savedRows = mutableListOf<MailRecordRagFact>()
-        Mockito.doAnswer { inv ->
-            savedRows += inv.getArgument<Iterable<MailRecordRagFact>>(0).toList()
-            savedRows
-        }.`when`(mailRecordRagFactRepository).saveAll(Mockito.anyIterable())
 
         val result = service.sendManualRichReply(
             inboundProcessingId = 100L,
@@ -492,15 +489,16 @@ class RagSendBridgeTest {
         )
 
         assertEquals("SENT", result.sendStatus)
-        // I-42: 有序存证（ordinal 与请求下标一一对应，携带发出时的指纹）。
-        assertEquals(
-            listOf("KB-FUND-033" to 0, "KB-COMP-007" to 1, "KB-PROG-002" to 2),
-            savedRows.map { it.factCode to it.ordinal }
-        )
-        assertTrue(savedRows.all { it.mailRecordId == 500L })
-        assertTrue(savedRows.all { it.corpusFingerprint == fingerprint })
-        // I-43: 发送 payload 不携带 primaryRuleId（matched_qa_rule_id 置 null）。
+        // I-42: 有序存证（请求顺序原样进入 payload，finalize 按 ordinal 0..N 落库）。
         val payload = capturedPayloads.single()
+        assertEquals(
+            listOf("KB-FUND-033", "KB-COMP-007", "KB-PROG-002"),
+            requireNotNull(payload.ragEvidence).factCodes
+        )
+        assertEquals(fingerprint, requireNotNull(payload.ragEvidence).corpusFingerprint)
+        // I-5: Pending 不再直接写 mail_record_rag_fact（写入已移入成功事务）。
+        Mockito.verifyNoInteractions(mailRecordRagFactRepository)
+        // I-43: 发送 payload 不携带 primaryRuleId（matched_qa_rule_id 置 null）。
         assertNull(payload.primaryRuleId)
         assertEquals(emptyList<Long>(), payload.canonicalQaRuleIds)
         // I-39: 本路径绝不写 mail_record_qa_rule。
@@ -521,16 +519,11 @@ class RagSendBridgeTest {
         )
     }
 
-    // 06 (I-1/I-5)：RAG 证据链必须与通用附件完全独立 —— 带附件的 RAG 发送仍按请求顺序写
-    // mail_record_rag_fact、仍不写 mail_record_qa_rule，且 payload 同时携带快照。
+    // 06 (I-1/I-5)：RAG 证据链必须与通用附件完全独立 —— 带附件的 RAG 发送仍按请求顺序把
+    // fact_code 交给成功事务、仍不写 mail_record_qa_rule，且 payload 同时携带附件快照。
     @Test
     fun `rag send with attachments keeps evidence ordering and never touches qa rules`() {
         val capturedPayloads = stubSuccessfulSend()
-        val savedRows = mutableListOf<MailRecordRagFact>()
-        Mockito.doAnswer { inv ->
-            savedRows += inv.getArgument<Iterable<MailRecordRagFact>>(0).toList()
-            savedRows
-        }.`when`(mailRecordRagFactRepository).saveAll(Mockito.anyIterable())
         val fileSet = attachmentFileSet()
         Mockito.`when`(outboundAttachmentService.resolveForSend(1L, listOf(ATTACHMENT_ID), "op"))
             .thenReturn(fileSet)
@@ -549,13 +542,14 @@ class RagSendBridgeTest {
         )
 
         assertEquals("SENT", result.sendStatus)
-        assertEquals(
-            listOf("KB-FUND-033" to 0, "KB-COMP-007" to 1),
-            savedRows.map { it.factCode to it.ordinal }
-        )
-        assertTrue(savedRows.all { it.corpusFingerprint == fingerprint })
-        Mockito.verifyNoInteractions(mailRecordQaRuleRepository)
         val payload = capturedPayloads.single()
+        assertEquals(
+            listOf("KB-FUND-033", "KB-COMP-007"),
+            requireNotNull(payload.ragEvidence).factCodes
+        )
+        assertEquals(fingerprint, requireNotNull(payload.ragEvidence).corpusFingerprint)
+        Mockito.verifyNoInteractions(mailRecordRagFactRepository)
+        Mockito.verifyNoInteractions(mailRecordQaRuleRepository)
         assertEquals(fileSet.snapshots, payload.outboundAttachments)
         assertNull(payload.primaryRuleId)
         assertEquals(emptyList<Long>(), payload.canonicalQaRuleIds)
@@ -563,12 +557,7 @@ class RagSendBridgeTest {
 
     @Test
     fun `rag send preserves duplicate fact codes in request order without dedupe`() {
-        stubSuccessfulSend()
-        val savedRows = mutableListOf<MailRecordRagFact>()
-        Mockito.doAnswer { inv ->
-            savedRows += inv.getArgument<Iterable<MailRecordRagFact>>(0).toList()
-            savedRows
-        }.`when`(mailRecordRagFactRepository).saveAll(Mockito.anyIterable())
+        val capturedPayloads = stubSuccessfulSend()
 
         val result = service.sendManualRichReply(
             inboundProcessingId = 100L,
@@ -582,10 +571,10 @@ class RagSendBridgeTest {
         )
 
         assertEquals("SENT", result.sendStatus)
-        // I-42: 不排序、不去重 —— 原样落 4 行，ordinal 0..3。
+        // I-42: 不排序、不去重 —— 原样 4 条按请求顺序进入成功事务，ordinal 0..3。
         assertEquals(
-            listOf("KB-FUND-033" to 0, "KB-COMP-007" to 1, "KB-FUND-033" to 2, "KB-FUND-033" to 3),
-            savedRows.map { it.factCode to it.ordinal }
+            listOf("KB-FUND-033", "KB-COMP-007", "KB-FUND-033", "KB-FUND-033"),
+            requireNotNull(capturedPayloads.single().ragEvidence).factCodes
         )
     }
 

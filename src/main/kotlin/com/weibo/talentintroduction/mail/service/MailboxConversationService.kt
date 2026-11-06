@@ -54,7 +54,12 @@ class MailboxConversationService(
     // 03 (T2/I-3/I-4): 会话时间线单独日历附件元数据 —— 按 MAIL_RECORD OUTBOUND SENT
     // id 集合批量读一次存档快照。
     private val mailRecordRepository: MailRecordRepository,
-    private val readAccessService: ExpertMailReadAccessService
+    private val readAccessService: ExpertMailReadAccessService,
+    private val delayedRepository: com.weibo.talentintroduction.mail.repository.DelayedManualReplyRepository? = null,
+    private val replyDraftRepository: com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository? = null,
+    private val reviewDraftRepository: com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository? = null,
+    private val outboundAttachmentService: OutboundAttachmentService? = null,
+    private val manualReplyAttempts: ManualReplySendAttemptService? = null
 ) {
     fun currentAccess(contactId: Long, username: String?): ExpertMailAccessLevel {
         require(contactId > 0)
@@ -90,7 +95,8 @@ class MailboxConversationService(
         private val CURSOR_SEPARATOR = "\u001F"
         private val SOURCE_RANK_OF = mapOf(
             MailboxConversationRepository.SOURCE_MAIL_RECORD to 1,
-            MailboxConversationRepository.SOURCE_INBOUND_PROCESSING to 2
+            MailboxConversationRepository.SOURCE_INBOUND_PROCESSING to 2,
+            MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY to 3
         )
         private val RANK_SOURCE_OF = SOURCE_RANK_OF.entries.associate { (k, v) -> v to k }
     }
@@ -252,6 +258,7 @@ class MailboxConversationService(
                 suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L,
                 // 01 (I-1/I-4)：一次读取的 DB 真值；followed 由同一状态派生。
                 progressStatus = row.progressStatus,
+                delayedPendingCount = row.delayedPendingCount,
                 operatorStatus = sharedContacts[row.expertContactId]?.operatorStatus,
                 currentIndexLevel = sharedContacts[row.expertContactId]?.currentIndexLevel,
                 displayPendingCount = displayState?.suspensionPendingCount ?: 0L,
@@ -302,6 +309,11 @@ class MailboxConversationService(
         val before = decodeKeyset(beforeCursor, contactId, accountCode)
         val filter = ConversationFilter(accountCodes = activeCodes, accountCode = accountCode)
         val page = repository.timelineMessages(contactId, filter, before, pageLimit)
+        val delayedIds = page.rows.filter { it.source == MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY }.map { it.id }
+        val scopedCodes = accountCode?.let { listOf(it) } ?: activeCodes
+        val nowMs = delayedRepository?.currentTimeMs() ?: System.currentTimeMillis()
+        val delayed = delayedPage(contactId, scopedCodes, activeCodes, delayedIds,
+            username ?: MailReadOnlyPolicy.ADMIN_USERNAME, hideAttachments, nowMs)
 
         // I-3：只把当前窗口的真实 INBOUND_PROCESSING id 交出去批量读一次标签；窗口内
         // 无来信（纯 OUTBOUND / 更早页）不发请求。绝不用 source_inbound_id / 数值巧合
@@ -328,10 +340,12 @@ class MailboxConversationService(
                     it.sendStatus == SEND_STATUS_SENT
             }
         }
-        val mailRecordRowsById = if (outboundSentRows.isEmpty()) {
+        val sentIds = outboundSentRows.map { it.id } +
+            if (hideAttachments) emptyList() else delayed.values.mapNotNull { it.view.sentMailRecordId }
+        val mailRecordRowsById = if (sentIds.isEmpty()) {
             emptyMap()
         } else {
-            mailRecordRepository.findAllById(outboundSentRows.map { it.id })
+            mailRecordRepository.findAllById(sentIds.distinct())
                 .asSequence()
                 .filter {
                     it.id != null &&
@@ -343,8 +357,12 @@ class MailboxConversationService(
 
         // 行按 DESC（新→旧）返回；正序呈现最新窗口。
         val items = page.rows.asReversed().map { row ->
+            val job = delayed[row.id].takeIf { row.source == MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY }
+            val attachmentRow = job?.view?.sentMailRecordId?.let {
+                row.copy(source = MailboxConversationRepository.SOURCE_MAIL_RECORD, id = it)
+            } ?: row
             // Only READ suppresses attachment projection; source/snapshot validation stays shared.
-            val attachments = if (hideAttachments) {
+            val attachments = if (hideAttachments || row.source == MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY) {
                 emptyList()
             } else {
                 expertMaterialService.resolveMessageAttachments(row.source, row.id)
@@ -372,13 +390,15 @@ class MailboxConversationService(
                 } else {
                     emptyList()
                 },
-                calendarAttachment = if (hideAttachments) null else calendarAttachmentOf(row, mailRecordRowsById[row.id]),
+                calendarAttachment = if (hideAttachments) null else calendarAttachmentOf(attachmentRow, mailRecordRowsById[attachmentRow.id]),
                 // 06 (I-3)：同一批 findAllById 结果投影通用附件快照（零额外查询、不读磁盘）。
                 outboundAttachments = if (hideAttachments) {
                     emptyList()
                 } else {
-                    outboundAttachmentsOf(row, mailRecordRowsById[row.id])
-                }
+                    if (job != null && job.view.status != DelayedManualReplyStatus.SENT) job.attachments
+                    else outboundAttachmentsOf(attachmentRow, mailRecordRowsById[attachmentRow.id])
+                },
+                delayedReply = job?.view
             )
         }
         val nextBefore = if (page.hasMore) {
@@ -392,7 +412,163 @@ class MailboxConversationService(
                 )
             } else null
         } else null
-        return ConversationMessageListResponse(items, nextBefore, page.hasMore, accessLevel)
+        return ConversationMessageListResponse(items, nextBefore, page.hasMore, accessLevel, nowMs)
+    }
+
+    private data class DelayedPageItem(
+        val view: DelayedManualReplyView,
+        val attachments: List<ConversationOutboundAttachment>
+    )
+
+    /** Private evidence is loaded once per page, never through per-job lifecycle/worker calls. */
+    private fun delayedPage(contactId: Long, accounts: List<String>, allAccounts: List<String>,
+                            ids: List<Long>, actor: String, readOnly: Boolean, now: Long): Map<Long, DelayedPageItem> {
+        if (ids.isEmpty()) return emptyMap()
+        val jobs = requireNotNull(delayedRepository).pageRows(contactId, accounts, ids, !readOnly)
+        val sent = delayedRepository.pageSentRecordIds(contactId, accounts, ids)
+        val context = if (!readOnly && jobs.any { it.originKind == DelayedManualReplyOriginKind.REVIEW })
+            repository.reviewContext(contactId, allAccounts) else null
+        val evidence = if (readOnly) emptyMap() else delayedRepository.pageEvidence(contactId, accounts, ids, context)
+        val files = if (readOnly) emptyMap() else delayedRepository.pageAttachments(contactId, accounts, ids)
+        val drafts = if (readOnly) emptyMap() else requireNotNull(replyDraftRepository)
+            .findForDelayedPage(contactId, accounts, ids).associateBy { it.id }
+        val reviews = if (readOnly) emptyMap() else requireNotNull(reviewDraftRepository)
+            .findForDelayedPage(contactId, accounts, ids).associateBy { it.id }
+        return jobs.associate { job ->
+            val allowed = !readOnly && (actor == "admin" || actor == job.actorUsername) &&
+                (job.originKind != DelayedManualReplyOriginKind.REVIEW || actor == "admin")
+            val snapshot = if (allowed) DelayedManualReplySnapshotCodec.decodeOrNull(job.snapshotJson) else null
+            val metadata = if (snapshot == null) emptyList() else runCatching {
+                val expected = snapshot.payload.outboundAttachments
+                require(expected.size <= MAX_FILES && expected.map { it.id }.distinct().size == expected.size)
+                val ordered = expected.map { value ->
+                    requireNotNull(files[value.id]).also {
+                        require(it.expertContactId == contactId && it.createdBy == job.actorUsername)
+                        require(it.fileName == value.filename && it.contentType == value.contentType &&
+                            it.byteLength == value.byteLength && it.sha256 == value.sha256)
+                    }
+                }
+                require(ordered.sumOf { it.byteLength } <= MAX_TOTAL_BYTES)
+                ordered
+            }.getOrDefault(emptyList())
+            val error = DelayedReplyPublicError.ofOrInvalid(job.publicErrorCode)
+            val candidate = allowed && snapshot != null &&
+                (job.status == DelayedManualReplyStatus.WAITING ||
+                    job.status == DelayedManualReplyStatus.FAILED && error?.retryableAfterRevalidation == true)
+            val valid = candidate && runCatching {
+                val frozen = requireNotNull(snapshot)
+                require(metadata.size == frozen.payload.outboundAttachments.size)
+                metadata.forEachIndexed { index, attachment ->
+                    require(requireNotNull(outboundAttachmentService).readVerifiedFile(attachment).snapshot ==
+                        frozen.payload.outboundAttachments[index])
+                }
+                validateDelayedSource(job, frozen, requireNotNull(evidence[job.id]),
+                    drafts[job.originId], reviews[job.originId], context)
+            }.isSuccess
+            val state = evidence[job.id]?.get("attempt_status")
+            val view = DelayedManualReplyView(job.id, job.revision, job.status, job.createdAtMs, job.dueAtMs,
+                now, job.originKind, job.originId, job.originVersion,
+                canCancel = valid && job.status == DelayedManualReplyStatus.WAITING &&
+                    state in setOf("PREPARED", "FAILED_SAFE_TO_RETRY") && error == null && now < job.dueAtMs,
+                canRetry = valid && job.status == DelayedManualReplyStatus.FAILED && state == "FAILED_SAFE_TO_RETRY",
+                publicErrorCode = error?.code, publicErrorMessage = error?.message, sentMailRecordId = sent[job.id])
+            val attachments = if (!allowed || job.status == DelayedManualReplyStatus.SENT) emptyList() else metadata.map {
+                ConversationOutboundAttachment(it.id, it.fileName, it.contentType, it.byteLength,
+                    "$CONVERSATION_API_BASE/$contactId/outbound-attachments/${it.id}/download")
+            }
+            job.id to DelayedPageItem(view, attachments)
+        }
+    }
+
+    /** Same current source/fingerprint predicates as 04, evaluated over bounded read-only batches. */
+    private fun validateDelayedSource(job: DelayedManualReplyRow, snapshot: DelayedManualReplySnapshot,
+                                      facts: Map<String, Any?>, draft: MailReplyDraftRow?,
+                                      review: MailReviewDraftRow?, context: String?) {
+        fun number(key: String) = (facts[key] as? Number)?.toLong()
+        fun flag(key: String) = facts[key] == true || number(key) == 1L
+        val p = snapshot.payload
+        val source = snapshot.source
+        require(p.contactId == job.expertContactId && p.accountCode == job.accountCode)
+        require(job.actorUsername in setOf("admin", "user1") && flag("actor_exists"))
+        require(job.actorUsername == "admin" || flag("actor_full"))
+        require(flag("account_enabled") && job.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        require(facts["contact_orcid"] == p.orcidId &&
+            (facts["contact_email"] as? String)?.trim()?.lowercase() == p.normalizedRecipient)
+        require(!flag("suppressed"))
+        require(facts["recipient"] == p.normalizedRecipient && facts["attempt_account"] == job.accountCode &&
+            !(facts["attempt_message_id"] as? String).isNullOrBlank())
+        p.calendarAttachment?.let {
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(it.icsText.toByteArray(Charsets.UTF_8))
+                .joinToString("") { byte -> "%02x".format(byte) }
+            require(hash == it.sha256)
+        }
+        p.inboundProcessingId?.let {
+            require(number("inbound_id") == it && number("inbound_contact") == p.contactId &&
+                facts["inbound_account"] == p.accountCode && facts["inbound_message"] == p.inReplyTo)
+            require((facts["inbound_message"] as? String)?.takeIf(String::isNotBlank) == source.sourceMessageId)
+            require(source.smtpInReplyTo == null && source.smtpReferences == null)
+        }
+        source.anchorMailRecordId?.let {
+            require(number("anchor_id") == it && number("anchor_contact") == p.contactId &&
+                facts["anchor_account"] == p.accountCode && facts["anchor_direction"] == "OUTBOUND" &&
+                facts["anchor_status"] == "SENT")
+            val raw = facts["anchor_message"] as? String
+            val message = raw?.trim()?.takeIf { value -> value.isNotBlank() && value.length <= 255 }
+            val refs = message?.let { value ->
+                listOfNotNull((facts["anchor_reply"] as? String)?.trim()?.takeIf(String::isNotBlank), value).joinToString(" ")
+            }
+            require(message == p.inReplyTo && message == source.smtpInReplyTo && refs == source.smtpReferences &&
+                raw?.takeIf(String::isNotBlank) == source.sourceMessageId)
+        }
+        when (val restore = snapshot.restore) {
+            is DelayedLegacyRestore -> require(job.originKind == DelayedManualReplyOriginKind.LEGACY &&
+                job.originId == null && job.originVersion == null)
+            is DelayedDraftRestore -> {
+                val row = requireNotNull(draft)
+                require(job.originKind == DelayedManualReplyOriginKind.DRAFT && job.originId == restore.draftId &&
+                    job.originVersion == restore.draftVersion && job.actorUsername == restore.owner)
+                require(row.username == restore.owner && row.target == MailReplyDraftTarget(restore.contactId,
+                    MailReplyDraftKind.valueOf(restore.targetKind), restore.processingId, restore.accountScope))
+                require(row.state == MailReplyDraftState.ACTIVE &&
+                    row.subject.orEmpty() == restore.subject && row.html.orEmpty() == restore.html &&
+                    row.text.orEmpty() == restore.text && row.contextJson.orEmpty() == restore.contextJson)
+                MailReplyDraftContextCodec.parse(requireNotNull(row.contextJson))
+            }
+            is DelayedReviewRestore -> {
+                val row = requireNotNull(review)
+                require(job.originKind == DelayedManualReplyOriginKind.REVIEW && job.originId == restore.reviewId &&
+                    job.originVersion == restore.version && job.actorUsername == restore.actor && restore.actor == "admin")
+                require(flag("review_owner_read") && row.deletedAt == null && row.state == MailReviewDraftState.APPROVED)
+                require(row.version == restore.version && row.subject == restore.subject && row.html == restore.html &&
+                    row.text == restore.text && row.contactId == restore.contactId && row.accountCode == restore.accountCode &&
+                    row.targetKind == restore.targetKind && row.targetId == restore.targetId &&
+                    row.sendRequestId == restore.sendRequestId && row.approvedContextToken == restore.approvedContextToken)
+                require(if (row.targetKind == "INBOUND") row.targetId == number("inbound_id")
+                    else row.targetKind == "OUTBOUND" && row.targetId == number("anchor_id"))
+                if (row.approvedContextToken != context) {
+                    val json = requireNotNull(facts["confirmation_payload"] as? String)
+                    val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+                    val token = mapper.factory.createParser(json).use {
+                        it.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                        val node = mapper.readTree<com.fasterxml.jackson.databind.JsonNode>(it)
+                        require(it.nextToken() == null)
+                        node.get("contextToken")?.asText()
+                    }
+                    require(context != null && token == context)
+                }
+            }
+        }
+        val payload = ManualReplySendAttemptService.SendPayload(
+            orcidId = p.orcidId, contactId = p.contactId, inboundProcessingId = p.inboundProcessingId,
+            accountCode = p.accountCode, normalizedRecipient = p.normalizedRecipient, subject = p.subject,
+            finalText = p.finalText, finalHtml = p.finalHtml, inReplyTo = p.inReplyTo,
+            canonicalQaRuleIds = p.canonicalQaRuleIds, primaryRuleId = p.primaryRuleId,
+            sourceAnchor = p.sourceAnchor, idempotencyRequestId = p.idempotencyRequestId,
+            calendarAttachment = p.calendarAttachment, outboundAttachments = p.outboundAttachments
+        )
+        if (snapshot.restore is DelayedReviewRestore) payload.reviewSendRef =
+            MailReviewSendRef(requireNotNull(review), job.actorUsername, null)
+        require(requireNotNull(manualReplyAttempts).computeFingerprint(payload).fullHex == facts["fingerprint"])
     }
 
     // ------------------------------------------------------------------

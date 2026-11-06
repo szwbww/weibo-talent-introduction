@@ -928,6 +928,7 @@ function createChatSandbox(options) {
     const sandbox = {
         console,
         URLSearchParams,
+        performance: require("node:perf_hooks").performance,
         setTimeout: (fn) => { timers.push(fn); return timers.length; },
         clearTimeout: () => {},
         escapeHtml: escapeHtmlLike,
@@ -1102,7 +1103,7 @@ function createChatSandbox(options) {
         draftServer,
         calls,
         timers,
-        runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
+        runTimers: () => { const ready = timers.splice(0); ready.forEach((fn) => fn()); }
     };
 }
 

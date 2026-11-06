@@ -31,6 +31,7 @@ async function workspace(options = {}) {
         subject: "Approved immutable review", html: "<p>Approved review body</p>", text: "Approved review body", commentCount: 0,
         sendStatus: "NOT_SENT", deleted: false };
     const ctx = tools.createChatSandbox({
+        clock: options.clock, performance: options.performance,
         authMe: { authenticated: true, username: "user1" }, contact: tools.contactA(),
         route: (url, method, body, entry, next) => {
             if (options.route) {
@@ -535,3 +536,56 @@ test("new draft refresh is silent while pending; discard still refreshes members
     assert.ok(!list.textContent.includes('草稿 1'));
     h.handle.unmount();
 });
+
+for (const outcome of ["deadline", "READ", "NONE", "401", "403", "unmount"]) {
+    test(`delegated FULL admitted confirmation crosses deadline but respects ${outcome}`, async () => {
+        let now = 0, access = "FULL";
+        const requests = [];
+        let delayed = { id: 77, revision: 4, status: "WAITING", originKind: "DRAFT", originId: 8,
+            dueAtMs: 60000, canCancel: true, canRetry: false };
+        const h = await workspace({ performance: { now: () => now }, route(url, method, body) {
+            const projection = () => ({ ...delayed, serverNowMs: now });
+            if (url.endsWith("/conversations/1/access")) return { accessLevel: access };
+            if (url.includes("/conversations/1/messages")) return { ...tools.messagesA(), accessLevel: access,
+                items: [...tools.messagesA().items, { source: "DELAYED_MANUAL_REPLY", id: 77, direction: "OUTBOUND",
+                    subject: "Ordinary frozen draft", body: "Original ordinary body", delayedReply: projection() }] };
+            if (url.includes("/delayed-replies?")) return [];
+            if (url.includes("/delayed-replies/77")) {
+                requests.push({ method, body: body ? JSON.parse(body) : null });
+                if (method === "POST") {
+                    if (outcome === "401" || outcome === "403") return Promise.reject(Object.assign(Error("denied"), { status: Number(outcome) }));
+                    delayed = { ...delayed, status: "SENT", canCancel: false };
+                    return Promise.reject(Object.assign(Error("已超过撤回期限"), { status: 409 }));
+                }
+                return projection();
+            }
+        } });
+        await h.choose(1);
+        now = 59000;
+        tools.click(h.host.querySelector('[data-action="mc-delay-cancel-open"]')); await tools.flush();
+        now = 61000; delayed.canCancel = false;
+        h.runTimers(); await tools.flush();
+        const submit = h.host.querySelector('[data-action="mc-delay-confirm-submit"]');
+        assert.ok(submit);
+        if (outcome === "READ" || outcome === "NONE") {
+            access = outcome; h.levels[1] = outcome; h.dispatchGlobal("focus", {}); await tools.flush();
+        }
+        if (outcome === "unmount") h.handle.unmount();
+        tools.click(submit); await tools.flush();
+        const posts = requests.filter(x => x.method === "POST");
+        if (["READ", "NONE", "unmount"].includes(outcome)) {
+            assert.equal(posts.length, 0);
+        } else {
+            assert.deepEqual(posts, [{ method: "POST", body: { expectedRevision: 4 } }]);
+            if (outcome === "deadline") {
+                assert.deepEqual(requests.map(x => x.method), ["POST", "GET"]);
+                assert.match(h.host.textContent, /已超过撤回期限/);
+                assert.match(h.host.textContent, /Original ordinary body/);
+            }
+        }
+        assert.equal(h.host.querySelector('[data-action="mc-delay-confirm-submit"]'), null);
+        assert.doesNotMatch(h.host.textContent, /已撤回/);
+        assert.deepEqual(h.rejected, []);
+        h.handle.unmount();
+    });
+}

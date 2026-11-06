@@ -108,6 +108,7 @@ function extractFn(name) {
 
 function createSandbox() {
     const sandbox = {
+        legacyDelayedReplies: new Map(),
         contextPath: "",
         appStarted: false,
         taskWatchers: {},
@@ -284,6 +285,7 @@ function createBootstrapSandbox(authMeResponse) {
     };
 
     const sandbox = {
+        legacyDelayedReplies: new Map(),
         contextPath: "",
         appStarted: false,
         taskWatchers: {},

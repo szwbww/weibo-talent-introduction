@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.mail.service.MailReviewDraftException
 import com.weibo.talentintroduction.mail.service.MailReviewDraftService
 import com.weibo.talentintroduction.mail.service.MailReviewSendRequest
 import com.weibo.talentintroduction.mail.service.MailReviewSendService
+import com.weibo.talentintroduction.mail.service.DelayedManualReplyException
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -99,15 +100,21 @@ class MailReviewDraftController(private val service: MailReviewDraftService, pri
     @PostMapping("/{id}/send")
     fun send(request: HttpServletRequest, @PathVariable id: Long, @RequestBody body: JsonNode): Any {
         val actor = actor(request)
-        val allowed = setOf("expectedVersion", "confirmationEventId", "safetyWarningConfirmed", "strongConfirmationText")
+        val allowed = setOf("expectedVersion", "confirmationEventId", "safetyWarningConfirmed", "strongConfirmationText", "delayExpectedRevision")
         if (!body.isObject || !body.has("expectedVersion") || body.fieldNames().asSequence().any { it !in allowed }) invalid()
         val confirmed = body.get("safetyWarningConfirmed")?.let {
             if (!it.isBoolean) invalid()
             it.booleanValue()
         } ?: false
+        val delayRevision = body.get("delayExpectedRevision")?.takeUnless { it.isNull }?.let {
+            if (!it.isIntegralNumber || !it.canConvertToLong() || it.longValue() <= 0)
+                throw MailReviewDraftException(400, "INVALID_REQUEST", "非法 delayExpectedRevision")
+            it.longValue()
+        }
         return sends.send(actor, id, MailReviewSendRequest(integer(body, "expectedVersion"),
             body.get("confirmationEventId")?.takeUnless { it.isNull }?.let { integer(body, "confirmationEventId") },
-            confirmed, body.get("strongConfirmationText")?.takeUnless { it.isNull }?.let { text(body, "strongConfirmationText") }))
+            confirmed, body.get("strongConfirmationText")?.takeUnless { it.isNull }?.let { text(body, "strongConfirmationText") },
+            delayRevision))
     }
 
     @ExceptionHandler(ResponseStatusException::class)
@@ -121,6 +128,10 @@ class MailReviewDraftController(private val service: MailReviewDraftService, pri
 
     @ExceptionHandler(MailReviewDraftException::class)
     fun reviewError(error: MailReviewDraftException): ResponseEntity<Any> = ResponseEntity.status(error.status)
+        .body(mapOf("code" to error.code, "message" to error.message))
+
+    @ExceptionHandler(DelayedManualReplyException::class)
+    fun delayedError(error: DelayedManualReplyException): ResponseEntity<Any> = ResponseEntity.status(error.status)
         .body(mapOf("code" to error.code, "message" to error.message))
 
     @ExceptionHandler(HttpMessageNotReadableException::class)

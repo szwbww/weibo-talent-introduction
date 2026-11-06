@@ -1,0 +1,103 @@
+{
+  "plans": [
+    {
+      "plan": "manual-reply-delay-01-storage.md",
+      "files": 7,
+      "paths": [
+        "src/main/resources/db/migration/V174__create_delayed_manual_reply.sql",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyRepository.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/config/ManualReplyDelayProperties.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundPendingOwnerIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt"
+      ]
+    },
+    {
+      "plan": "manual-reply-delay-02-preparation.md",
+      "files": 7,
+      "paths": [
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplySnapshotTest.kt"
+      ]
+    },
+    {
+      "plan": "manual-reply-delay-03-lifecycle.md",
+      "files": 10,
+      "paths": [
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyRepository.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyLifecycleIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt"
+      ]
+    },
+    {
+      "plan": "manual-reply-delay-04-worker-api.md",
+      "files": 7,
+      "paths": [
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyWorker.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyController.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyWorkerTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt"
+      ]
+    },
+    {
+      "plan": "manual-reply-delay-05-query.md",
+      "files": 7,
+      "paths": [
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyRepository.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyQueryIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt"
+      ]
+    },
+    {
+      "plan": "manual-reply-delay-06-frontend.md",
+      "files": 9,
+      "paths": [
+        "src/main/resources/static/app.js",
+        "src/main/resources/static/mailbox-chat.js",
+        "src/main/resources/static/mailbox-readonly.js",
+        "src/main/resources/static/mailbox-chat.css",
+        "src/main/resources/static/index.html",
+        "src/test/js/mailboxDelayedReply.test.js",
+        "src/test/js/mailboxServerDrafts.test.js",
+        "src/test/js/mailReviewAdmin.test.js",
+        "src/test/js/mailboxChatStyle.test.js"
+      ]
+    },
+    {
+      "plan": "manual-reply-delay-07-activation.md",
+      "files": 8,
+      "paths": [
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftModels.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt",
+        "src/main/resources/application.yml",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplyDelayEndToEndIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt"
+      ]
+    }
+  ],
+  "source_files": 205,
+  "issues": []
+}

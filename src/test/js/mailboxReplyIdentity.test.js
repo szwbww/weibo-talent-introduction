@@ -374,6 +374,7 @@ describe("reply identity I-3 both send paths and immutable confirmation", () => 
         const { doc } = H.createDom(); const el = doc.createElement("button"), edit = doc.createElement("div"), subject = doc.createElement("input");
         edit.setAttribute("contenteditable", "true"); edit.innerHTML = "<b>Dear Alice</b>";
         const s = sending({ element: el, $: (id) => id.includes("Editor") ? edit : subject, manualReplyQaContext: { qaRuleIds: [1] }, aiReplyState: { adoptContext: {} }, resetPreflightState() { throw new Error("must not clear"); }, showUnmatchedDetail() { throw new Error("must not refresh"); }, refreshMailboxAfterPendingAction() { throw new Error("must not refresh"); }, postManualRichReplySnapshot: async () => null });
+        Object.assign(s, { state: { authIdentity: "admin:admin" }, liveDetailLoadSeq: 1, legacyDelayedReplies: new Map() });
         s.postManualRichReplySnapshot = async () => null;
         vm.runInContext(fn(app, "submitManualRichReply", "    "), s);
         assert.equal(await s.submitManualRichReply(101, frozenBody()), false); assert.equal(el.disabled, false); assert.equal(edit.getAttribute("contenteditable"), "true"); assert.equal(s.manualReplyQaContext.qaRuleIds[0], 1); assert.equal(s.alerts.length, 0);

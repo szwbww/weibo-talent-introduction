@@ -23,14 +23,48 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
             r.getTimestamp("created_at").toLocalDateTime(), r.getTimestamp("updated_at").toLocalDateTime(),
             r.getBoolean("contact_exists"), r.getString("expert_name"), r.getString("expert_email"), r.getString("send_attempt_status"))
     }
+    // fast-p 03 (T3/I-6/I-10)：排队的 job 态优先于 attempt 态投影；CANCELLED 释放绑定后
+    // 自动回到原 attempt 投影，不新增草稿表列。
     private val projection = """SELECT d.*, c.id IS NOT NULL AS contact_exists, c.expert_name, c.expert_email,
-        a.status AS send_attempt_status FROM mailbox_reply_draft d
+        CASE WHEN j.status IN ('WAITING','SENDING','UNKNOWN') THEN j.status ELSE a.status END AS send_attempt_status
+        FROM mailbox_reply_draft d
         LEFT JOIN expert_contact c ON c.id=d.expert_contact_id
-        LEFT JOIN mail_send_attempt a ON a.id=d.send_attempt_id"""
+        LEFT JOIN mail_send_attempt a ON a.id=d.send_attempt_id
+        LEFT JOIN delayed_manual_reply j ON j.send_attempt_id=d.send_attempt_id"""
     private fun targetParams(owner: String, target: MailReplyDraftTarget) = mapOf("owner" to owner, "contact" to target.contactId,
         "kind" to target.kind.name, "processing" to target.processingId, "scope" to target.accountScope)
     fun findTarget(owner: String, target: MailReplyDraftTarget): MailReplyDraftRow? = jdbc.query("$projection WHERE d.username=:owner AND d.expert_contact_id=:contact AND d.target_kind=:kind AND d.inbound_processing_id=:processing AND d.account_scope=:scope", targetParams(owner, target), mapper).singleOrNull()
     fun findOwned(owner: String, id: Long): MailReplyDraftRow? = jdbc.query("$projection WHERE d.username=:owner AND d.id=:id", mapOf("owner" to owner, "id" to id), mapper).singleOrNull()
+
+    /** Current-page source read only: preserve the canonical projection, never acquire send locks. */
+    internal fun findForDelayedPage(contactId: Long, accountCodes: List<String>,
+                                   jobIds: Collection<Long>): List<MailReplyDraftRow> {
+        require(contactId > 0 && jobIds.size <= 100 && jobIds.all { it > 0 })
+        if (jobIds.isEmpty() || accountCodes.isEmpty()) return emptyList()
+        return jdbc.query("""$projection WHERE d.expert_contact_id=:contact AND EXISTS (
+            SELECT 1 FROM delayed_manual_reply page_job
+             WHERE page_job.id IN (:ids) AND page_job.origin_kind='DRAFT' AND page_job.origin_id=d.id
+               AND page_job.expert_contact_id=:contact AND page_job.account_code IN (:accounts)
+               AND page_job.actor_username=d.username)""",
+            mapOf("contact" to contactId, "accounts" to accountCodes, "ids" to jobIds), mapper)
+    }
+    /**
+     * fast-p 03：按目标唯一键锁定源行（先锁草稿再锁 attempt/job，保持统一锁序）。
+     * 行不存在时不加锁，随后由唯一键插入竞争决出唯一赢家。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockTargetRow(owner: String, target: MailReplyDraftTarget) {
+        mandatory()
+        jdbc.queryForList("SELECT id FROM mailbox_reply_draft WHERE username=:owner AND expert_contact_id=:contact AND target_kind=:kind AND inbound_processing_id=:processing AND account_scope=:scope FOR UPDATE",
+            targetParams(owner, target))
+    }
+
+    /** fast-p 03：该 attempt 当前的排队任务态（只读；无任务即 null）。 */
+    fun delayedJobStatus(attemptId: Long): String? = jdbc.query(
+        "SELECT status FROM delayed_manual_reply WHERE send_attempt_id=:attempt",
+        mapOf("attempt" to attemptId),
+        RowMapper { r: ResultSet, _: Int -> r.getString("status") }
+    ).singleOrNull()
     fun insert(owner: String, target: MailReplyDraftTarget, content: MailReplyDraftContent, contextJson: String, now: LocalDateTime): Long {
         val params = MapSqlParameterSource(targetParams(owner, target)).addValue("subject", content.subject).addValue("html", content.html).addValue("text", content.text).addValue("context", contextJson).addValue("now", now)
         val key = GeneratedKeyHolder()
@@ -41,11 +75,15 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
     fun save(owner: String, id: Long, version: Long, state: MailReplyDraftState, content: MailReplyDraftContent, contextJson: String, now: LocalDateTime): Boolean {
         val resetBinding = if (state == MailReplyDraftState.ACTIVE) "" else ",send_attempt_id=NULL,send_version=NULL"
         return jdbc.update("""UPDATE mailbox_reply_draft SET version=version+1,state='ACTIVE',subject=:subject,html_body=:html,text_body=:text,context_json=:context,updated_at=:now$resetBinding
-            WHERE id=:id AND username=:owner AND version=:version AND state=:state""",
+            WHERE id=:id AND username=:owner AND version=:version AND state=:state
+            AND NOT EXISTS (SELECT 1 FROM delayed_manual_reply j WHERE j.send_attempt_id=mailbox_reply_draft.send_attempt_id
+                AND j.status IN ('WAITING','SENDING','UNKNOWN'))""",
             mapOf("owner" to owner,"id" to id,"version" to version,"state" to state.name,"subject" to content.subject,"html" to content.html,"text" to content.text,"context" to contextJson,"now" to now)) == 1
     }
     fun discard(owner: String, id: Long, version: Long, now: LocalDateTime): Boolean = jdbc.update("""UPDATE mailbox_reply_draft SET state='DISCARDED',version=version+1,subject=NULL,html_body=NULL,text_body=NULL,context_json=NULL,updated_at=:now
-        WHERE id=:id AND username=:owner AND version=:version AND state='ACTIVE'""", mapOf("owner" to owner,"id" to id,"version" to version,"now" to now)) == 1
+        WHERE id=:id AND username=:owner AND version=:version AND state='ACTIVE'
+        AND NOT EXISTS (SELECT 1 FROM delayed_manual_reply j WHERE j.send_attempt_id=mailbox_reply_draft.send_attempt_id
+            AND j.status IN ('WAITING','SENDING','UNKNOWN'))""", mapOf("owner" to owner,"id" to id,"version" to version,"now" to now)) == 1
 
     private fun scopeSql(scope: String?) = if (scope == null) "" else " AND d.account_scope=:scope"
     private fun accessSql(owner: String) = if (!MailReadOnlyPolicy.isReader(owner)) "" else """

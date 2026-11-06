@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.TagView
 import com.weibo.talentintroduction.mail.service.MailReplyDraftRef
 import com.weibo.talentintroduction.mail.service.MailReplyDraftException
+import com.weibo.talentintroduction.mail.service.DelayedManualReplyException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -101,7 +102,8 @@ data class ConversationItemResponse(
     val displayPendingCount: Long = 0,
     val displayPendingOwner: String? = null,
     val displaySuspended: Boolean = false,
-    val displaySuspendReason: String? = null
+    val displaySuspendReason: String? = null,
+    val delayedPendingCount: Long = 0
 )
 
 /** Owner-scoped navigation only; bodies are loaded through the existing guarded draft endpoints. */
@@ -142,7 +144,8 @@ data class ConversationManualRichReplyRequest(
      * 之前以 400/404/409/413 返回。同一 requestId 重提时附件语义必须与原记录一致。
      */
     val attachmentIds: List<String> = emptyList(),
-    val draftRef: MailReplyDraftRef? = null
+    val draftRef: MailReplyDraftRef? = null,
+    val delayExpectedRevision: Long? = null
 )
 
 data class ConversationListResponse(
@@ -152,7 +155,8 @@ data class ConversationListResponse(
     val size: Int,
     val reviewPendingTotal: Long = 0,
     @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-    val filterCounts: ConversationFilterCounts? = null
+    val filterCounts: ConversationFilterCounts? = null,
+    val serverNowMs: Long = System.currentTimeMillis()
 )
 
 data class ConversationFilterCounts(
@@ -190,14 +194,16 @@ data class ConversationMessageItemResponse(
      * 与 03 的 calendarAttachment、入站材料口径的 attachmentCount/firstAttachmentNames
      * 三者互相独立，绝不混用。
      */
-    val outboundAttachments: List<ConversationOutboundAttachment> = emptyList()
+    val outboundAttachments: List<ConversationOutboundAttachment> = emptyList(),
+    val delayedReply: com.weibo.talentintroduction.mail.service.DelayedManualReplyView? = null
 )
 
 data class ConversationMessageListResponse(
     val items: List<ConversationMessageItemResponse>,
     val nextBefore: String?,
     val hasMore: Boolean,
-    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE,
+    val serverNowMs: Long = System.currentTimeMillis()
 )
 
 /**
@@ -443,12 +449,17 @@ class MailboxConversationController(
         // 06 (I-1/I-2)：附件 id 与会话身份；identity 绝不取请求体 operatorName。
         attachmentIds = body.attachmentIds,
         authenticatedUsername = servletRequest?.let { sessionUsername(it) },
-        draftRef = body.draftRef
+        draftRef = body.draftRef,
+        delayExpectedRevision = body.delayExpectedRevision
     )
 
     @ExceptionHandler(MailReplyDraftException::class)
     fun draftError(ex: MailReplyDraftException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
         mapOf("code" to ex.code,"message" to ex.message,"currentVersion" to ex.currentVersion,"currentState" to ex.currentState))
+
+    @ExceptionHandler(DelayedManualReplyException::class)
+    fun delayedError(ex: DelayedManualReplyException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
+        mapOf("code" to ex.code, "message" to ex.message))
 
     @DeleteMapping("/{contactId}/follow")
     fun unfollow(

@@ -84,7 +84,11 @@ class MailReplyDraftRepositoryIT {
         `when`(contacts.existsById(9101)).thenReturn(true)
         val metadata = OutboundMailAttachmentRepository(NamedParameterJdbcTemplate(dataSource))
         val attachmentService = OutboundAttachmentService(MailAttachmentStorageProperties(basePath="/nonexistent/draft-test-no-file-access"),metadata,contacts)
-        val service = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),attachmentService,guard)
+        val serviceTarget = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),attachmentService,guard)
+        val service = ProxyFactory(serviceTarget).apply {
+            isProxyTargetClass = true
+            addAdvice(TransactionInterceptor(tx.transactionManager!!,AnnotationTransactionAttributeSource()))
+        }.proxy as MailReplyDraftService
         val ownId = java.util.UUID.randomUUID().toString()
         val foreignId = java.util.UUID.randomUUID().toString()
         listOf(ownId to "A",foreignId to "B").forEach { (id,owner) ->

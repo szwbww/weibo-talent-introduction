@@ -1,0 +1,455 @@
+$ rg -n --no-ignore --glob !*.pyc --glob !*.png --glob !*.jpg sendManualRichReply|sendConversationManualRichReply|prepareAndClaim|finalizeSuccess|finalizeFailure|mcHostSendRichReply|mcHostSendConversationRichReply|submitManualRichReply src scripts
+exit=0
+src/main/resources/static/app.js:18434:    async function submitManualRichReply(recordId, requestBody) {
+src/main/resources/static/app.js:18522:        return submitManualRichReply(id, requestBody);
+src/main/resources/static/app.js:21750:// I-3/I-4：聊天人工回复发送 —— 沿用 submitManualRichReply 的服务端校验/QA 审计与
+src/main/resources/static/app.js:21752:async function mcHostSendRichReply(processingId, requestBody) {
+src/main/resources/static/app.js:21753:    return submitManualRichReply(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:21758:async function mcHostSendConversationRichReply(contactId, requestBody) {
+src/main/resources/static/app.js:21761:    return submitManualRichReply(`/api/mail/mailbox/conversations/${id}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:22038:async function submitManualRichReply(url, requestBody) {
+src/main/resources/static/mailbox-chat.js:31: *   宿主 mcHostSendRichReply（服务端校验 + QA 审计）。
+src/main/resources/static/mailbox-chat.js:9499:                ? hostFn("mcHostSendConversationRichReply")
+src/main/resources/static/mailbox-chat.js:9500:                : hostFn("mcHostSendRichReply");
+src/test/js/mailboxServerDrafts.test.js:409:        ctx.sandbox.mcHostSendRichReply = async (processingId, body) => {
+src/test/js/mailboxServerDrafts.test.js:428:        ctx.sandbox.mcHostSendRichReply = async (id, body) => { server.sent("admin", body.draftRef); throw new Error("HTTP response lost after commit"); };
+src/test/js/mailboxServerDrafts.test.js:438:        ctx.sandbox.mcHostSendRichReply = async (id, body) => { ref = json(body.draftRef); return sending.promise; };
+src/test/js/mailboxServerDrafts.test.js:658:        ctx.sandbox.mcHostSendConversationRichReply = async (contactId, body) => {
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:57:        // 03b (A3-adjacent, 行号钉随授权改动平移 +2): c4 在 sendManualRichReply 转发处新增
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:59:        // 03 (T4, 行号钉随授权改动平移 +3): 03 在 sendManualRichReply 转发处新增
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:63:        // sendManualRichReply 形参 servletRequest 与注释三行（:255-257）、转发实参
+src/test/js/mailboxChatBehavior.test.js:1139:        mcHostSendRichReply: (processingId, body) => {
+src/test/js/mailboxChatBehavior.test.js:1146:        mcHostSendConversationRichReply: (contactId, body) => {
+src/test/js/mailboxChatBehavior.test.js:5122:        ctx.sandbox.mcHostSendRichReply = (processingId, body) => {
+src/test/js/mailboxChatBehavior.test.js:6421:        ctx.sandbox.mcHostSendRichReply = (processingId, body) => new Promise((done) => { resolveSend = (value) => {
+src/test/js/materialRequestIntegration.test.js:699:        mcHostSendRichReply: (processingId, body) => {
+src/test/js/mailboxReplyIdentity.test.js:328:    vm.runInContext("const manualReplySubmissions = new Set();" + ["freezeManualReplySnapshot", "renderManualReplyFindings", "confirmManualReplySafety", "postManualRichReplySnapshot", "submitManualRichReply"].map((name) => fn(app, name)).join("\n"), sandbox);
+src/test/js/mailboxReplyIdentity.test.js:336:        assert.equal(await s.submitManualRichReply("/fixture/send", body), true);
+src/test/js/mailboxReplyIdentity.test.js:348:            assert.equal(await s.submitManualRichReply("/fixture/send", frozenBody()), false);
+src/test/js/mailboxReplyIdentity.test.js:351:            assert.equal(await s.submitManualRichReply("/fixture/send", frozenBody()), false);
+src/test/js/mailboxReplyIdentity.test.js:359:        assert.equal(await s.submitManualRichReply("/fixture/send", frozenBody()), false); assert.deepEqual(s.dialogs, ["reply-identity-confirm", "confirm-typed"]); assert.equal(s.requests.length, 1); assert.equal(s.alerts.length, 0);
+src/test/js/mailboxReplyIdentity.test.js:361:        await s.submitManualRichReply("/fixture/send", frozenBody()); assert.equal(s.requests[1].strongConfirmationText, "确认发送");
+src/test/js/mailboxReplyIdentity.test.js:365:        assert.equal(await s.submitManualRichReply("/fixture/send", frozenBody()), false); assert.match(s.alerts[0], /offline/);
+src/test/js/mailboxReplyIdentity.test.js:369:        const first = s.submitManualRichReply("/fixture/send", frozenBody()); await H.flush();
+src/test/js/mailboxReplyIdentity.test.js:370:        assert.equal(await s.submitManualRichReply("/fixture/send", frozenBody()), false); assert.equal(s.requests.length, 1);
+src/test/js/mailboxReplyIdentity.test.js:378:        vm.runInContext(fn(app, "submitManualRichReply", "    "), s);
+src/test/js/mailboxReplyIdentity.test.js:379:        assert.equal(await s.submitManualRichReply(101, frozenBody()), false); assert.equal(el.disabled, false); assert.equal(edit.getAttribute("contenteditable"), "true"); assert.equal(s.manualReplyQaContext.qaRuleIds[0], 1); assert.equal(s.alerts.length, 0);
+src/test/js/mailboxSuspension.test.js:993:        mcHostSendRichReply: (processingId, body) => {
+src/test/js/mailboxSuspension.test.js:999:        mcHostSendConversationRichReply: (contactId, body) => {
+src/test/js/mailboxOutboundAttachments.test.js:990:        mcHostSendRichReply: (processingId, body) => {
+src/test/js/mailboxOutboundAttachments.test.js:1003:        mcHostSendConversationRichReply: (contactId, body) => {
+src/test/js/aiReplyReviewConfirmation.test.js:61:    it("has submitManualRichReply extracted function", function () {
+src/test/js/aiReplyReviewConfirmation.test.js:62:        if (!app.includes("function submitManualRichReply(")) throw new Error("missing submitManualRichReply");
+src/test/js/aiReplyReviewConfirmation.test.js:65:    it("send-manual-rich-reply calls submitManualRichReply directly", function () {
+src/test/js/aiReplyReviewConfirmation.test.js:69:        if (!sendBlock.includes("return submitManualRichReply(id, requestBody);")) {
+src/test/js/aiReplyReviewConfirmation.test.js:70:            throw new Error("send should call submitManualRichReply directly");
+src/test/js/aiReplyReviewConfirmation.test.js:112:    it("submitManualRichReply surfaces archive warnings without treating them as send failure", function () {
+src/test/js/aiReplyReviewConfirmation.test.js:113:        const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
+src/test/js/aiReplyReviewConfirmation.test.js:124:        const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
+src/test/js/aiReplyReviewConfirmation.test.js:185:        const submitIdx = app.indexOf("return submitManualRichReply(id, requestBody);", sendIdx);
+src/test/js/aiReplyReviewConfirmation.test.js:187:        const sendBlock = app.slice(sendIdx, submitIdx + "return submitManualRichReply(id, requestBody);".length);
+src/test/js/meetingConfirmationIntegration.test.js:969:        mcHostSendRichReply: (processingId, body) => {
+src/test/js/meetingConfirmationIntegration.test.js:2289:        ctx.sandbox.mcHostSendRichReply = (processingId, body) => {
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:327:    /** 标准成功发送桩：claim → SMTP SENT → finalizeSuccess 500 → 捕获 payload。 */
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:330:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:341:            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:356:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:386:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:408:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:433:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:453:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:483:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:538:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:573:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:601:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:629:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:669:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:705:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:602:                "UnmatchedInboundMailController#sendManualRichReply:POST"
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:807:            pendingOperations.sendConversationManualRichReply(1,requestId,null,anchor,"Thank you","<p>body</p>","body","admin",
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:811:            pendingOperations.sendManualRichReply(101,null,"Thank you","<p>body</p>","body","admin",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:226:    fun `sendManualRichReply blocks on QA facts all invalid`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:239:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:255:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:261:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:266:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:281:    fun `sendManualRichReply degrades select failure to confirmable unmatched finding`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:310:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:329:        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:334:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:339:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:353:    // 确认后发送成功且 payload.canonicalQaRuleIds 为空 —— finalizeSuccess 的
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:357:    fun `sendManualRichReply with empty selectable subset keeps audit qa association empty`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:374:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:394:        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:399:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:404:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:477:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:489:    fun `sendManualRichReply blocks on high risk content in final validation text`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:504:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:517:    fun `sendManualRichReply sends after operator confirms claim warning`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:532:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:538:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:543:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:559:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:574:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:580:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:585:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:614:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:641:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:676:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:691:    fun `sendManualRichReply collects all matching findings not just first`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:693:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:710:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:726:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:732:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:737:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:754:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:777:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:793:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:821:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:827:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:845:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:861:    fun `sendManualRichReply rejects suppressed recipient before claiming an attempt`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:865:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:874:        // I-5 + IP-3: 前置拦截在 prepareAndClaim 之前 —— 400 而非 409「发送状态未知」。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:877:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:882:    fun `sendManualRichReply never finalizes DELIVERY_UNKNOWN for suppressed recipient`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:886:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:895:        // I-2/I-5: 抑制拒发绝不走 finalizeFailure —— attempt 行不得被烧成 DELIVERY_UNKNOWN。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:896:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:903:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:907:    fun `sendManualRichReply allows pure manual text without QA facts`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:920:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:926:            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:929:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:942:    fun `sendManualRichReply succeeds with QA facts and returns SENT`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:965:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:971:            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:974:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:995:    fun `sendManualRichReply dedups same payload and returns SENT without SMTP`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1010:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1013:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1026:    fun `sendManualRichReply throws 409 for delivery unknown`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1041:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1045:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1058:    fun `sendManualRichReply throws 409 for in progress`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1073:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1077:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1089:    fun `sendManualRichReply throws 422 for permanent failure attempt`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1104:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1108:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1119:    fun `sendManualRichReply throws 503 for safe retry delivery failure`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1134:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1148:            manualReplySendAttemptService.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1154:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1165:    fun `sendManualRichReply blocks on subject length over 255`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1174:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1184:    fun `sendManualRichReply blocks on validation text over 20000 chars`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1194:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1204:    fun `sendManualRichReply archives live unsupported answers after finalize and audit`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1222:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1238:        order.verify(manualReplySendAttemptService).finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1261:    fun `sendManualRichReply accepts replay with stale expected evidence version when items revalidate`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1279:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1310:    fun `sendManualRichReply accepts assembly locked under an older context fingerprint`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1331:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1356:    fun `sendManualRichReply without assembly does not archive`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1358:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1381:    fun `sendManualRichReply returns SENT with failed archive when replay mismatches`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1387:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1414:    fun `sendManualRichReply keeps SENT when archive throws`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1431:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1445:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1455:    fun `sendManualRichReply dedup archives without smtp`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1475:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1493:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1518:    fun `sendManualRichReply delivery failure does not archive`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1526:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1539:            manualReplySendAttemptService.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1545:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1568:    fun `sendManualRichReply returns SENT with failed archive when source mismatches`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1575:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1598:    fun `sendManualRichReply rejects stale assembly replay before claim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1605:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1627:    fun `sendManualRichReply returns SENT with failed archive when rendered text mismatches`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1634:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1661:    fun `sendManualRichReply returns SENT with not applicable when no eligible operator directed versions`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1675:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1702:    fun `sendManualRichReply with assembly does not archive on delivery unknown claim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1710:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1713:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1735:    fun `sendManualRichReply with assembly does not archive on in progress claim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1743:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1746:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1768:    fun `sendManualRichReply with assembly does not archive on permanent failure claim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1776:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1779:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1801:    fun `sendManualRichReply with assembly does not archive when finalize success fails`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1811:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1816:            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1819:            manualReplySendAttemptService.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1825:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1853:    fun `sendManualRichReply with verified assembly sends canonical facts without legacy reselect`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1899:        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1904:            manualReplySendAttemptService.finalizeSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1909:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1940:    fun `sendManualRichReply rejects client qaRuleIds not equal to verified canonical before claim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1946:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1955:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1964:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1973:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1992:    fun `sendManualRichReply rejects tampered assembly versions before claim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1998:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2012:    fun `sendManualRichReply with assembly still runs full safety and requires confirmation`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2021:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2033:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2051:    fun `sendManualRichReply derives operator authorization from verified versions not client locked items`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2063:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2109:    // 04 (I-1/I-2): LIVE 发送成功（SMTP SENT + finalizeSuccess 提交）后，把 verified
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2112:    fun `sendManualRichReply records trust reply diagnostics on verified assembly send success`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2142:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2168:    fun `sendManualRichReply rich reply without facts still passes diagnostics`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2186:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2202:    fun `sendManualRichReply send failure never records diagnostics`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2210:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2223:            manualReplySendAttemptService.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2229:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2241:    fun `sendManualRichReply safety blocked never records diagnostics`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2256:            service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2270:    fun `sendManualRichReply without assembly passes null diagnostics`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2272:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2306:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2312:            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2686:            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:63: * `ManualReplySendAttemptService.finalizeSuccess` 的 REQUIRES_NEW、01
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:262:        val result = pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:385:        val first = attemptService.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:390:        val second = attemptService.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:462:        pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:247:        pending.sendManualRichReply(100,null,first.subject,first.html,first.text,"admin",safetyWarningConfirmed=true)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:280:        assertEquals(ManualReplySendAttemptService.ClaimResult.DEDUP_SENT,attempts.prepareAndClaim(p).result)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:297:        assertEquals(ManualReplySendAttemptService.ClaimResult.DEDUP_SENT,attempts.prepareAndClaim(p).result)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:339:            pending.sendManualRichReply(100,"review-send",d.subject,d.html,"Changed text","admin",authenticatedUsername="admin",reviewSendRef=ref)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:342:        failure(409) { attempts.prepareAndClaim(payload(d).copy(finalHtml="<p>changed</p>").also { it.reviewSendRef = ref }) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:411:                sendFuture = executor.submit<ManualReplySendAttemptService.ClaimedAttempt> { attempts.prepareAndClaim(p) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:226:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:232:            manualReplySendAttemptService.finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:239:    fun `sendManualRichReply archives edited body instead of failing the archive`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:256:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:283:    fun `sendManualRichReply archives verbatim body as before`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:300:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:385:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:403:        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:442:            service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:449:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "无锚点不得 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:451:        assertTrue(!hasInvocation(manualReplySendAttemptService, "finalizeSuccess"), "无锚点不得 finalize")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:481:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:491:        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:528:                service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:536:            assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "$label 不得 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:538:            assertTrue(!hasInvocation(manualReplySendAttemptService, "finalizeSuccess"), "$label 不得 finalize")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:550:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:560:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "收敛命中不 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:592:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:597:        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:613:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:618:        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:631:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:640:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "收敛命中不 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:649:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:680:            service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:687:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "阻断发生在 claim 前")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:690:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:707:            service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:713:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "suppression 在 claim 前")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:724:            service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:731:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "非法 requestId 不 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:907:    // PendingManualRichReplyRequest → sendManualRichReply 的控制器转发形态。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:991:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1006:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1020:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1054:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1095:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1117:    fun `sendManualRichReply normalizes final bodies before claim and reuses them verbatim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1121:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1131:        val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1149:    fun `sendManualRichReply renders variables before normalizing and keeps single lf verbatim`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1150:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1160:        val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1168:    fun `sendConversationManualRichReply normalizes final bodies without any client cooperation`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1174:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1185:        val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1206:                Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1214:            val sent = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1222:            .filter { it.method.name == "prepareAndClaim" }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1287:    // I-2：SMTP 安全失败只走 finalizeFailure（成功事务从未被调用 → 0 新增排期），
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1313:            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1314:        val failure = invocationOf(manualReplySendAttemptService, "finalizeFailure")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1337:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1350:            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1353:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1384:     * 以 UnmatchedInboundMailController.sendManualRichReply 的转发形态（同形 named args）
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1396:    ): PendingMailSendResult = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1418:            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1430:    /** 失败路径 stub：finalizeFailure 返回失败记录 id（与生产 mock 一致，避免 null 返回值）。 */
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1433:            manualReplySendAttemptService.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1475:        val result = service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1508:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1520:        order.verify(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1529:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1536:        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1559:                service.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1568:                service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1576:            assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "$label 不得 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1578:            assertTrue(!hasInvocation(manualReplySendAttemptService, "finalizeFailure"), "$label 不得写投递失败")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1603:        val same = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1610:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "相同附件不得 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1624:            service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1635:            service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1641:        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "附件不同不得 claim")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1652:        val result = service.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1669:        val result = service.sendManualRichReply(100,null,"Re: Test","<p>Test</p>","Test","forged",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1672:        val sent = Mockito.mockingDetails(manualReplySendAttemptService).invocations.single { it.method.name == "prepareAndClaim" }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1682:            service.sendManualRichReply(100,null,"Re: Test",html,"Test","op",qaRuleIds=qaIds,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1692:        assertFalse(hasInvocation(manualReplySendAttemptService,"prepareAndClaim"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1704:            service.sendConversationManualRichReply(1,conversationRequestId,null,subject="Re: Test",htmlBody="<p>Test</p>",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1718:        assertEquals("SENT",service.sendConversationManualRichReply(1,conversationRequestId,null,subject="Re: Test",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:1721:        assertFalse(hasInvocation(manualReplySendAttemptService,"prepareAndClaim"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:93: * 协作件；finalizeSuccess 桩按 05 的四分支语义把 payload 的通用附件快照（真实 codec）写入
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:320:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(payloadStub())))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:337:            .finalizeSuccess(anyValue(payloadStub()), Mockito.eq(1L), eqValue(MESSAGE_ID))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:364:        val result = pendingService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:422:        val result = pendingService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:470:            pendingService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:482:            pendingService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:506:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(payloadStub()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:507:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:525:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(payloadStub()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:526:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:539:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(payloadStub()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:552:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(payloadStub()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:559:        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(payloadStub())))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:585:        val first = pendingService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:607:        val replay = pendingService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:618:        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(payloadStub()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:623:            pendingService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:637:            pendingService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:655:        pendingService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:698:        pendingService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:750:        pendingService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:413:    fun `prepareAndClaim inserts and claims when status is PREPARED`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:419:        val result = service.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:424:    fun `prepareAndClaim returns DEDUP_SENT when status is SENT`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:427:        val result = service.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:432:    fun `prepareAndClaim returns SAFE_RETRY_CLAIMED when status is FAILED_SAFE_TO_RETRY`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:438:        val result = service.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:443:    fun `prepareAndClaim returns IN_PROGRESS when status is DELIVERY_IN_PROGRESS`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:446:        val result = service.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:451:    fun `prepareAndClaim returns UNKNOWN when status is DELIVERY_UNKNOWN`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:454:        val result = service.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:459:    fun `prepareAndClaim returns PERMANENT_FAILED when status is FAILED`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:462:        val result = service.prepareAndClaim(payload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:467:    fun `prepareAndClaim rejects full hash collision`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:473:        assertThrows(IllegalArgumentException::class.java) { service.prepareAndClaim(payload) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:477:    fun `prepareAndClaim rejects recipient collision on short key`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:483:        assertThrows(IllegalArgumentException::class.java) { service.prepareAndClaim(payload) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:487:    fun `finalizeSuccess creates mail record and writes QA associations`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:493:        val mailRecordId = service.finalizeSuccess(payload, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:505:    fun `finalizeSuccess writes QA associations in exact payload ordinal order`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:516:        val mailRecordId = service.finalizeSuccess(orderedPayload, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:538:    fun `finalizeFailure creates failed mail record with error summary`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:544:        val mailRecordId = service.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:584:    fun `finalizeSuccess new branch persists calendar snapshot json`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:591:        val id = service.finalizeSuccess(withCalendar, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:602:    fun `finalizeFailure new branch persists calendar snapshot json`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:609:        val id = service.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:622:    fun `finalizeSuccess copy branch overwrites old snapshot with retry payload snapshot`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:649:        val id = service.finalizeSuccess(retryPayload, 1L, "<manual-rich-retry@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:661:    fun `finalizeSuccess copy branch without calendar clears prior failed record snapshot`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:688:        val id = service.finalizeSuccess(payload, 1L, "<manual-rich-retry@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:697:    fun `finalizeFailure copy branch clears snapshot when retry has no calendar`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:722:        val id = service.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:769:    fun `finalizeSuccess new branch persists ordered attachment snapshot json`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:777:        val id = service.finalizeSuccess(withAttachments, 1L, "<manual-rich-att@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:788:    fun `finalizeSuccess copy branch overwrites previous attachment snapshot with this attempt`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:797:        val id = service.finalizeSuccess(retryPayload, 1L, "<manual-rich-retry@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:807:    fun `finalizeSuccess copy branch without attachments clears the failed record snapshot`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:816:        val id = service.finalizeSuccess(payload, 1L, "<manual-rich-retry@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:825:    fun `finalizeFailure new branch persists ordered attachment snapshot json`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:833:        val id = service.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:847:    fun `finalizeFailure copy branch without attachments clears the previous snapshot`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:854:        val id = service.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:871:        service.finalizeSuccess(payload, 1L, "<manual-rich-plain@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:888:        val id = service.finalizeSuccess(withAttachments, 1L, "<manual-rich-att-only@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:909:        val id = service.finalizeSuccess(retryPayload, 1L, "<manual-rich-both@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:948:    fun `finalizeSuccess creates the schedule from the persisted sent record before marking the attempt sent`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:955:        val id = service.finalizeSuccess(withEvent, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:981:    fun `finalizeSuccess without meeting event never touches the calendar`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:987:        service.finalizeSuccess(payload, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:993:    fun `finalizeFailure never creates a schedule even when the payload carries a meeting`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:999:        service.finalizeFailure(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1008:    fun `finalizeSuccess propagates a schedule write failure instead of marking the attempt sent`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1018:            service.finalizeSuccess(withEvent, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1041:        val claimed = service.prepareAndClaim(withCalendar)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1046:        // finalizeSuccess 走 copy 分支更新同一 record 为 SENT（安全失败可认领）。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1072:        val mailRecordId = service.finalizeSuccess(withCalendar, 1L, claimed.messageId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1084:        val result = service.prepareAndClaim(withCalendar)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1094:        val result = service.prepareAndClaim(withCalendar)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1355:    fun `finalizeSuccess persists conversation reply with anchor inReplyTo and no inbound source`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1373:        val mailRecordId = service.finalizeSuccess(outPayload, 1L, "<manual-rich-abc@weibo.com>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1434:            assertEquals(result,service.prepareAndClaim(referenced).result)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:151:        pending.sendManualRichReply(processing,null,content.subject,content.html,content.text,"forged",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:156:        pending.sendConversationManualRichReply(1,requestId,draft.target?.accountScope?.takeIf { it.isNotEmpty() },anchor,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:171:        pending.sendManualRichReply(100,null,original.subject,original.html,original.text,"op",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:265:        assertEquals("DRAFT_CONTENT_MISMATCH",assertThrows(MailReplyDraftException::class.java) { pending.sendConversationManualRichReply(1,UUID.randomUUID().toString(),"draft-send",subject=original.subject,htmlBody=original.html,textBody=original.text,operatorName="op",authenticatedUsername="op",draftRef=ref(wrongScope)) }.code)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:320:        assertEquals("SENT",pending.sendManualRichReply(100,null,original.subject,original.html,original.text,"op",safetyWarningConfirmed=true).sendStatus)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:327:        pending.sendConversationManualRichReply(1,request,null,10,original.subject,original.html,original.text,"op",safetyWarningConfirmed=true)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:337:        assertThrows(ManualSendSafetyBlockedException::class.java) { pending.sendManualRichReply(100,null,risky.content!!.subject,risky.content!!.html,risky.content!!.text,"op",authenticatedUsername="op",draftRef=ref(risky)) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:358:            pending.sendManualRichReply(100,null,content.subject,content.html,content.text,"op",ragFactCodes=listOf("fact-one"),
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:365:        pending.sendConversationManualRichReply(1,request,null,10,original.subject,original.html,original.text,"op",safetyWarningConfirmed=true)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:474:            pending.sendManualRichReply(100,null,original.subject,original.html,original.text,"op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:174:            pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:204:        val result = controller.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:226:            pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:233:                // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:254:            controller.sendManualRichReply(5L, req)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:262:            pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:269:                // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:287:            controller.sendManualRichReply(5L, req)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:295:            pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:302:                // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:320:            controller.sendManualRichReply(5L, req)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:335:            pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:366:        val result = controller.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:399:            pendingMailOperationService.sendManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:406:                // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:427:        val result = controller.sendManualRichReply(5L, req)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1469:            pendingMailOperationService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1512:            pendingMailOperationService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1544:            pendingMailOperationService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1577:            pendingMailOperationService.sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1604:        Mockito.verify(pendingMailOperationService).sendConversationManualRichReply(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1620:            Mockito.mockingDetails(pendingMailOperationService).invocations.none { it.method.name == "sendConversationManualRichReply" },
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:268:    fun sendManualRichReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:275:        pendingMailOperationService.sendManualRichReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:432:    ): PendingMailSendResult = pendingMailOperationService.sendConversationManualRichReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:84:         * finalizeSuccess 在成功事务内创建排期，二者同有同无。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:281:    fun prepareAndClaim(payload: SendPayload): ClaimedAttempt {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:448:    fun finalizeSuccess(payload: SendPayload, attemptId: Long, messageId: String): Long {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:546:    fun finalizeFailure(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt:15:            pending.sendManualRichReply(row.targetId, row.accountCode, row.subject, row.html, row.text, ref.actor,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendService.kt:19:            pending.sendConversationManualRichReply(row.contactId, requireNotNull(row.sendRequestId), row.accountCode,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:162:    fun sendManualRichReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:265:        // prepareAndClaim / SMTP / DB 成功落库）之前完成服务端重算验证；source 必须
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:397:    fun sendConversationManualRichReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:819:        // I-5: 幂等占位（prepareAndClaim）之前必须判抑制，禁止把发送尝试烧成 DELIVERY_UNKNOWN。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:838:        val claim = manualReplySendAttemptService.prepareAndClaim(payload)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:873:                            val id = manualReplySendAttemptService.finalizeSuccess(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:935:                            log.warn("finalizeSuccess failed for attempt {}: {}", claim.attemptId, finalizeEx.message)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:937:                                manualReplySendAttemptService.finalizeFailure(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:945:                                log.error("finalizeFailure to UNKNOWN also failed for attempt {}: {}",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:979:                        manualReplySendAttemptService.finalizeFailure(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1009:                                manualReplySendAttemptService.finalizeFailure(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1017:                                log.error("finalizeFailure to UNKNOWN failed for attempt {}: {}",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt:49:            route(unmatched, "sendManualRichReply", "POST", Target.PROCESSING)

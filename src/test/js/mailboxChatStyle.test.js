@@ -595,3 +595,22 @@ describe("08 · 管理员最终控件样式", () => {
         assert.ok(!chatSource.includes("mc-toggle-user1-read-access"));
     });
 });
+
+describe("manual reply delay S-1 through S-4", () => {
+    const plan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-11-04/manual-reply-delay-06-frontend.md"), "utf8");
+    for (const name of ["manual-reply-delay-contract", "manual-reply-error-contract"]) {
+        it(name + " matches the approved literal block", () => {
+            const start = "/* " + name + ":start */", end = "/* " + name + ":end */";
+            const block = (source) => source.slice(source.indexOf(start), source.indexOf(end) + end.length);
+            assert.ok(plan.includes(start)); assert.ok(cssSource.includes(start));
+            assert.equal(block(cssSource), block(plan));
+        });
+    }
+    it("preserves all current resources with one cache identity and real dialog DOM", () => {
+        const versions = [...indexSource.matchAll(/(?:href|src)="[^"]+\?v=([^"]+)"/g)].map((m) => m[1]);
+        assert.equal(new Set(versions).size, 1);
+        for (const id of ["actionDialog", "actionDialogForm", "actionDialogTitle", "actionDialogBody"]) {
+            assert.ok(indexSource.includes('id="' + id + '"'), "actual DOM contains " + id);
+        }
+    });
+});

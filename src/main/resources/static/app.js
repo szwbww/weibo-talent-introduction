@@ -223,6 +223,41 @@ function requireTrustReplyWorkbenchRuntime(host) {
 }
 
 let manualReplyQaContext = null;
+const legacyDelayedReplies = new Map();
+
+async function mcHostRestoreDelayedReply(contactId, jobId, accountCode, isCurrent = () => true, openEditor = showUnmatchedDetail) {
+    const owner = state.authIdentity;
+    const restore = await api(`/api/mail/mailbox/conversations/${contactId}/delayed-replies/${jobId}/restore`);
+    if (state.authIdentity !== owner || !owner || !isCurrent() || restore.originKind !== "LEGACY") return false;
+    const source = Number(restore.inboundProcessingId);
+    if (!Number.isSafeInteger(source) || source <= 0 || !restore.originalInput) throw new Error("发送内容无法恢复，请联系管理员");
+    const data = await api(`/api/mail/unmatched-inbound/${source}`);
+    if (state.authIdentity !== owner || !isCurrent() || Number(data.record?.expertContactId) !== Number(contactId)
+        || data.record?.senderAccountCode !== accountCode) throw new Error("回复目标已变更，无法恢复");
+    const current = state.mailbox.detailContext;
+    const editor = $("#manualRichReplyEditor");
+    if (editor && (editor.textContent || editor.innerText || "").trim() && (current?.id !== source || editor.innerHTML !== restore.originalInput.htmlBody)) {
+        await openActionDialog("confirm", { message: "当前编辑器已有不同输入。为保留新草稿，本次不覆盖；原输入仍保留在已撤回邮件，可稍后恢复。" });
+        return false;
+    }
+    await openEditor(source);
+    if (state.authIdentity !== owner || !isCurrent() || Number(state.mailbox.detailContext?.id) !== source) return false;
+    const targetEditor = $("#manualRichReplyEditor"), subject = $("#manualReplySubject");
+    if (!targetEditor || !subject) return false;
+    const input = restore.originalInput;
+    if (!window.MailboxMeeting?.sanitizeDraftHtml) throw new Error("草稿编辑器不可用，请刷新");
+    targetEditor.innerHTML = window.MailboxMeeting.sanitizeDraftHtml(input.htmlBody || "", document);
+    subject.value = input.subject || "";
+    manualReplyQaContext = input.ragFactCodes ? { ragFactCodes: input.ragFactCodes, ragCorpusFingerprint: input.ragCorpusFingerprint, baselineText: input.textBody || "" }
+        : { qaRuleIds: input.qaRuleIds || [], suggestedRuleIds: input.suggestedRuleIds || [], baselineText: input.textBody || "" };
+    const disclosure = targetEditor.closest?.("details");
+    if (disclosure) disclosure.open = true;
+    legacyDelayedReplies.set(`${owner}|${source}`, { input, revision: restore.expectedCancelledRevision, status: "CANCELLED",
+        renderedBaseline: targetEditor.innerText, renderedBaselineHtml: targetEditor.innerHTML });
+    targetEditor.focus?.();
+    targetEditor.scrollIntoView?.({ block: "center" });
+    return true;
+}
 
 const preflightState = {
     timerId: null,
@@ -17922,6 +17957,9 @@ async function showUnmatchedDetail(id) {
     if (detailLoadSeq !== liveDetailLoadSeq) return;
     const inboundTags = threadData.tags || [];
     const record = data.record;
+    const delayedJobs = record.expertContactId ? await api(`/api/mail/mailbox/conversations/${record.expertContactId}/delayed-replies?originKind=LEGACY&originId=${Number(id)}`) : [];
+    if (detailLoadSeq !== liveDetailLoadSeq) return;
+    const delayedJob = Array.isArray(delayedJobs) ? delayedJobs[0] : null;
     const history = record.expertContactId
         ? await api(`/api/expert-contacts/${record.expertContactId}`).catch(() => null)
         : null;
@@ -18131,6 +18169,14 @@ async function showUnmatchedDetail(id) {
             </details>
         </div>
     `;
+    if (delayedJob && ["WAITING", "SENDING", "UNKNOWN"].includes(delayedJob.status)) {
+        $("#manualRichReplyEditor")?.setAttribute("contenteditable", "false");
+        const subjectInput = $("#manualReplySubject");
+        if (subjectInput) subjectInput.readOnly = true;
+        panel.querySelectorAll('.manual-rich-reply-section button').forEach((button) => { button.disabled = true; });
+        const status = $("#manualReplyPreflight");
+        if (status) { status.textContent = "邮件已加入发送队列，可在邮件底部撤回。"; status.hidden = false; }
+    }
 
     if (record.expertContactId) {
         mountLiveTrustReply(Number(id));
@@ -18514,18 +18560,45 @@ async function handleUnmatchedAction(element) {
         return;
     }
 
-    async function submitManualRichReply(recordId, requestBody) {
+    async function submitManualRichReply(recordId, requestBody, onResult) {
         if (element.disabled) return false;
         element.disabled = true;
         const lockedEditor = $("#manualRichReplyEditor");
         const lockedSubject = $("#manualReplySubject");
         const editable = lockedEditor?.getAttribute("contenteditable");
         const readOnly = lockedSubject?.readOnly;
+        const owner = state.authIdentity, detailSeq = liveDetailLoadSeq;
+        const saved = legacyDelayedReplies.get(`${owner}|${recordId}`);
+        if (saved && ["WAITING", "SENDING", "UNKNOWN"].includes(saved.status)) return false;
+        if (saved?.status === "CANCELLED") {
+            const unchanged = lockedEditor
+                && lockedEditor.innerText.trim() === (saved.renderedBaseline ?? saved.input.textBody ?? "").trim()
+                && lockedEditor.innerHTML === (saved.renderedBaselineHtml ?? saved.input.htmlBody ?? "");
+            const currentBody = requestBody;
+            requestBody = { ...saved.input, ...currentBody, delayExpectedRevision: saved.revision };
+            if (!unchanged) {
+                // Omitted raw fields mean the current editor no longer qualifies for the restored adoption.
+                requestBody.templateTextBody = currentBody.templateTextBody;
+                requestBody.templateHtmlBody = currentBody.templateHtmlBody;
+                requestBody.trustReplyAssembly = currentBody.trustReplyAssembly;
+            }
+        }
+        let queued = false;
         if (lockedEditor) lockedEditor.setAttribute("contenteditable", "false");
         if (lockedSubject) lockedSubject.readOnly = true;
         try {
             const result = await postManualRichReplySnapshot(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, requestBody);
             if (result === null) return false;
+            if (typeof onResult === "function") onResult(result);
+            if (result.sendStatus !== "SENT") {
+                queued = true;
+                legacyDelayedReplies.set(`${owner}|${recordId}`, { input: requestBody, revision: result.delayedReply?.revision, status: result.sendStatus });
+                showStatus(result.sendStatus === "WAITING" ? "已加入发送队列，60 秒内可撤回" : "发送状态待确认，请勿重复发送", "ok");
+                await refreshMailboxAfterPendingAction();
+                return true;
+            }
+            if (state.authIdentity !== owner || liveDetailLoadSeq !== detailSeq) return true;
+            legacyDelayedReplies.delete(`${owner}|${recordId}`);
             manualReplyQaContext = null;
             aiReplyState.adoptContext = null;
             resetPreflightState();
@@ -18545,12 +18618,12 @@ async function handleUnmatchedAction(element) {
             alert("人工回复发送失败: " + e.message);
             throw e;
         } finally {
-            element.disabled = false;
-            if (lockedEditor) {
+            element.disabled = queued;
+            if (lockedEditor && !queued) {
                 if (editable == null) lockedEditor.removeAttribute("contenteditable");
                 else lockedEditor.setAttribute("contenteditable", editable);
             }
-            if (lockedSubject) lockedSubject.readOnly = readOnly;
+            if (lockedSubject && !queued) lockedSubject.readOnly = readOnly;
         }
         await showUnmatchedDetail(recordId);
         await refreshMailboxAfterPendingAction();
@@ -21273,7 +21346,10 @@ function isMailReadOnlyRequestAllowed(path, options) {
     if (method === "POST" && (normalized === "/api/auth/login" || normalized === "/api/auth/logout")) return true;
     if (method === "GET" && normalized === "/api/mail/mailbox/conversations") return true;
     if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(messages|access)$/.test(normalized)) return true;
+    if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/delayed-replies(\/[1-9][0-9]*)?$/.test(normalized)) return true;
     const scopedRoutes = [
+        ["GET", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/delayed-replies\/[1-9][0-9]*\/restore$/],
+        ["POST", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/delayed-replies\/[1-9][0-9]*\/(cancel|retry)$/],
         ["POST", /^\/api\/mail\/reply-identity\/inspect$/],
         ["GET", /^\/api\/mail\/mailbox\/conversations\/pending-badge$/],
         ["GET", /^\/api\/operator-action-logs$/],
@@ -21483,6 +21559,7 @@ function startAuthenticatedApp(username, mailReadOnly) {
 
 function stopAuthenticatedApp() {
     if (typeof window !== "undefined" && window.ConsoleMotion) window.ConsoleMotion.cancelAll();
+    legacyDelayedReplies.clear();
     // 最前停止观察器：之后到达的 active/详情响应一律失效（I-5）。
     stopTaskActivityPolling();
     if (typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
@@ -21833,16 +21910,16 @@ function mcHostMountWorkbench(hostEl, processingId, callbacks) {
 
 // I-3/I-4：聊天人工回复发送 —— 沿用 submitManualRichReply 的服务端校验/QA 审计与
 // 安全确认文案；不触碰 #unmatchedDetailPanel / manualReplyQaContext 等原流程状态。
-async function mcHostSendRichReply(processingId, requestBody) {
-    return submitManualRichReply(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, requestBody);
+async function mcHostSendRichReply(processingId, requestBody, onResult) {
+    return submitManualRichReply(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, requestBody, onResult);
 }
 
 // T4 (I-3/I-4/I-6)：无来信会话自由回信 —— 同一 URL 提交 + 两级安全确认，只换 endpoint。
 // body 只含 requestId/accountScope/自由正文；服务端决定真实锚点与发件账号。
-async function mcHostSendConversationRichReply(contactId, requestBody) {
+async function mcHostSendConversationRichReply(contactId, requestBody, onResult) {
     const id = Number(contactId);
     if (!Number.isFinite(id) || id <= 0) return false;
-    return submitManualRichReply(`/api/mail/mailbox/conversations/${id}/manual-rich-reply`, requestBody);
+    return submitManualRichReply(`/api/mail/mailbox/conversations/${id}/manual-rich-reply`, requestBody, onResult);
 }
 
 // 按 URL 提交人工富文本回复并处理两级安全确认（I-9/I-10：失败提示不泄露 SMTP 诊断，
@@ -22119,10 +22196,19 @@ async function postManualRichReplySnapshot(url, requestBody) {
     }
 }
 
-async function submitManualRichReply(url, requestBody) {
+async function submitManualRichReply(url, requestBody, onResult) {
         try {
             const result = await postManualRichReplySnapshot(url, requestBody);
             if (result === null) return false;
+            if (typeof onResult === "function") onResult(result);
+            if (result.sendStatus === "WAITING") {
+                showStatus("已加入发送队列，60 秒内可撤回", "ok");
+                return true;
+            }
+            if (result.sendStatus !== "SENT") {
+                showStatus("发送状态待确认，请刷新查看，请勿重复发送", "warn");
+                return true;
+            }
             const archiveStatus = result?.unsupportedAnswerArchiveStatus || "NOT_APPLICABLE";
             const archivedCount = Number(result?.unsupportedAnswerArchivedCount) || 0;
             if (archiveStatus === "SAVED") {

@@ -1,0 +1,84 @@
+$ rg -n --no-ignore --glob !*.pyc --glob !*.png --glob !*.jpg targetSchemaVersion|assertEquals\("173"|EXCLUDED_NOISE_SITES|mailbox-chat.*v=|app.js.*v=|styles.css.*v=|trust-reply-workbench.*v= src scripts
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:44:    private val EXCLUDED_NOISE_SITES: List<NoiseSite> = listOf(
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:181:            appendLine("  排除名单失效请同步更新 EXCLUDED_NOISE_SITES 的 path/line/context（宁可误报、不放过）。")
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:186:        val staleExclusions = EXCLUDED_NOISE_SITES.filter { site ->
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:192:            "排除名单已失效（path/line/context 不再精确命中），必须同步更新 EXCLUDED_NOISE_SITES：\n" +
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:202:        EXCLUDED_NOISE_SITES.any { it.path == rel && it.line == lineNumber && raw.contains(it.context) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:111:        assertEquals("141", v141.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:153:        assertEquals("144", v144.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:207:        assertEquals("173", result.targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:231:        assertEquals("170", before.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:298:        assertEquals("152", flyway(MigrationVersion.fromVersion("152")).migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:648:        assertEquals("153", flyway(MigrationVersion.fromVersion("153")).migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:909:        assertEquals("140", flyway(MigrationVersion.fromVersion("140")).migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:933:        assertEquals("135", v135.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1153:        assertEquals("36", flyway(MigrationVersion.fromVersion("36")).migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1333:        assertEquals("130", flyway(MigrationVersion.fromVersion("130")).migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1341:        assertEquals("131", flyway(MigrationVersion.fromVersion("131")).migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1461:        assertEquals("133", v133.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1502:        assertEquals("137", v137.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1550:        assertEquals("138", v138.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1763:        assertEquals("116", v116Flyway.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1918:        assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1934:        assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2804:        assertEquals("147", v147.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2874:        assertEquals("149", flyway(MigrationVersion.fromVersion("149")).migrate().targetSchemaVersion)
+src/test/js/taskActivityCenter.test.js:18:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMeetingRecordIntegrationTest.kt:45:        assertEquals("155",Flyway.configure().placeholderReplacement(false).dataSource(ds).locations("filesystem:$migrations").load().migrate().targetSchemaVersion)
+src/test/js/mailboxMailReadAccess.test.js:1051:        assert.ok(match, "index.html 必须注册 styles.css?v=");
+src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundPendingOwnerIT.kt:425:        assertEquals("172", result.targetSchemaVersion)
+src/test/js/ragWorkbenchRender.test.js:20:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/ragWorkbenchRender.test.js:23:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/ragWorkbenchRender.test.js:394:        const match = html.match(/src="trust-reply-workbench\.js\?v=([^"]+)"/);
+src/test/js/ragWorkbenchRender.test.js:395:        assert.ok(match, "index.html must include trust-reply-workbench.js?v=");
+src/test/js/taskRecordsSemantics.test.js:414:            + `<link rel="stylesheet" href="../../src/main/resources/static/styles.css?v=${assetKey}">`
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt:475:        assertEquals("169", previous.migrate().targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt:485:        assertEquals("172", result.targetSchemaVersion)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt:505:        assertEquals("172", flyway.migrate().targetSchemaVersion)
+src/test/js/overlayAndDialogContrast.test.js:22:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/overlayAndDialogContrast.test.js:25:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/discoveryReview.test.js:465:        const keys = Array.from(indexHtml.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([^"'&<>]+)/g)).map((m) => m[1]);
+src/test/js/discoveryReview.test.js:1079:        const keys = [...indexHtml.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([^"<>]+)/g)].map(match => match[1]);
+src/test/js/recipientPreviewDiagnostics.test.js:282:        assert.ok(keyMatch, "index.html must register styles.css with a ?v= cache key");
+src/test/js/ragKnowledgeBasePage.test.js:12:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/ragKnowledgeBasePage.test.js:15:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/manualReplySubjectPrefill.test.js:13:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/manualReplySubjectPrefill.test.js:16:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/mailboxTemplateReferenceStyle.test.js:32:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/batchEmailVerification.test.js:950:        assert.ok(indexSource.includes('href="styles.css?v=' + cacheKey + '"'));
+src/test/js/batchEmailVerification.test.js:951:        assert.ok(indexSource.includes('src="app.js?v=' + cacheKey + '"'));
+src/test/js/batchEmailVerification.test.js:952:        assert.ok(indexSource.includes('src="trust-reply-workbench.js?v=' + cacheKey + '"'),
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261102-paper-reprocess">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261102-paper-reprocess">
+src/main/resources/static/index.html:2547:<script src="trust-reply-workbench.js?v=20261102-paper-reprocess"></script>
+src/main/resources/static/index.html:2550:<script src="mailbox-chat.js?v=20261102-paper-reprocess"></script>
+src/main/resources/static/index.html:2558:<script src="app.js?v=20261102-paper-reprocess"></script>
+src/test/js/mailboxGroupPush.test.js:86:    const keys = [...html.matchAll(/(?:src|href)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([^"']+)/g)].map(match => match[1]);
+src/test/js/mailboxChatStyle.test.js:26:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/mailboxChatStyle.test.js:29:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/mailboxChatStyle.test.js:96:            new RegExp('href="mailbox-chat\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '"'),
+src/test/js/mailboxChatStyle.test.js:114:            indexSource.match(/mailbox-chat\.css\?v=([^"'&<>]+)/)[1],
+src/test/js/mailboxChatStyle.test.js:551:        assert.ok(indexSource.includes(`app.js?v=${CACHE_KEY}`));
+src/test/js/contactTimingStyle.test.js:32:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/contactTimingStyle.test.js:185:        assert.strictEqual((indexSource.match(/src="mailbox-chat\.js\?v=/g) || []).length, 1);
+src/test/js/senderBindingDisplay.test.js:305:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/sharepointFileCardDisplay.test.js:13:// I-7：版本键的唯一来源是 index.html 的 styles.css?v=<key>；本文件不得写死历史键。
+src/test/js/sharepointFileCardDisplay.test.js:16:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/sharepointFileCardDisplay.test.js:113:        assert.ok(indexHtml.includes(`mailbox-chat.js?v=${CACHE_KEY}`),
+src/test/js/checkRepliesRelocation.test.js:11:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/checkRepliesRelocation.test.js:14:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/discoveryPaperReprocess.test.js:95:    const keys = ['styles.css', 'trust-reply-workbench.js', 'app.js'].map(name => html.match(new RegExp(name.replace('.', '\\.') + '\\?v=([^" ]+)'))[1]);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:12:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/batchSendTaskConsoleVisualFix.test.js:15:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/meetingConfirmationAssets.test.js:23:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/meetingConfirmationAssets.test.js:26:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/meetingConfirmationAssets.test.js:36:        const keys = [...html.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/meetingConfirmationAssets.test.js:38:        assert.ok(html.indexOf("discovery-recheck.js?v=") < html.indexOf("app.js?v="), "重审组件必须先于宿主");
+src/test/js/meetingConfirmationAssets.test.js:72:        const trustAt = html.indexOf("trust-reply-workbench.js?v=" + CACHE_KEY);
+src/test/js/meetingConfirmationAssets.test.js:161:        const appAt = html.indexOf(`app.js?v=${CACHE_KEY}`);
+src/test/js/mailboxSuspensionStyle.test.js:39:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:5:// 2) G-5 styles/workbench/app 缓存键同值（index.html 的 styles.css?v= 键）；
+src/test/js/trustReplyWorkbenchSharedMount.test.js:22:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/trustReplyWorkbenchSharedMount.test.js:25:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:181:        const keys = [...indexSource.matchAll(/(?:href|src)="(?:styles\.css|trust-reply-workbench\.js|app\.js)\?v=([0-9a-z-]+)/g)].map((match) => match[1]);

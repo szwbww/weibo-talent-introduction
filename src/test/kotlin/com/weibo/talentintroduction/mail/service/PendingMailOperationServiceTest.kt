@@ -38,6 +38,9 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
+import com.weibo.talentintroduction.rag.domain.RagFact
+import com.weibo.talentintroduction.rag.service.RagCorpusSnapshot
+import com.weibo.talentintroduction.rag.service.RagKnowledgeBase
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
@@ -97,12 +100,16 @@ class PendingMailOperationServiceTest {
     )
     private val mailVariableService = MailVariableService(expertSearchService, renderTemplateService)
     private val manualReplySendAttemptService = Mockito.mock(ManualReplySendAttemptService::class.java)
+    private val delayService = Mockito.mock(DelayedManualReplyService::class.java)
     private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     // 06 (T1/I-1/I-2): 通用附件协作件 —— 本文件断言两条入口的 id/身份透传与文件集合流动，
     // 真实原件读取/归属/容量边界由 OutboundAttachmentFlowTest 用真实 04 服务覆盖。
     private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
+    // fast-p 02 (T3/I-5): RAG 证据只在 payload 上传递（finalizeSuccess 同事务落库），
+    // Pending 不再持有 rag 写入协作件；此处只提供发送门禁需要的语料快照。
+    private val ragKnowledgeBase = Mockito.mock(RagKnowledgeBase::class.java)
     private val draftRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class.java)
     private val draftService = MailReplyDraftService(draftRepository,expertContactRepository,inboundMailProcessingRepository,
         Mockito.mock(com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java),outboundAttachmentService,
@@ -118,7 +125,10 @@ class PendingMailOperationServiceTest {
         MailContentService(),
         mailVariableService
     )
-    private val service = PendingMailOperationService(
+    private fun createService(
+        enabled: Boolean = false,
+        delays: DelayedManualReplyService? = null
+    ) = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
         expertOperatorStatusService,
@@ -144,9 +154,13 @@ class PendingMailOperationServiceTest {
         meetingConfirmationService,
         org.mockito.Mockito.mock(ReplyIdentityService::class.java),
         Mockito.mock(ExpertMailPermissionGuard::class.java),
+        ragKnowledgeBase = ragKnowledgeBase,
         outboundAttachmentService = outboundAttachmentService,
-        mailReplyDraftService = draftService
+        mailReplyDraftService = draftService,
+        manualReplyDelayProperties = com.weibo.talentintroduction.config.ManualReplyDelayProperties(enabled = enabled),
+        delayedManualReplyService = delays
     )
+    private val service = createService()
 
     private val contact = ExpertContact(
         id = 1,
@@ -1425,6 +1439,70 @@ class PendingMailOperationServiceTest {
 
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
 
+    // fast-p 02 (T3/I-5): RAG 存证随 payload.ragEvidence 进入成功事务；Pending 不再在
+    // finalize 之外直接写 mail_record_rag_fact（本类未注入该 repository，若回退会 NPE）。
+    @Test
+    fun `sendManualRichReply carries ordered rag evidence on the payload`() {
+        Mockito.`when`(ragKnowledgeBase.fingerprint()).thenReturn("fp-1")
+        Mockito.`when`(ragKnowledgeBase.snapshot()).thenReturn(
+            RagCorpusSnapshot(
+                facts = listOf(ragFact("KB-FUND-033"), ragFact("KB-COMP-007")),
+                phraseGroups = emptyList(),
+                intentCoverage = emptyList(),
+                mandatoryRules = emptyList(),
+                exclusions = emptyList(),
+                fingerprint = "fp-1"
+            )
+        )
+        val captured = mutableListOf<ManualReplySendAttemptService.SendPayload>()
+        Mockito.doAnswer { invocation ->
+            captured.add(invocation.getArgument<ManualReplySendAttemptService.SendPayload>(0))
+            ManualReplySendAttemptService.ClaimedAttempt(
+                attemptId = 1L,
+                messageId = "<manual-rich-abc@weibo.com>",
+                result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+            )
+        }.`when`(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = "sender-1",
+            subject = "Re: Test",
+            htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.",
+            operatorName = "op",
+            ragFactCodes = listOf("KB-FUND-033", "KB-COMP-007", "KB-FUND-033"),
+            ragCorpusFingerprint = "fp-1"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val payload = captured.single()
+        val evidence = requireNotNull(payload.ragEvidence)
+        assertEquals(listOf("KB-FUND-033", "KB-COMP-007", "KB-FUND-033"), evidence.factCodes)
+        assertEquals("fp-1", evidence.corpusFingerprint)
+        assertEquals(emptyList<Long>(), payload.canonicalQaRuleIds)
+        assertNull(payload.primaryRuleId)
+    }
+
+    private fun ragFact(code: String) = RagFact(
+        factCode = code,
+        area = code.substringAfter("-").substringBefore("-"),
+        seq = code.takeLast(3).toInt(),
+        title = "Title $code",
+        category = "C",
+        questionVariants = "",
+        keywords = "",
+        answer = "Answer body for $code.",
+        coverageKeys = "",
+        replyPolicy = "AUTO",
+        status = "APPROVED",
+        riskLevel = "LOW",
+        renderMode = "COMPOSE",
+        sourceRefs = "",
+        enabled = true,
+        sortOrder = 1
+    )
+
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
 
     /** 失败路径 stub：finalizeFailure 返回失败记录 id（与生产 mock 一致，避免 null 返回值）。 */
@@ -1719,5 +1797,119 @@ class PendingMailOperationServiceTest {
             htmlBody="<p>Test</p>",textBody="Test",operatorName="op",authenticatedUsername="op",draftRef=MailReplyDraftRef(20,1)).sendStatus)
         assertFalse(hasInvocation(mailDeliveryService,"send"))
         assertFalse(hasInvocation(manualReplySendAttemptService,"prepareAndClaim"))
+    }
+
+    private fun reservedAttempt() = com.weibo.talentintroduction.campaign.domain.MailSendAttempt(
+        id = 31, orcidId = contact.orcidId, mailType = "MANUAL_RICH:reserved",
+        accountCode = "sender-1", messageId = "<reserved@fixture.test>", status = "PREPARED")
+
+    private fun waitingView() = DelayedManualReplyView(41, 1, DelayedManualReplyStatus.WAITING,
+        1000, 61000, 1001, DelayedManualReplyOriginKind.LEGACY, null, null, true, false, null, null, null)
+
+    private fun existingJob() = DelayedManualReplyRow(41, 31, 1, "sender-1", "admin",
+        DelayedManualReplyOriginKind.LEGACY, null, null, 1, DelayedManualReplyStatus.WAITING,
+        61000, null, null, "Re: Test", "Test", "{}", null, 1000, 1000)
+
+    private fun stubEnqueue(revision: Long? = null) {
+        Mockito.`when`(manualReplySendAttemptService.findExistingByPayload(anyValue(sendPayload())))
+            .thenReturn(reservedAttempt())
+        Mockito.`when`(delayService.enqueue(
+            anyValue(DelayedWorkerFixture.snapshot(null)), eqValue("admin"), Mockito.eq(revision)))
+            .thenReturn(DelayedEnqueueOutcome.Queued(waitingView()))
+    }
+
+    @Test fun `enabled inbound returns reserved waiting without delivery or premature archive`() {
+        stubEnqueue()
+        val result = createService(true, delayService).sendManualRichReply(
+            100, null, "Re: Test", "<p>Test</p>", "Test", "forged", authenticatedUsername = "admin")
+        assertEquals("WAITING", result.sendStatus)
+        assertEquals("<reserved@fixture.test>", result.messageId)
+        assertEquals(waitingView(), result.delayedReply)
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
+        assertEquals(0, result.unsupportedAnswerArchivedCount)
+        assertEquals(0, result.unsupportedAnswerArchiveFailedCount)
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+        val call = Mockito.mockingDetails(delayService).invocations.single { it.method.name == "enqueue" }
+        assertEquals("admin", call.arguments[1])
+        val snapshot = call.arguments[0] as DelayedManualReplySnapshot
+        assertEquals(100L, snapshot.payload.inboundProcessingId)
+        assertEquals("Test", (snapshot.restore as DelayedLegacyRestore).originalInput?.textBody)
+    }
+
+    @Test fun `enabled draftless outbound preserves nullable original source and forwards cancellation revision`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationRequestCanonical()
+        stubEnqueue(2)
+        val result = createService(true, delayService).sendConversationManualRichReply(
+            1, conversationRequestId, null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "forged", authenticatedUsername = "admin", delayExpectedRevision = 2)
+        assertEquals("WAITING", result.sendStatus)
+        val call = Mockito.mockingDetails(delayService).invocations.single { it.method.name == "enqueue" }
+        assertEquals(2L, call.arguments[2])
+        val snapshot = call.arguments[0] as DelayedManualReplySnapshot
+        val original = (snapshot.restore as DelayedLegacyRestore).originalConversationInput!!
+        assertNull(original.draftRef)
+        assertNull(original.anchorMailRecordId)
+        assertNull(original.accountScope)
+        assertNull(original.delayExpectedRevision, "Lifecycle revision must not become original source identity")
+        assertEquals(77L, snapshot.source.anchorMailRecordId)
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+    }
+
+    @Test fun `disabled flag still submits existing job to authoritative lifecycle without synchronous claim`() {
+        stubEnqueue()
+        Mockito.`when`(manualReplySendAttemptService.delayedJobFor(31)).thenReturn(existingJob())
+        val disabled = createService(false, delayService)
+        val first = disabled.sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "op",
+            authenticatedUsername = "admin")
+        val again = disabled.sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "op",
+            authenticatedUsername = "admin")
+        assertEquals(first.delayedReply?.dueAtMs, again.delayedReply?.dueAtMs)
+        assertEquals(first.messageId, again.messageId)
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+        Mockito.verify(manualReplySendAttemptService, Mockito.times(2)).findExistingByPayload(anyValue(sendPayload()))
+    }
+
+    @Test fun `enabled missing dependency and absent actor never fall back to synchronous delivery`() {
+        assertThrows(IllegalStateException::class.java) { createService(true) }
+        val failure = assertThrows(DelayedManualReplyException::class.java) {
+            createService(true, delayService).sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "admin")
+        }
+        assertEquals(401, failure.status)
+        assertFalse(hasInvocation(delayService, "enqueue"))
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+    }
+
+    @Test fun `nonpositive revision is rejected at both ordinary entrypoints before preparation`() {
+        for (revision in listOf(0L, -1L)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                service.sendManualRichReply(100, null, "Re: Test", "<p>Test</p>", "Test", "op",
+                    delayExpectedRevision = revision)
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                service.sendConversationManualRichReply(1, conversationRequestId, null, subject = "Re: Test",
+                    htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op", delayExpectedRevision = revision)
+            }
+        }
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
+        assertFalse(hasInvocation(manualReplySendAttemptService, "prepareAndClaim"))
+    }
+
+    @Test fun `enabled completed conversation remains old sent dedup with no queue lookup`() {
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(completedConversationReply())
+        val result = createService(true, delayService).sendConversationManualRichReply(
+            1, conversationRequestId, null, subject = "Re: Test", htmlBody = "<p>Test</p>",
+            textBody = "Test", operatorName = "op", authenticatedUsername = "admin")
+        assertEquals("SENT", result.sendStatus)
+        assertNull(result.delayedReply)
+        assertFalse(hasInvocation(delayService, "enqueue"))
+        assertFalse(hasInvocation(manualReplySendAttemptService, "findExistingByPayload"))
+        assertFalse(hasInvocation(mailDeliveryService, "send"))
     }
 }

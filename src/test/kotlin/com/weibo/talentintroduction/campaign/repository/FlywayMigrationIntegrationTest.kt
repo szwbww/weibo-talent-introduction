@@ -200,12 +200,13 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh empty database reaches V173 and creates the reprocess tables without seeded rows`() {
+    fun `fresh empty database reaches V174 and creates the reprocess tables without seeded rows`() {
         val flyway = flyway()
         flyway.clean()
         val result = flyway.migrate()
-        assertEquals("173", result.targetSchemaVersion)
+        assertEquals("174", result.targetSchemaVersion)
         connection().use { c ->
+            assertTrue(c.tableExists("delayed_manual_reply"))
             assertTrue(c.tableExists("discovery_paper_reprocess_run"))
             assertTrue(c.tableExists("discovery_paper_reprocess_item"))
             assertTrue(c.columnExists("inbound_mail_processing", "pending_owner_username"))
@@ -221,6 +222,88 @@ class FlywayMigrationIntegrationTest {
             assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM discovery_paper_reprocess_run"))
             assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM discovery_paper_reprocess_item"))
             assertEquals("admin", c.queryString("SELECT COLUMN_DEFAULT FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='inbound_mail_processing' AND column_name='pending_owner_username'"))
+        }
+    }
+
+    @Test
+    fun `V173 upgrades to V174 creating the delayed manual reply table without touching legacy drafts`() {
+        val before = flyway(MigrationVersion.fromVersion("173"))
+        before.clean()
+        assertEquals("173", before.migrate().targetSchemaVersion)
+        connection().use { c ->
+            c.execute("""INSERT INTO mail_send_attempt
+                (id,orcid_id,mail_type,account_code,message_id,status,created_at,updated_at)
+                VALUES (94001,'legacy-orcid','MANUAL_RICH:legacy','legacy-account',
+                        '<legacy@example.test>','PREPARED','2026-01-01 00:00:00','2026-01-01 00:00:00')""")
+            c.execute("""INSERT INTO mailbox_reply_draft
+                (id,username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,
+                 subject,html_body,text_body,context_json,created_at,updated_at)
+                VALUES (94002,'admin',94003,'INBOUND',94004,'legacy-account',3,'ACTIVE',
+                        '旧草稿','<p>旧正文</p>','旧正文','{"schemaVersion":1}',
+                        '2026-01-01 00:00:00.123','2026-01-01 00:00:00.123')""")
+        }
+
+        val result = flyway().migrate()
+        assertEquals("174", result.targetSchemaVersion)
+        assertEquals(1, result.migrationsExecuted)
+        connection().use { c ->
+            assertTrue(c.tableExists("delayed_manual_reply"))
+            listOf(
+                "send_attempt_id", "expert_contact_id", "account_code", "actor_username", "origin_kind",
+                "origin_id", "origin_version", "revision", "status", "due_at_ms", "dispatch_token",
+                "claimed_at_ms", "subject", "text_body", "snapshot_json", "public_error_code",
+                "created_at_ms", "updated_at_ms"
+            ).forEach { assertTrue(c.columnExists("delayed_manual_reply", it), it) }
+            assertTrue(c.indexExists("delayed_manual_reply", "uk_delayed_manual_reply_attempt"))
+            assertTrue(c.indexExists("delayed_manual_reply", "idx_delayed_manual_reply_due"))
+            assertTrue(c.indexExists("delayed_manual_reply", "idx_delayed_manual_reply_contact"))
+            assertTrue(c.indexExists("delayed_manual_reply", "idx_delayed_manual_reply_origin"))
+            assertTrue(c.foreignKeyExists("delayed_manual_reply", "fk_delayed_manual_reply_attempt"))
+            listOf(
+                "chk_delayed_manual_reply_status", "chk_delayed_manual_reply_revision",
+                "chk_delayed_manual_reply_due", "chk_delayed_manual_reply_origin",
+                "chk_delayed_manual_reply_sending"
+            ).forEach { assertTrue(c.checkConstraintExists("delayed_manual_reply", it), it) }
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM delayed_manual_reply"))
+
+            // I-1: epoch 毫秒逐字 round-trip；旧表行数/内容不变（I-10：旧表无字段变更）。
+            c.execute("""INSERT INTO delayed_manual_reply
+                (send_attempt_id,expert_contact_id,account_code,actor_username,origin_kind,origin_id,
+                 origin_version,revision,status,due_at_ms,subject,text_body,snapshot_json,
+                 created_at_ms,updated_at_ms)
+                VALUES (94001,94003,'legacy-account','admin','DRAFT',94002,3,1,'WAITING',
+                        1700000000060,'中文主题','中文正文','{"schemaVersion":1}',
+                        1700000000000,1700000000000)""")
+            assertEquals(
+                1700000000060L,
+                c.queryLong("SELECT due_at_ms FROM delayed_manual_reply WHERE send_attempt_id=94001")
+            )
+            assertEquals(
+                "中文主题",
+                c.queryString("SELECT subject FROM delayed_manual_reply WHERE send_attempt_id=94001")
+            )
+            assertEquals(94002L, c.queryLong("SELECT id FROM mailbox_reply_draft WHERE username='admin'"))
+            assertEquals("旧草稿", c.queryString("SELECT subject FROM mailbox_reply_draft WHERE id=94002"))
+            assertEquals(3L, c.queryLong("SELECT version FROM mailbox_reply_draft WHERE id=94002"))
+            assertEquals("PREPARED", c.queryString("SELECT status FROM mail_send_attempt WHERE id=94001"))
+            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM mail_send_attempt WHERE id=94001"))
+
+            // I-10: 一个 attempt 最多一条任务；非法状态被 CHECK 拒绝（应用层同样复核）。
+            assertThrows(SQLException::class.java) {
+                c.execute("""INSERT INTO delayed_manual_reply
+                    (send_attempt_id,expert_contact_id,account_code,actor_username,origin_kind,origin_id,
+                     origin_version,revision,status,due_at_ms,subject,text_body,snapshot_json,
+                     created_at_ms,updated_at_ms)
+                    VALUES (94001,94003,'legacy-account','admin','DRAFT',94002,3,1,'WAITING',
+                            1700000000060,'重复','重复','{}',1700000000000,1700000000000)""")
+            }
+            assertThrows(SQLException::class.java) {
+                c.execute("""INSERT INTO delayed_manual_reply
+                    (send_attempt_id,expert_contact_id,account_code,actor_username,origin_kind,revision,status,
+                     due_at_ms,subject,text_body,snapshot_json,created_at_ms,updated_at_ms)
+                    VALUES (94001,94003,'legacy-account','admin','LEGACY',1,'DELETED',
+                            1700000000060,'非法状态','正文','{}',1700000000000,1700000000000)""")
+            }
         }
     }
 

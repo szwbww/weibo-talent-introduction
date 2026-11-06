@@ -1,0 +1,553 @@
+$ rg -n --no-ignore --glob !*.pyc --glob !*.png --glob !*.jpg (attemptRepository|mailSendAttemptRepository|mailRecordRepository|mailRecordQaRuleRepository|mailRecordRagFactRepository)\.|(MailReplyDraftRepository|MailReviewDraftRepository|OutboundMailAttachmentRepository|MeetingCalendarEventRepository) src scripts
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:74:        Mockito.`when`(mailRecordRepository.listIntroductions(from, to, null, 20, 0))
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:86:        Mockito.`when`(mailRecordRepository.countIntroductions(from, to, null)).thenReturn(4)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:100:        Mockito.`when`(mailRecordRepository.listIntroductions(from, to, null, 20, 0)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:113:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:124:        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:152:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByCountry(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:182:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByCountry(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:217:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByCountry(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:247:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:259:        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:273:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:276:        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:294:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:299:        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:312:        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt:315:        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:110:        assertEquals(2L, mailRecordRepository.countFailedOutboundBetween(todayStart, todayEnd))
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:111:        assertEquals(1L, mailRecordRepository.countOutboundByMailTypeBetween("INTRODUCTION", todayStart, todayEnd))
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:134:        val stats = mailRecordRepository.aggregateSenderAccountStats(todayStart, todayEnd)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:175:        val rows = mailRecordRepository.listMailbox(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:224:        assertEquals(1L, mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:236:        val allSummary = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:244:        val pendingMails = mailRecordRepository.listMailboxByExpertContactIds(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:274:        assertEquals(2L, mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:286:        val page0 = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:299:        val page1 = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:319:        val mails = mailRecordRepository.listMailboxByExpertContactIds(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:355:        assertEquals(1L, mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:367:        val summaries = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:384:        val mails = mailRecordRepository.listMailboxByExpertContactIds(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:435:        assertEquals(1L, mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:441:        val expertSummary = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:453:        val mails = mailRecordRepository.listMailboxByExpertContactIds(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:464:        assertEquals(1L, mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:469:        val otherSummary = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:480:        assertEquals(2L, mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:484:        val allSummaries = mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:523:        val rows = mailRecordRepository.aggregateIntroCohortByCountry(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:573:        val rows = mailRecordRepository.aggregateIntroCohortByCountry(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:623:        val rows = mailRecordRepository.aggregateIntroCohortByCountry(
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:669:        val byCountry = mailRecordRepository.aggregateIntroCohortByCountry(from, to, matureBefore)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:671:        val byDomain = mailRecordRepository.aggregateIntroCohortByDomain(from, to, matureBefore)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:710:        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:738:        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:762:        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt:787:        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileServiceTest.kt:125:        Mockito.`when`(mailRecordRepository.findAll()).thenReturn(records)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileServiceTest.kt:533:        mailRecordRepository.verifyNoWrites()
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:84:        val mail = mailRecordRepository.findById(sourceId).orElseThrow {
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:108:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:280:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:290:        Mockito.`when`(mailSendAttemptRepository.findByOrcidIdAndMailType(Mockito.anyString(), Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:392:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:433:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(31L))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:545:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(31L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:597:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:800:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:822:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(4L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1077:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(listOf(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1117:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1244:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1280:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1312:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1374:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(listOf(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1398:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1420:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1442:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1467:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1475:        Mockito.`when`(mailSendAttemptRepository.findByOrcidIdAndMailType("0001", "INTRODUCTION"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1506:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1581:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1611:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1647:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1679:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1705:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1749:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1786:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1886:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(failureRows)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1941:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(failureRows)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2005:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2042:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2071:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2111:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2153:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2291:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(listOf(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2320:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2439:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2440:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(2L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2468:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(2L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2491:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(2L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2581:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2657:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(cid))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2737:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2762:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2819:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3156:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(55L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3360:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3395:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3444:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3493:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3527:                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3579:                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3636:                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3688:                Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3741:                    Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4457:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4483:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4504:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4537:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4565:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4710:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6007:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6017:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6107:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6219:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6629:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6701:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(901L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6702:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(902L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:6802:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:7293:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(listOf(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:70:        Mockito.`when`(mailSendAttemptRepository.findById(77L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:78:        Mockito.`when`(mailRecordRepository.save(anyValue(MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:79:        Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:148:        Mockito.`when`(mailRecordRepository.save(anyValue(MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:150:        Mockito.`when`(mailSendAttemptRepository.findById(88L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:157:        Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:170:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:171:        Mockito.`when`(mailSendAttemptRepository.findById(77L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:178:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:205:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:239:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:241:        Mockito.`when`(mailSendAttemptRepository.findById(77L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:248:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:259:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:260:        Mockito.`when`(mailSendAttemptRepository.findById(77L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:267:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:76:            introductions = mailRecordRepository.countOutboundByMailTypeBetween("INTRODUCTION", start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:77:            inboundReplies = mailRecordRepository.countInboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:78:            repliedExperts = mailRecordRepository.countDistinctRepliedExpertsBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:79:            autoReplies = mailRecordRepository.countAutoRepliesBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:80:            operatorOutbound = mailRecordRepository.countOperatorOutboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:81:            meetingInvitations = mailRecordRepository.countOutboundByMailTypeBetween("MEETING_INVITATION", start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:84:            failedOutbound = mailRecordRepository.countFailedOutboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:97:        val records = mailRecordRepository.listIntroductions(start, end, senderAccountCode, pageSize.safeLimit(), pageOffset.safeOffset())
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:124:            totalCount = mailRecordRepository.countIntroductions(start, end, senderAccountCode)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:139:        val records = mailRecordRepository.listOutboundReplies(
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:145:            ?.let { mailRecordRepository.findAllById(it).associateBy { record -> record.id } }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:180:            totalCount = mailRecordRepository.countOutboundReplies(start, end, triggeredBy, mailType, senderAccountCode, sendStatus)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:253:        val stats = mailRecordRepository.aggregateSenderAccountStats(from, to).associateBy { it.senderAccountCode }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:280:        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:297:        mailRecordRepository.aggregateIntroCohortByDomain(start, end, matureBefore).forEach { row ->
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:306:        mailRecordRepository.aggregateUndeliveredByDomain(start, end).forEach { row ->
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:334:        val countryRows = mailRecordRepository.aggregateIntroCohortByCountry(start, end, matureBefore)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:81:            return mailRecordRepository.findByIdOrNull(attachment.mailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:710:                val record = mailRecordRepository.findByIdOrNull(id)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:7:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:53:    private val repository = Mockito.mock(MeetingCalendarEventRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:492:    ): MeetingCalendarEventRepository.EventRow = MeetingCalendarEventRepository.EventRow(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:557:@Import(MeetingCalendarEventRepository::class, MeetingCalendarService::class)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:57:                val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:69:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:96:        val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:98:            mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:127:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:151:            val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:153:                mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:5:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:27:    private val repository: MeetingCalendarEventRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:30:    data class Page(val items: List<MeetingCalendarEventRepository.EventRow>, val nextCursor: String?)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:39:    ): MeetingCalendarEventRepository.EventRow {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:64:    fun createFromSentMail(record: MailRecord, input: MeetingCalendarInput): MeetingCalendarEventRepository.EventRow {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:100:        existing: MeetingCalendarEventRepository.EventRow
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:101:    ): MeetingCalendarEventRepository.EventRow {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:108:    fun get(id: Long): MeetingCalendarEventRepository.EventRow =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:177:    ): MeetingCalendarEventRepository.EventRow {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:200:    fun cancel(id: Long, expectedUpdatedAt: String, reason: String?): MeetingCalendarEventRepository.EventRow {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:263:    private fun requireVersion(row: MeetingCalendarEventRepository.EventRow, expected: Instant) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:307:        val next: MeetingCalendarEventRepository.EventRow?
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:318:        private val EVENT_ORDER = compareBy<MeetingCalendarEventRepository.EventRow> { it.event.startsAtUtc }
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:121:        val records = mailRecordRepository.findInboundMailsForSimulation(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:129:        val total = mailRecordRepository.countInboundMailsForSimulation(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:177:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(normalizedKeyword, normalizedLimit)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:184:            val latestInbound = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:197:            val mail = mailRecordRepository.findById(request.mailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:211:            val latest = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:218:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1550:                    val existingAttempt = mailSendAttemptRepository.findByOrcidIdAndMailType(normOrcid, "INTRODUCTION")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1551:                    val attempt = mailSendAttemptRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2007:                    val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2227:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2272:            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2408:                val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2557:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:71:        val mails = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:50:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(null, limit)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:56:                val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarController.kt:3:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository.EventRow
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:750:            Mockito.`when`(outreach.mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(c.id!!)).thenReturn(emptyList())
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2356:        val mail = mailRecordRepository.findById(source.sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2401:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:15:class MeetingCalendarEventRepository(
+src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt:12:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt:231:    private fun row(): MeetingCalendarEventRepository.EventRow = MeetingCalendarEventRepository.EventRow(
+src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt:262:    MeetingCalendarEventRepository::class,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:56:        val mailRecords = mailRecordRepository.findAll()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:145:        mailRecordRepository.save(
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:80:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail(null, 1))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:82:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:102:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail(null, 1))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:104:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:164:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail(null, 1))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:178:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail(null, 3))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:181:            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:260:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(null, 10)
+src/test/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionServiceTest.kt:282:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(null, 10)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:334:            mailRecordRepository.findAllById(outboundSentRows.map { it.id })
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt:39:        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:402:        Mockito.`when`(mailRecordRepository.findById(77L)).thenReturn(Optional.of(exactMail))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:404:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:430:        Mockito.`when`(mailRecordRepository.findById(999L)).thenReturn(Optional.empty())
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:457:        Mockito.`when`(mailRecordRepository.findById(55L)).thenReturn(Optional.of(outbound))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:470:        Mockito.`when`(mailRecordRepository.findById(66L)).thenReturn(Optional.of(mail))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:531:            mailRecordRepository.findInboundMailsForSimulation(true, listOf(-1L), null, null, 20, 0)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:534:            mailRecordRepository.countInboundMailsForSimulation(true, listOf(-1L), null, null)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:555:            mailRecordRepository.findInboundMailsForSimulation(true, listOf(-1L), 3L, null, 20, 0)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:558:            mailRecordRepository.countInboundMailsForSimulation(true, listOf(-1L), 3L, null)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:584:            mailRecordRepository.findInboundMailsForSimulation(false, listOf(10L), null, null, 20, 0)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:587:            mailRecordRepository.countInboundMailsForSimulation(false, listOf(10L), null, null)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:740:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail(null, 50))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:744:        Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(2L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:746:        Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(1L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:762:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail("alice", 50))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:765:        Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(5L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:780:        Mockito.`when`(mailRecordRepository.findExpertContactIdsWithInboundMail(null, 50))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:783:        Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(10L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:794:        Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(10L)).thenReturn(inbound)
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:795:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:853:        Mockito.`when`(mailRecordRepository.findById(77L)).thenReturn(Optional.of(inbound))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:855:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:921:        Mockito.`when`(mailRecordRepository.findById(88L)).thenReturn(Optional.of(current))
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:923:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt:124:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt:267:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt:299:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt:326:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:134:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:159:                mailRecordQaRuleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:364:            contact.id?.let { mailRecordRepository.findLatestInboundByExpertContactId(it) }
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:235:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:264:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 2))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:277:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 999))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:290:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:306:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:321:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:347:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 1))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:364:        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 1))
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:947:        Mockito.`when`(mailRecordRepository.findByIdOrNull(300L)).thenReturn(mailRecord(300, 1))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:233:        val attempt = attemptRepository.findByOrcidIdAndMailType(orcidId, shortKey) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:236:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:246:        val attempt = attemptRepository.findById(attemptId).orElse(null) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:248:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:258:        val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:273:            validateReviewRecord(payload, record = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:276:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:288:            val bound = attemptRepository.findById(review.sendAttemptId).orElseThrow { IllegalStateException("Review attempt missing") }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:294:                    validateReviewRecord(payload, mailRecordRepository.findByMailSendAttemptId(requireNotNull(bound.id))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:310:            val bound = attemptRepository.findById(draftRow.sendAttemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:326:        attemptRepository.insertIgnore(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:340:        val attempt = attemptRepository.findByOrcidIdAndMailTypeForUpdate(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:364:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:388:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:431:                validateReviewRecord(payload, mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:437:                check(mailRecordRepository.findByMailSendAttemptId(claim.attemptId)?.sendStatus == "SENT") {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:453:        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:471:        val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:509:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:514:                mailRecordQaRuleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:533:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:557:        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:575:        val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:614:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:617:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:486:        val duplicateInbound = mailRecordRepository.findRecentDuplicateInbound(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:519:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:860:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:883:            mailRecordQaRuleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1207:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1245:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1252:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1406:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1605:            .flatMap { mailRecordRepository.findOutboundCandidatesByMessageId(it) }
+src/test/kotlin/com/weibo/talentintroduction/document/controller/ManualExpertMaterialUploadFlowTest.kt:638:        Mockito.`when`(mailRecordRepository.findAll()).thenReturn(listOf(inbound))
+src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleAuditServiceTest.kt:39:        Mockito.`when`(mailRecordQaRuleRepository.findByMailRecordIdOrderByOrdinalAsc(100L))
+src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleAuditServiceTest.kt:71:        Mockito.`when`(mailRecordQaRuleRepository.findByMailRecordIdOrderByOrdinalAsc(200L))
+src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleAuditServiceTest.kt:98:        Mockito.`when`(mailRecordQaRuleRepository.findByMailRecordIdOrderByOrdinalAsc(300L))
+src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleAuditServiceTest.kt:292:        Mockito.`when`(mailRecordQaRuleRepository.findByMailRecordIdOrderByOrdinalAsc(100L))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftService.kt:9:import com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftService.kt:19:    private val repository: MailReplyDraftRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt:4:import com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt:21:    private val repository: MailReviewDraftRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt:214:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:182:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:189:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:100:                .firstNotNullOfOrNull { mailRecordRepository.findByMessageId(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:528:            mailRecordRepository.findById(anchorMailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:531:            mailRecordRepository.findLatestSentOutboundAnchor(contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1030:                val existingRecord = mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1294:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(requireNotNull(contact.id))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:394:            return mailRecordRepository.findByIdOrNull(mailRecordId)?.expertContactId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:34:        val replyCount = mailRecordRepository.countInboundReplies(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:213:            for (record in mailRecordRepository.findOutboundCandidatesByMessageId(candidate)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:6:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:38:    private val repository: OutboundMailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt:50:        val record = mailRecordRepository.findById(mailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:53:        val rows = mailRecordRepository.listMailbox(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:65:        val total = mailRecordRepository.countMailbox(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:109:        val total = mailRecordRepository.countMailboxExperts(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:125:        val summaries = mailRecordRepository.listMailboxExpertSummaries(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:144:        val mailRows = mailRecordRepository.listMailboxByExpertContactIds(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:192:        val items = mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(taskExecutionId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:265:                val record = mailRecordRepository.findByIdOrNull(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:400:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:283:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:37:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:114:    private val attachmentRepository: OutboundMailAttachmentRepository =
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:115:        Mockito.mock(OutboundMailAttachmentRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:272:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(CONTACT_ID))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:310:            mailRecordRepository.findLatestSentOutboundAnchor(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:340:        Mockito.`when`(mailRecordRepository.findById(Mockito.anyLong()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:342:        Mockito.`when`(mailRecordRepository.findAllById(Mockito.anyCollection()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferServiceTest.kt:417:        Mockito.`when`(mailRecordRepository.findByIdOrNull(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferServiceTest.kt:482:        Mockito.`when`(mailRecordRepository.findByIdOrNull(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorServiceTest.kt:30:            mailRecordRepository.countSentByAccountSince(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:9:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:64:@Import(MailReplyDraftRepository::class,MailReplyDraftService::class,ManualReplySendAttemptService::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:65:    MeetingCalendarEventRepository::class,MeetingCalendarSendIntegrationTestSupport::class)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxTaskExecutionFilterTest.kt:192:            mailRecordRepository.listMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxTaskExecutionFilterTest.kt:206:            mailRecordRepository.countMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxTaskExecutionFilterTest.kt:232:        Mockito.`when`(mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(13023L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxTaskExecutionFilterTest.kt:250:        Mockito.`when`(mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(999L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxTaskExecutionFilterTest.kt:265:        Mockito.`when`(mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(13023L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftServiceTest.kt:14:    private val repository = mock(MailReplyDraftRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:463:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:465:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:505:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:537:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:539:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:579:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:581:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:631:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:633:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:727:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:767:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:769:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:830:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:832:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:877:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:879:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:920:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:922:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1279:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1281:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1569:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "MEETING_INVITATION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1636:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "MEETING_INVITATION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1712:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1719:            mailRecordRepository.findRecentDuplicateInbound(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1875:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "MEETING_INVITATION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1921:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1923:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2191:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2247:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2301:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2303:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2362:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2364:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2682:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2684:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2815:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2817:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2850:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2867:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:3084:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:3353:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:3355:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt:163:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxReadAccessProjectionTest.kt:94:        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxReadAccessProjectionTest.kt:250:        Mockito.`when`(mailRecordRepository.findAllById(listOf(77L))).thenReturn(listOf(record))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:149:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:219:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:313:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:833:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1517:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1576:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1621:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1691:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1738:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1786:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1833:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1912:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(10L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceBackfillServiceTest.kt:132:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:106:            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(inbound.expertContactId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionServiceTest.kt:350:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionServiceTest.kt:430:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:128:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(prefixed)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:129:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(stored)).thenReturn(listOf(outboundRecord))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:191:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId("orig-hard@example.com")).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:227:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId("orig-nonaddress@example.com"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:254:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId("orig-soft-511@example.com"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:321:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:348:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:375:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:397:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:419:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:441:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:467:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:491:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:515:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionServiceTest.kt:560:        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:10:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:83:    MeetingCalendarEventRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:86:    com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:274:        val saved = mailRecordRepository.findByMailSendAttemptId(requireNotNull(attemptId()))!!
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:678:    repository: MeetingCalendarEventRepository,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:686:    ): MeetingCalendarEventRepository.EventRow {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:696:@Import(com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:702:        repository: MeetingCalendarEventRepository,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:710:    fun outboundAttachmentService(repository: com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:106:    private val draftRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:169:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:365:            mailRecordRepository.findLatestSentOutboundAnchor(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:467:        Mockito.`when`(mailRecordRepository.findById(2893L)).thenReturn(Optional.of(chosen))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:473:            mailRecordRepository.findLatestSentOutboundAnchor(1L, null, MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt:522:            Mockito.`when`(mailRecordRepository.findById(2893L)).thenReturn(Optional.ofNullable(record))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:13:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:65:    private val repository: OutboundMailAttachmentRepository =
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:66:        Mockito.mock(OutboundMailAttachmentRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:204:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:256:        Mockito.`when`(mailRecordRepository.findLatestInboundByExpertContactId(1L)).thenReturn(anchor)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:260:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:919:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:1271:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:1326:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:15:class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, private val objectMapper: ObjectMapper) {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:227:        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:228:        Mockito.`when`(mailRecordRepository.findById(Mockito.anyLong())).thenReturn(Optional.empty())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1925:        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(records)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2347:        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2348:        Mockito.`when`(mailRecordRepository.findById(Mockito.anyLong())).thenReturn(Optional.empty())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2432:        Mockito.`when`(mailRecordRepository.findAllById(anyCollection()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2435:            Mockito.`when`(mailRecordRepository.findById(record.id!!)).thenReturn(Optional.of(record))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:159:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:176:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:193:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:207:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:219:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:232:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:250:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt:263:        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:5:import com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:44:    @Import(MailReviewDraftService::class, MailReviewDraftRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:19:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:22:import com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:23:import com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:69:        MeetingCalendarEventRepository::class, MailReplyDraftController::class, MailReplyDraftService::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:70:        MailReplyDraftRepository::class, MailReviewDraftService::class, MailReviewDraftRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:124:    @Autowired private lateinit var draftRepository: MailReplyDraftRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:128:            mailRecordRepository.listMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:143:            mailRecordRepository.countMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:225:            mailRecordRepository.listMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:239:            mailRecordRepository.countMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:390:            mailRecordRepository.listMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:404:            mailRecordRepository.countMailbox(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:473:        Mockito.`when`(mailRecordRepository.findByIdOrNull(5L)).thenReturn(record)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:688:            mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:713:            mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:732:            mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:756:            mailRecordRepository.listMailboxByExpertContactIds(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:778:            mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:800:            mailRecordRepository.listMailboxExpertSummaries(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:824:            mailRecordRepository.listMailboxByExpertContactIds(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:868:            mailRecordRepository.countMailboxExperts(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:82:            attemptRepository.findByOrcidIdAndMailTypeForUpdate(anyString(), anyString())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:417:            attemptRepository.claimStatus(Mockito.anyLong(), anyString(), anyString(), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:436:            attemptRepository.claimStatus(Mockito.anyLong(), anyString(), anyString(), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:471:            attemptRepository.findByOrcidIdAndMailTypeForUpdate(anyString(), anyString())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:481:            attemptRepository.findByOrcidIdAndMailTypeForUpdate(anyString(), anyString())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:489:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:490:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:491:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:511:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:512:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:513:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:540:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:541:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:542:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:567:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:573:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:588:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:606:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:646:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(failedRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:685:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(failedRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:719:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(failedRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:774:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:793:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:812:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:830:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:850:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:868:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:885:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:905:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:952:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:983:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:984:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:996:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1011:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1033:            attemptRepository.findByOrcidIdAndMailTypeForUpdate(anyString(), anyString())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1038:            attemptRepository.claimStatus(Mockito.anyLong(), anyString(), anyString(), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1066:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1069:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(failedRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1323:        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fp.shortKey))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1332:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(completedRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1340:        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fp.shortKey))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1344:        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fp.shortKey))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1346:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1349:        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(Mockito.anyString(), Mockito.anyString()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1365:        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1366:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1368:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1433:            Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(createAttempt(status,service.computeFingerprint(payload))))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:265:        Mockito.`when`(mailRecordRepository.findByMessageId("out-msg-1")).thenReturn(outboundRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:286:        Mockito.`when`(mailRecordRepository.findByMessageId(prefixed)).thenReturn(null)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:287:        Mockito.`when`(mailRecordRepository.findByMessageId(stored)).thenReturn(outboundRecord)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:316:        Mockito.`when`(mailRecordRepository.findByMessageId(Mockito.anyString())).thenReturn(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:17:class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:21:class OutboundMailAttachmentRepository(
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:67:        reviews = MailReviewDraftService(MailReviewDraftRepository(named, mapper), repository, senders,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:166:        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:1476:        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:45:class MailReplyDraftRepositoryIT {
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:59:    private val repository by lazy { MailReplyDraftRepository(NamedParameterJdbcTemplate(dataSource)) }
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:85:        val metadata = OutboundMailAttachmentRepository(NamedParameterJdbcTemplate(dataSource))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:8:import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:62:@Import(MailReviewDraftRepository::class, MailReviewDraftService::class, MailboxConversationRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:64:    MailReplyDraftRepository::class, MailReplyDraftService::class, MeetingCalendarEventRepository::class,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:78:    @SpyBean private lateinit var repository: MailReviewDraftRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionServiceTest.kt:47:        Mockito.`when`(mailRecordRepository.countInboundReplies(anyValue(1L))).thenReturn(1)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionServiceTest.kt:58:        Mockito.`when`(mailRecordRepository.countInboundReplies(anyValue(1L))).thenReturn(2)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionServiceTest.kt:68:        Mockito.`when`(mailRecordRepository.countInboundReplies(anyValue(1L))).thenReturn(3)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionServiceTest.kt:102:        Mockito.`when`(mailRecordRepository.countInboundReplies(anyValue(1L))).thenReturn(3)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewServiceTest.kt:493:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewServiceTest.kt:501:            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(

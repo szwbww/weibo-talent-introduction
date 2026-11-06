@@ -15,9 +15,11 @@ import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyRequestDiagnostic
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.MailRecordRagFact
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
+import com.weibo.talentintroduction.mail.repository.MailRecordRagFactRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.template.domain.MailComposeTemplate
 import com.weibo.talentintroduction.template.service.MailComposeTemplateBlockDetail
@@ -45,9 +47,10 @@ class ManualReplySendAttemptServiceTest {
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
     private val meetingCalendarService = Mockito.mock(MeetingCalendarService::class.java)
     private val draftService = Mockito.mock(MailReplyDraftService::class.java)
+    private val ragFactRepository = Mockito.mock(MailRecordRagFactRepository::class.java)
     private val service = ManualReplySendAttemptService(
         attemptRepository, mailRecordRepository, mailRecordQaRuleRepository, operatorActionLogService,
-        meetingCalendarService,draftService
+        meetingCalendarService,draftService, mailRecordRagFactRepository = ragFactRepository
     )
 
     private val payload = ManualReplySendAttemptService.SendPayload(
@@ -1412,6 +1415,116 @@ class ManualReplySendAttemptServiceTest {
         assertEquals("Hello", after["bodyPreviewText"])
         assertFalse(after.containsKey("canonicalFactIds"))
     }
+    // fast-p 02 (T3/I-5): RAG 存证与 SENT 记录同一成功事务；QA 与 RAG 互斥。
+    @Test
+    fun `finalizeSuccess writes ordered rag evidence inside the sent transaction`() {
+        val ragPayload = payload.copy(canonicalQaRuleIds = emptyList(), primaryRuleId = null).also {
+            it.ragEvidence = ManualReplySendAttemptService.RagEvidence(
+                factCodes = listOf("KB-FUND-033", "KB-COMP-007", "KB-FUND-033"),
+                corpusFingerprint = "corpus-1"
+            )
+        }
+        val attempt = createAttempt(
+            MailSendAttemptStatus.DELIVERY_IN_PROGRESS,
+            service.computeFingerprint(ragPayload)
+        )
+        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 500L) }
+        val captured = mutableListOf<List<MailRecordRagFact>>()
+        Mockito.doAnswer { invocation ->
+            val rows = invocation.getArgument<Iterable<MailRecordRagFact>>(0).toList()
+            captured += rows
+            rows
+        }.`when`(ragFactRepository).saveAll(Mockito.anyIterable())
+
+        val mailRecordId = service.finalizeSuccess(ragPayload, 1L, "<manual-rich-abc@weibo.com>")
+
+        assertEquals(500L, mailRecordId)
+        val rows = captured.single()
+        assertEquals(
+            listOf("KB-FUND-033" to 0, "KB-COMP-007" to 1, "KB-FUND-033" to 2),
+            rows.map { it.factCode to it.ordinal }
+        )
+        assertTrue(rows.all { it.mailRecordId == 500L })
+        assertTrue(rows.all { it.corpusFingerprint == "corpus-1" })
+        val inOrder = Mockito.inOrder(mailRecordRepository, ragFactRepository)
+        inOrder.verify(mailRecordRepository).save(Mockito.any(MailRecord::class.java))
+        inOrder.verify(ragFactRepository).saveAll(Mockito.anyIterable())
+        val update = Mockito.mockingDetails(attemptRepository).invocations
+            .single { it.method.name == "updateStatusAndError" }
+        assertEquals(MailSendAttemptStatus.SENT, update.arguments[1])
+    }
+
+    @Test
+    fun `finalizeSuccess with empty rag evidence writes no rag rows`() {
+        val ragPayload = payload.copy(canonicalQaRuleIds = emptyList(), primaryRuleId = null).also {
+            it.ragEvidence = ManualReplySendAttemptService.RagEvidence(
+                factCodes = emptyList(),
+                corpusFingerprint = "corpus-1"
+            )
+        }
+        val attempt = createAttempt(
+            MailSendAttemptStatus.DELIVERY_IN_PROGRESS,
+            service.computeFingerprint(ragPayload)
+        )
+        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 500L) }
+
+        service.finalizeSuccess(ragPayload, 1L, "<manual-rich-abc@weibo.com>")
+
+        Mockito.verifyNoInteractions(ragFactRepository)
+    }
+
+    @Test
+    fun `finalizeSuccess rejects qa and rag evidence together before writing`() {
+        val conflicting = payload.copy() // canonicalQaRuleIds = [10]
+            .also {
+                it.ragEvidence = ManualReplySendAttemptService.RagEvidence(
+                    factCodes = listOf("KB-FUND-033"),
+                    corpusFingerprint = "corpus-1"
+                )
+            }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.finalizeSuccess(conflicting, 1L, "<manual-rich-abc@weibo.com>")
+        }
+        Mockito.verifyNoInteractions(mailRecordRepository, ragFactRepository)
+    }
+
+    @Test
+    fun `finalizeSuccess propagates a rag write failure without marking the attempt sent`() {
+        val ragPayload = payload.copy(canonicalQaRuleIds = emptyList(), primaryRuleId = null).also {
+            it.ragEvidence = ManualReplySendAttemptService.RagEvidence(
+                factCodes = listOf("KB-FUND-033"),
+                corpusFingerprint = "corpus-1"
+            )
+        }
+        val attempt = createAttempt(
+            MailSendAttemptStatus.DELIVERY_IN_PROGRESS,
+            service.computeFingerprint(ragPayload)
+        )
+        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 500L) }
+        Mockito.`when`(ragFactRepository.saveAll(Mockito.anyIterable<MailRecordRagFact>()))
+            .thenThrow(IllegalStateException("rag write failed"))
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            service.finalizeSuccess(ragPayload, 1L, "<manual-rich-abc@weibo.com>")
+        }
+
+        assertEquals("rag write failed", failure.message)
+        assertFalse(
+            Mockito.mockingDetails(attemptRepository).invocations
+                .any { it.method.name == "updateStatusAndError" }
+        )
+    }
+
     private fun draftRef() = ValidatedDraftSendRef("op",20,1,
         MailReplyDraftTarget(1,MailReplyDraftKind.INBOUND,100,"sender-1"),MailReplyDraftContent(),null,null)
 

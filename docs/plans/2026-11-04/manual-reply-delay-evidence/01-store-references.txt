@@ -1,0 +1,334 @@
+$ rg -n --no-ignore --glob !*.pyc --glob !*.png --glob !*.jpg mail_send_attempt|mailbox_reply_draft|mailbox_review_draft|mailbox_review_draft_event|outbound_mail_attachment|mail_record_rag_fact|mail_record_qa_rule|meeting_calendar_event src scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:202:     * 列宽与 04 的 `outbound_mail_attachment.created_by` 同为 100 字符，复用同一常量。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailRecordRagFact.kt:8: * `mail_record_rag_fact` 表（与 `mail_record_qa_rule` 并列，一封信只会写其中一张，
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailRecordRagFact.kt:19:@Table("mail_record_rag_fact")
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailRecordQaRule.kt:6:@Table("mail_record_qa_rule")
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:8: * outbound_mail_attachment：一行 = 一次成功上传的通用附件原件元数据（04 I-1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:17:@Table("outbound_mail_attachment")
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/MailSendAttempt.kt:7:@Table("mail_send_attempt")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:230:        // → 400 SEND_EVIDENCE_SOURCE_CONFLICT，绝不任选其一（否则 mail_record_qa_rule 与
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:231:        // mail_record_rag_fact 各写一份、互相矛盾）。判定先于下方 assembly 服务端重算。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:913:                            // mail_record_rag_fact 存证；RAG 路径 canonicalFactIds 恒为空，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:914:                            // 绝不写 mail_record_qa_rule。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:123: * 省略时退化为直连 SQL 的 contact/alias/mail_record/mail_send_attempt 检查，非人物与单元测试零影响。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:454:    /** 只读：已有成功/未知交付历史（mail_record / mail_send_attempt 事实），无则 null。 */
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:504:     * 再补直连 SQL 的 mail_record / mail_send_attempt / alias 事实。任一命中即阻断，
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:522:        // 既有 contact / mail_send_attempt 以 orcid_id（normOrcid）为键，未必等于 esDocId；
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:587:        // 3. mail_send_attempt：在途/成功/未知均阻断（核实后的本次尝试行除外）。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:595:                detail = "mail_send_attempt=$attemptStatus",
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:674:            "SELECT id FROM mail_send_attempt WHERE id = ? AND mail_type = ? AND orcid_id IN ($placeholders)",
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:751:            SELECT status FROM mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:30:        return jdbc.query("SELECT * FROM mailbox_review_draft WHERE id=:id" + if (lock) " FOR UPDATE" else "", mapOf("id" to id), mapper).singleOrNull()
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:33:        "SELECT * FROM mailbox_review_draft WHERE owner_username=:owner AND client_request_id=:request",
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:49:        jdbc.update("""INSERT INTO mailbox_review_draft
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:59:        return jdbc.update("""UPDATE mailbox_review_draft SET version=version+1,state=:state,subject=:subject,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:115:        check(jdbc.update("""UPDATE mailbox_review_draft SET send_attempt_id=:attempt
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:123:        return jdbc.query("""SELECT a.status,m.id AS record_id FROM mail_send_attempt a
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:124:            LEFT JOIN mail_record m ON m.mail_send_attempt_id=a.id AND m.send_status='SENT'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:135:        "SELECT * FROM mailbox_review_draft_event WHERE id=:id", mapOf("id" to id), eventMapper).singleOrNull()
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:140:        val exists = jdbc.queryForObject("""SELECT COUNT(*) FROM mailbox_review_draft_event
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:162:        "SELECT d.* FROM mailbox_review_draft d" + visibility(actor, contactId, includeDeleted) + " ORDER BY d.updated_at DESC,d.id DESC LIMIT :size OFFSET :offset",
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:165:        "SELECT COUNT(*) FROM mailbox_review_draft d" + visibility(actor, contactId, includeDeleted),
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:167:    fun commentCount(id: Long): Long = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft_event WHERE draft_id=:id AND event_type='COMMENT'", mapOf("id" to id), Long::class.java) ?: 0L
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:173:        jdbc.update("""INSERT INTO mailbox_review_draft_event (draft_id,draft_version,event_type,actor_username,payload_json,created_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:196:        "SELECT * FROM mailbox_review_draft_event WHERE draft_id=:id" + (if (beforeId == null) "" else " AND id<:before") + " ORDER BY id DESC LIMIT :limit",
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt:199:        "SELECT * FROM mailbox_review_draft_event WHERE draft_id=:id AND event_type='CREATE' ORDER BY id LIMIT 1", mapOf("id" to draftId), eventMapper).singleOrNull()
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRagFactRepository.kt:7: * 计划 03b (T2): `mail_record_rag_fact` 存证仓储，与
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:27:        a.status AS send_attempt_status FROM mailbox_reply_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:29:        LEFT JOIN mail_send_attempt a ON a.id=d.send_attempt_id"""
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:37:        jdbc.update("""INSERT INTO mailbox_reply_draft (username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,subject,html_body,text_body,context_json,created_at,updated_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:43:        return jdbc.update("""UPDATE mailbox_reply_draft SET version=version+1,state='ACTIVE',subject=:subject,html_body=:html,text_body=:text,context_json=:context,updated_at=:now$resetBinding
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:47:    fun discard(owner: String, id: Long, version: Long, now: LocalDateTime): Boolean = jdbc.update("""UPDATE mailbox_reply_draft SET state='DISCARDED',version=version+1,subject=NULL,html_body=NULL,text_body=NULL,context_json=NULL,updated_at=:now
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:65:        val total = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_reply_draft d LEFT JOIN expert_contact c ON c.id=d.expert_contact_id$filter",params,Long::class.java) ?: 0
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:69:            FROM mailbox_reply_draft d LEFT JOIN expert_contact c ON c.id=d.expert_contact_id$filter ORDER BY d.updated_at DESC,d.id DESC LIMIT :limit OFFSET :offset""",params,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:78:        val total = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_reply_draft d$filter",params,Long::class.java) ?: 0
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:79:        val counts = if (contacts.isEmpty()) emptyMap() else jdbc.query("SELECT d.expert_contact_id,COUNT(*) AS n FROM mailbox_reply_draft d$filter AND d.expert_contact_id IN (:contacts) GROUP BY d.expert_contact_id",params,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:89:        jdbc.queryForList("SELECT id FROM mailbox_reply_draft WHERE username=:owner AND id=:id FOR UPDATE",mapOf("owner" to owner,"id" to id))
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:95:        return jdbc.update("""UPDATE mailbox_reply_draft SET send_attempt_id=:attempt,send_version=:version
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:103:        return jdbc.update("""UPDATE mailbox_reply_draft SET state='SENT',version=version+1,subject=NULL,html_body=NULL,text_body=NULL,context_json=NULL,updated_at=:now
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:110:        return jdbc.update("UPDATE mailbox_reply_draft SET send_attempt_id=NULL,send_version=NULL WHERE username=:owner AND id=:id AND send_attempt_id=:attempt AND send_version=:version",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt:153:                val rows = jdbc.queryForList("SELECT expert_contact_id FROM outbound_mail_attachment WHERE id = :id", mapOf("id" to rawId))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt:170:            Target.EVENT -> requireFull(username, owner("meeting_calendar_event", id("id")))
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:357:    // 每位专家至多一封 INTRODUCTION（mail_send_attempt 的 uq_orcid_mail_type (orcid_id, mail_type)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:10: * outbound_mail_attachment 的显式 JDBC 读写（04 T1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:29:            INSERT INTO outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:64:              FROM outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:149:            SELECT COUNT(*) FROM mailbox_review_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:228:              FROM mailbox_review_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:245:            SELECT COUNT(*) FROM mailbox_review_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:845:          FROM mailbox_reply_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:856:          FROM mailbox_review_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:886:                    SELECT 1 FROM mailbox_review_draft d
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1039:     *   mail_send_attempt UNIQUE upsert, hasSentIntroduction double-check — all unchanged).
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:385:     * 发送前对全部成员的读检查（联系人/别名/mail_record/mail_send_attempt）持续阻断换址首发；
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:16:    @Query("SELECT * FROM mail_send_attempt WHERE orcid_id = :orcidId AND mail_type = :mailType FOR UPDATE")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:22:        INSERT IGNORE INTO mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:47:        UPDATE mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:59:        UPDATE mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:126:        UPDATE meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:151:        UPDATE meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:183:              FROM meeting_calendar_event e
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:188:            INSERT INTO meeting_calendar_event
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:2:-- V126 outbound_mail_attachment（fast-p 04：人工回复通用附件上传原件）
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:21:CREATE TABLE outbound_mail_attachment (
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:31:    KEY idx_outbound_mail_attachment_contact (expert_contact_id, created_at),
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:32:    CONSTRAINT fk_outbound_mail_attachment_contact
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:1:CREATE TABLE mail_send_attempt (
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:16:ALTER TABLE mail_record ADD COLUMN mail_send_attempt_id BIGINT DEFAULT NULL;
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:17:CREATE INDEX idx_mr_mail_send_attempt_id ON mail_record(mail_send_attempt_id);
+src/main/resources/db/migration/V169__create_mailbox_review_draft.sql:1:CREATE TABLE mailbox_review_draft (
+src/main/resources/db/migration/V169__create_mailbox_review_draft.sql:38:CREATE TABLE mailbox_review_draft_event (
+src/main/resources/db/migration/V169__create_mailbox_review_draft.sql:48:    CONSTRAINT fk_review_draft_event FOREIGN KEY (draft_id) REFERENCES mailbox_review_draft(id) ON DELETE RESTRICT
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:4:SELECT msa.id AS mail_send_attempt_id
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:5:  FROM mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:18:ALTER TABLE mail_send_attempt
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:27:JOIN mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:31:SET mr.mail_send_attempt_id = msa.id
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:32:WHERE mr.mail_send_attempt_id IS NULL;
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:35:DROP INDEX idx_mr_mail_send_attempt_id ON mail_record;
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:38:    ADD CONSTRAINT uq_mail_record_send_attempt UNIQUE (mail_send_attempt_id),
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:40:        FOREIGN KEY (mail_send_attempt_id) REFERENCES mail_send_attempt(id);
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:42:UPDATE mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:44:  ON mr.mail_send_attempt_id = msa.id
+src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql:1:CREATE TABLE mailbox_reply_draft (
+src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql:19:    UNIQUE KEY uk_mailbox_reply_draft_target (username, expert_contact_id, target_kind, inbound_processing_id, account_scope),
+src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql:20:    KEY idx_mailbox_reply_draft_list (username, state, updated_at, id)
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:3:CREATE TABLE mail_record_qa_rule (
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:8:    CONSTRAINT fk_mail_record_qa_rule_mail_record
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:10:    CONSTRAINT fk_mail_record_qa_rule_qa_rule
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:12:    CONSTRAINT uk_mail_record_qa_rule UNIQUE (mail_record_id, qa_rule_id)
+src/main/resources/db/migration/V125__create_meeting_calendar_event.sql:1:CREATE TABLE meeting_calendar_event (
+src/main/resources/db/migration/V157__create_discovery_person_outreach.sql:19:--   mail_send_attempt、人工准入、抑制），已有成功或不确定发送不再首发；原历史 ID、
+src/main/resources/db/migration/V114__create_rag_fact_audit.sql:5:-- （I-21），与 03b 的 mail_record_rag_fact.corpus_fingerprint 闭环 —— 单看存证
+src/main/resources/db/migration/V114__create_rag_fact_audit.sql:20:-- （与 V113 mail_record_rag_fact 不声明外键的既有基线一致）。
+src/main/resources/db/migration/V114__create_rag_fact_audit.sql:36:  COMMENT = 'RAG 事实改动审计：与 mail_record_rag_fact.corpus_fingerprint 闭环还原发信时的原文版本（I-21/D-16）';
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:79: *   RAG 成功发送后 mail_record_qa_rule 零新增、零交互。
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:90: *   mail_record_rag_fact。
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:506:        // I-39: 本路径绝不写 mail_record_qa_rule。
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:525:    // mail_record_rag_fact、仍不写 mail_record_qa_rule，且 payload 同时携带快照。
+src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt:684:        // I-39: 旧路径绝不写 mail_record_rag_fact。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:65: * `mail_send_attempt` / `meeting_calendar_event` 行与真实 `mail_record.id` 外键。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:563:        jdbcTemplate.update("DELETE FROM mailbox_reply_draft")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:564:        jdbcTemplate.update("DELETE FROM outbound_mail_attachment")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:565:        jdbcTemplate.update("DELETE FROM meeting_calendar_event")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:566:        jdbcTemplate.update("DELETE FROM mail_record_qa_rule")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:568:        jdbcTemplate.update("DELETE FROM mail_send_attempt")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:595:        jdbcTemplate.queryForObject("SELECT COUNT(*) FROM mail_send_attempt", Long::class.java)!!
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:598:        jdbcTemplate.query("SELECT id FROM mail_send_attempt ORDER BY id DESC LIMIT 1") { rs, _ -> rs.getLong(1) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:602:        jdbcTemplate.queryForObject("SELECT status FROM mail_send_attempt ORDER BY id DESC LIMIT 1", String::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:606:            "SELECT mr.id FROM mail_record mr JOIN mail_send_attempt a ON mr.mail_send_attempt_id = a.id " +
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:619:        jdbcTemplate.queryForObject("SELECT COUNT(*) FROM meeting_calendar_event", Long::class.java)!!
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:622:        jdbcTemplate.queryForObject("SELECT id FROM meeting_calendar_event ORDER BY id DESC LIMIT 1", Long::class.java)!!
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:626:            "SELECT source_mail_record_id FROM meeting_calendar_event ORDER BY id DESC LIMIT 1", Long::class.java
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:631:            "SELECT starts_at_utc FROM meeting_calendar_event ORDER BY id DESC LIMIT 1", String::class.java
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:636:            "SELECT ends_at_utc FROM meeting_calendar_event ORDER BY id DESC LIMIT 1", String::class.java
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:641:            "SELECT meeting_link FROM meeting_calendar_event ORDER BY id DESC LIMIT 1", String::class.java
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt:646:            "SELECT status FROM meeting_calendar_event ORDER BY id DESC LIMIT 1", String::class.java
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:2:-- V113 mail_record_rag_fact（plan 03b: 03b-rag-send-bridge.md）
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:4:-- RAG 回信发出后的事实存证表：与 mail_record_qa_rule 并列、互不干扰 ——
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:5:-- 一封信只会写其中一张（I-39：三条发送路径互斥，RAG 路径绝不写 mail_record_qa_rule）。
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:12:--         UNIQUE(mail_record_id, ordinal) 对齐 mail_record_qa_rule.ordinal 语义
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:17:-- （与 mail_record_qa_rule 不声明 ON DELETE CASCADE 的既有基线一致）；RAG 回信
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:20:CREATE TABLE mail_record_rag_fact (
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:28:    UNIQUE KEY uk_mail_record_rag_fact (mail_record_id, ordinal),
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:29:    KEY idx_mail_record_rag_fact_record (mail_record_id),
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:30:    KEY idx_mail_record_rag_fact_code (fact_code)
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:32:  COMMENT = 'RAG 回信的事实存证：与 mail_record_qa_rule 并列，一封信只会写其中一张（I-39）';
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:137:        listOf("mailbox_review_draft_event", "mailbox_review_draft", "mailbox_reply_draft", "meeting_calendar_event",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:281:        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM meeting_calendar_event", Int::class.java))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:782:        assertEquals(1L, countRows("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:790:        assertEquals(1L, countRows("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:801:        assertEquals(2L, countRows("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:819:        assertEquals(2L, countRows("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:911:        jdbc.update("DELETE FROM mailbox_review_draft_event")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:912:        jdbc.update("DELETE FROM mailbox_review_draft")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:918:        jdbc.update("DELETE FROM mail_record_rag_fact")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:919:        jdbc.update("DELETE FROM mail_record_qa_rule")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:920:        jdbc.update("DELETE FROM meeting_calendar_event")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:921:        jdbc.update("DELETE FROM mailbox_reply_draft")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:926:        jdbc.update("DELETE FROM mail_send_attempt")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:600:            "SELECT starts_at_utc FROM meeting_calendar_event WHERE id = ?", String::class.java, first.event.id
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:681:        jdbcTemplate.update("DELETE FROM meeting_calendar_event")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:739:            "SELECT cancel_reason FROM meeting_calendar_event WHERE id = ?", String::class.java, id
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:742:            "SELECT COUNT(*) FROM meeting_calendar_event WHERE id = ? AND status = 'CANCELLED'",
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:801:        jdbcTemplate.update("DELETE FROM meeting_calendar_event")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:839:            "INSERT INTO meeting_calendar_event " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt:891:        jdbcTemplate.queryForObject("SELECT COUNT(*) FROM meeting_calendar_event", Long::class.java)!!
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:113:        jdbc.update("DELETE FROM mail_send_attempt")
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:353:            "INSERT INTO mail_send_attempt (orcid_id, mail_type, account_code, message_id, status, created_at, updated_at) " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:504:            "INSERT INTO mail_send_attempt (id, orcid_id, mail_type, account_code, message_id, status, created_at, updated_at) " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:694:        // 既有事实（非本次修复范围，另行报告）：Initial 成功路径以 mail_send_attempt_id=0 落库，
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:772:        // The real Initial success seam persists mail_send_attempt_id=0 and therefore violates
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:782:            "failure must be the known mail_record → mail_send_attempt FK violation"
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1427:        // mail_send_attempt_id=0L → fk_mail_record_send_attempt 缺陷会使其真实失败，
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1543:            "INSERT INTO mail_send_attempt (id, orcid_id, mail_type, account_code, message_id, status, created_at, updated_at) " +
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:143:        for (table in listOf("mailbox_reply_draft","meeting_calendar_event","mail_record_rag_fact","mail_record_qa_rule",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:144:            "mail_record","mail_send_attempt","outbound_mail_attachment","inbound_mail_processing","expert_contact","campaign","mail_sender_account")) jdbc.update("DELETE FROM $table")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:192:        assertEquals(1L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:193:        assertEquals(1L,count("mail_send_attempt","status='SENT'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:209:        assertEquals(1L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:220:            jdbc.update("UPDATE mail_send_attempt SET status=?",status)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:222:            assertEquals(1L,count("mail_send_attempt","status='$status'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:235:        jdbc.update("DELETE FROM outbound_mail_attachment WHERE id=?",upload)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:238:        assertEquals(1L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:244:        assertEquals("SENT",send(draft).sendStatus); assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt")); assertEquals(0L,drafts.list("op",null,null,0,10).total)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:268:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt")); assertActive(followed,2)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:273:        val attempt=drafts.get("op",draft.id!!).sendAttemptId; val record=jdbc.queryForObject("SELECT id FROM mail_record WHERE mail_send_attempt_id=?",Long::class.java,attempt)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:276:        assertEquals(record,jdbc.queryForObject("SELECT id FROM mail_record WHERE mail_send_attempt_id=? AND send_status='SENT'",Long::class.java,attempt)); assertEquals(1L,count("mail_send_attempt")); assertEquals(2,smtpCount())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:288:        assertEquals(4,smtpCount()); assertEquals(4L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:297:        assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt")); assertEquals("DELIVERY_UNKNOWN",drafts.get("op",draft.id!!).sendAttemptStatus)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:316:            assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:338:        assertActive(risky,2); assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:346:        assertActive(draft,2); assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:350:        jdbc.execute("CREATE TRIGGER reject_draft_sent BEFORE UPDATE ON mailbox_reply_draft FOR EACH ROW BEGIN IF NEW.send_attempt_id IS NOT NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected binding failure'; END IF; END")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:352:        assertActive(draft); assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt")); assertNull(drafts.get("op",draft.id!!).sendAttemptId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:361:        assertEquals("RAG_CORPUS_STALE",ex.reason); assertActive(draft); assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:384:        jdbc.update("DELETE FROM outbound_mail_attachment WHERE id=?",upload.id)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:399:        assertEquals("SENT",send(draft,meeting=input,sha=sha).sendStatus); assertEquals(1L,count("meeting_calendar_event")); assertEquals(MailReplyDraftState.SENT,drafts.get("op",draft.id!!).state)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:403:        jdbc.execute("CREATE TRIGGER reject_draft_sent BEFORE UPDATE ON mailbox_reply_draft FOR EACH ROW BEGIN IF NEW.state='SENT' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected draft close SQL failure'; END IF; END")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:405:        assertActive(draft); assertEquals(0L,count("mail_record","mail_type='MANUAL_RICH_REPLY' AND send_status='SENT'")); assertEquals(0L,count("meeting_calendar_event")); assertEquals("DELIVERY_UNKNOWN",drafts.get("op",draft.id!!).sendAttemptStatus)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:464:            assertEquals(0L,request("GET","/api/mail/mailbox/drafts",a).second["total"].asLong()); assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt","status='SENT'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:477:        assertActive(draft); assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:498:        val before = listOf(count("mailbox_reply_draft"),count("mail_record"),count("mail_send_attempt"),count("unsubscribe_token"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:504:        assertEquals(before,listOf(count("mailbox_reply_draft"),count("mail_record"),count("mail_send_attempt"),count("unsubscribe_token")))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:523:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1020:                INSERT INTO mailbox_review_draft(owner_username,expert_contact_id,client_request_id,target_kind,target_id,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1985:        jdbcTemplate.update("DELETE FROM mailbox_review_draft_event")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1986:        jdbcTemplate.update("DELETE FROM mailbox_review_draft")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:354:    // isNotEmpty() 守卫使 mail_record_qa_rule 零行、matchedQaRuleId = null，
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt:79:            "CREATE TABLE outbound_mail_attachment(id VARCHAR(36) PRIMARY KEY,expert_contact_id BIGINT)",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt:80:            "CREATE TABLE meeting_calendar_event(id BIGINT PRIMARY KEY,expert_contact_id BIGINT)"
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt:87:            "manual_expert_material_upload", "mail_attachment", "outbound_mail_attachment", "meeting_calendar_event")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt:95:        jdbc.update("INSERT INTO meeting_calendar_event VALUES(501,1),(502,2),(503,3)")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt:96:        jdbc.update("INSERT INTO outbound_mail_attachment VALUES('00000000-0000-0000-0000-000000000001',1),('00000000-0000-0000-0000-000000000002',2)")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:81:        listOf("mailbox_review_draft_event", "mailbox_review_draft", "expert_mail_read_access", "expert_follow",
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:118:        jdbc.update("""INSERT INTO mailbox_review_draft(owner_username,expert_contact_id,client_request_id,target_kind,target_id,account_code,version,state,subject,html_body,text_body,submitted_at,deleted_at,created_at,updated_at,reviewed_by,reviewed_at,approved_context_token,send_request_id)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:180:        jdbc.update("DELETE FROM mailbox_review_draft")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:217:        assertEquals(9L, jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft", Long::class.java))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:233:        println("REVIEW_QUERY_SIZE100 rows=${result.items.size} sqlCount=${adminSql.size} reviewSqlCount=${adminSql.count { it.contains("mailbox_review_draft") }}")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt:239:        assertTrue(statements.none { it.contains("mailbox_review_draft") })
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:67:        jdbc.update("DELETE FROM mailbox_reply_draft")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:68:        jdbc.update("DELETE FROM outbound_mail_attachment WHERE expert_contact_id=9101")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:107:        jdbc.update("DELETE FROM outbound_mail_attachment WHERE id=?",ownId)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:159:        jdbc.update("UPDATE mailbox_reply_draft SET updated_at=? WHERE id=?",now.minusYears(2),id)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:219:            jdbc.update("UPDATE mailbox_reply_draft SET updated_at=? WHERE id=?",now.minusYears(2),id)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt:232:    private fun businessCounts() = listOf("mail_record","mail_send_attempt","inbound_mail_processing","expert_contact","mail_attachment","outbound_mail_attachment").associateWith { jdbc.queryForObject("SELECT COUNT(*) FROM $it",Long::class.java) }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:74:    private fun row(id: Long) = jdbc.queryForMap("SELECT * FROM mailbox_review_draft WHERE id=?", id)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:89:        listOf("mailbox_review_draft_event", "mailbox_review_draft", "mailbox_reply_draft", "expert_mail_read_access",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:142:        jdbc.update("UPDATE mailbox_review_draft SET subject='' WHERE id=?", id(d))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:198:            jdbc.update("""INSERT INTO mailbox_reply_draft(username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,subject,html_body,text_body,created_at,updated_at)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:230:        assertEquals(2L, jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('mailbox_review_draft','mailbox_review_draft_event')", Long::class.java))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:236:        jdbc.update("""INSERT INTO mailbox_reply_draft(username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,subject,html_body,text_body,created_at,updated_at)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:238:        val before = jdbc.queryForMap("SELECT * FROM mailbox_reply_draft")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:241:        assertEquals(before, jdbc.queryForMap("SELECT * FROM mailbox_reply_draft"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:243:        assertEquals(0, count("mailbox_review_draft").toInt())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:244:        assertEquals(0, count("mailbox_review_draft_event").toInt())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:258:            val events = count("mailbox_review_draft_event")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:273:                assertEquals(events + 1, count("mailbox_review_draft_event"), "$state/$action")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:279:                assertEquals(events, count("mailbox_review_draft_event"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:313:        val payloads = jdbc.queryForList("SELECT payload_json FROM mailbox_review_draft_event WHERE draft_id=? ORDER BY id", String::class.java, id(first)).map(mapper::readTree)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:321:        assertEquals(7, jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft_event WHERE draft_id=?", Int::class.java, id(first)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:337:        jdbc.update("UPDATE mailbox_review_draft SET owner_username='someone-else' WHERE id=?", did)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:339:        jdbc.update("UPDATE mailbox_review_draft SET owner_username='user1' WHERE id=?", did)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:367:        val snapshot = mapper.readTree(jdbc.queryForObject("SELECT payload_json FROM mailbox_review_draft_event WHERE draft_id=?", String::class.java, id(d)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:447:        val events = jdbc.queryForList("SELECT * FROM mailbox_review_draft_event WHERE draft_id=? ORDER BY id", id(draft))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:456:                    jdbc.queryForList("SELECT id FROM mailbox_review_draft WHERE id=? FOR UPDATE", id(draft))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:469:                          AND requested.OBJECT_NAME='mailbox_review_draft'""").use { statement ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:489:            assertEquals(events, jdbc.queryForList("SELECT * FROM mailbox_review_draft_event WHERE draft_id=? ORDER BY id", id(draft)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:501:            assertEquals(events.size + 1L, jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft_event WHERE draft_id=?", Long::class.java, id(draft)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:522:            assertEquals(2L, count("mailbox_review_draft_event"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:530:        jdbc.execute("CREATE TRIGGER reject_review_event BEFORE INSERT ON mailbox_review_draft_event FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected event failure'")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:534:        assertEquals(1L, count("mailbox_review_draft_event"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:556:            assertEquals(1L, count("mailbox_review_draft_event"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:568:                jdbc.queryForList("SELECT id FROM mailbox_review_draft WHERE id=? FOR UPDATE", id(d))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:579:            assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft_event WHERE draft_id=? AND event_type='COMMENT'", Long::class.java, id(d)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:594:                jdbc.queryForList("SELECT id FROM mailbox_review_draft WHERE id=? FOR UPDATE", id(d))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:606:            assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft_event WHERE draft_id=? AND event_type='COMMENT'", Long::class.java, id(d)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt:631:            assertEquals(2L, count("mailbox_review_draft_event"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:139:        listOf("mailbox_review_draft_event","mailbox_review_draft","mailbox_reply_draft","expert_mail_read_access",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:140:            "meeting_calendar_event","mail_record_rag_fact","mail_record_qa_rule","mail_record","mail_send_attempt",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:141:            "outbound_mail_attachment","inbound_mail_processing","expert_contact","campaign","mail_sender_account").forEach { jdbc.update("DELETE FROM $it") }
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:173:    private fun rejectEvent(type: String) = jdbc.execute("CREATE TRIGGER reject_review_event BEFORE INSERT ON mailbox_review_draft_event FOR EACH ROW BEGIN IF NEW.event_type='$type' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected review event failure'; END IF; END")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:186:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:200:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:208:        jdbc.update("UPDATE mailbox_review_draft SET account_code='SIMULATOR_NOOP' WHERE id=?",d.id)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:210:        jdbc.update("UPDATE mailbox_review_draft SET account_code='review-send' WHERE id=?",d.id)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:213:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:225:        jdbc.update("UPDATE mailbox_review_draft_event SET draft_version=draft_version-1 WHERE id=?",confirmation.confirmationEventId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:227:        jdbc.update("UPDATE mailbox_review_draft_event SET draft_version=?,actor_username='user1' WHERE id=?",a.version,confirmation.confirmationEventId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:229:        jdbc.update("UPDATE mailbox_review_draft_event SET actor_username='admin' WHERE id=?",confirmation.confirmationEventId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:230:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:252:        assertEquals(3,smtpCount()); assertEquals(3L,count("mail_send_attempt")); assertEquals(3L,count("mail_record","mail_type='MANUAL_RICH_REPLY'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:269:            val events = count("mailbox_review_draft_event")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:271:            assertEquals(events,count("mailbox_review_draft_event")); assertEquals(1,smtpCount())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:272:            assertEquals(1L,count("mail_send_attempt")); assertEquals(1L,count("mailbox_review_draft_event","event_type='SEND_SUCCEEDED'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:283:        jdbc.update("UPDATE mailbox_review_draft SET send_attempt_id=NULL WHERE id=?",d.id)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:293:        assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:304:        assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:307:        assertEquals(1L,count("mailbox_review_draft_event","event_type='SEND_RESULT'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:320:        assertEquals(1L,count("mail_send_attempt")); assertEquals(1L,count("mail_record","mail_type='MANUAL_RICH_REPLY'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:321:        assertEquals(2L,count("mailbox_review_draft_event","event_type='SEND_CLAIMED'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:322:        assertEquals(1L,count("mailbox_review_draft_event","event_type='SEND_RESULT'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:323:        assertEquals(1L,count("mailbox_review_draft_event","event_type='SEND_SUCCEEDED'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:330:        assertEquals(0L,count("mail_send_attempt")); assertEquals(0,smtpCount())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:341:        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt")); assertEquals(d.text,detail(d).text)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:359:        assertEquals(0L,count("mail_send_attempt")); assertNull(repository.find(d.id)!!.sendAttemptId)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:368:        assertEquals(1L,count("mailbox_review_draft_event","event_type='SEND_RESULT'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:398:        assertEquals(1,smtpCount()); assertEquals(1L,count("mailbox_review_draft_event","event_type='SEND_SUCCEEDED'"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:410:                jdbc.queryForObject("SELECT id FROM mailbox_review_draft WHERE id=? FOR UPDATE",Long::class.java,d.id)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewSendIT.kt:419:            assertEquals(0L,count("mail_send_attempt")); assertEquals(0,smtpCount())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:501:    // 03 (I-6): mail_record_qa_rule 按 SendPayload.canonicalQaRuleIds 的 ordinal
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:148:            jdbcTemplate.update("""INSERT INTO mailbox_review_draft
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1415:        jdbcTemplate.update("DELETE FROM mailbox_review_draft_event")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1416:        jdbcTemplate.update("DELETE FROM mailbox_review_draft")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationServiceTest.kt:55:     * MailContentService）。SMTP、mail_record、mail_send_attempt、meeting_schedule、
+src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchItemFlowTest.kt:1111:        // 整封生成：外发审计快照的 qaRuleIds 只含证据（mail_record_qa_rule 只记真证据）。
+src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt:338:            "SELECT starts_at_utc FROM meeting_calendar_event WHERE id = ?", String::class.java, id
+src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt:460:        assertEquals(1L, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM meeting_calendar_event", Long::class.java))
+src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt:550:        jdbcTemplate.update("DELETE FROM meeting_calendar_event")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:99:        val file = File("src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:267:            listOf("expert_contact", "mail_record", "mail_send_attempt", "inbound_mail_processing", "outbound_mail_attachment")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:272:            assertTrue(c.tableExists("mailbox_reply_draft"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:275:                "send_version", "created_at", "updated_at").forEach { assertTrue(c.columnExists("mailbox_reply_draft", it)) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:277:                assertEquals("longtext", c.queryString(columnMeta("mailbox_reply_draft", it, "DATA_TYPE")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:280:                assertEquals("YES", c.queryString(columnMeta("mailbox_reply_draft", it, "IS_NULLABLE")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:283:                assertEquals("utf8mb4_bin", c.queryString(columnMeta("mailbox_reply_draft", it, "COLLATION_NAME")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:286:                assertEquals("3", c.queryString(columnMeta("mailbox_reply_draft", it, "DATETIME_PRECISION")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:288:            assertTrue(c.indexExists("mailbox_reply_draft", "uk_mailbox_reply_draft_target"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:289:            assertTrue(c.indexExists("mailbox_reply_draft", "idx_mailbox_reply_draft_list"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:290:            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='mailbox_reply_draft' AND constraint_type='FOREIGN KEY'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:307:                INSERT INTO mailbox_reply_draft
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:402:            assertEquals("DRAFT", c.queryString("SELECT state FROM mailbox_reply_draft WHERE username='admin'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:403:            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM mailbox_reply_draft"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:404:            assertTrue(c.indexExists("mailbox_reply_draft", "uk_mailbox_reply_draft_target"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:969:            assertTrue(connection.tableExists("meeting_calendar_event"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:972:                    "AND table_name = 'meeting_calendar_event' AND column_name = 'starts_at_utc'"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:976:                    "AND table_name = 'meeting_calendar_event' AND column_name = 'starts_at_utc'"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:980:                    "AND table_name = 'meeting_calendar_event' AND column_name = 'note'"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:982:            assertTrue(connection.indexExists("meeting_calendar_event", "uk_meeting_calendar_source_mail"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:983:            assertTrue(connection.indexExists("meeting_calendar_event", "idx_meeting_calendar_status_start_id"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:984:            assertTrue(connection.indexExists("meeting_calendar_event", "idx_meeting_calendar_contact_status_start_id"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:985:            assertTrue(connection.foreignKeyExists("meeting_calendar_event", "fk_meeting_calendar_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:986:            assertTrue(connection.foreignKeyExists("meeting_calendar_event", "fk_meeting_calendar_source_mail"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:991:    fun `V126 creates outbound_mail_attachment with the persistence contract`() {
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:996:            assertTrue(connection.tableExists("outbound_mail_attachment"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1008:            assertTrue(connection.indexExists("outbound_mail_attachment", "PRIMARY"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1009:            assertTrue(connection.indexExists("outbound_mail_attachment", "idx_outbound_mail_attachment_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1010:            assertTrue(connection.foreignKeyExists("outbound_mail_attachment", "fk_outbound_mail_attachment_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1014:            assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM outbound_mail_attachment"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1920:            assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1924:            assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1955:                INSERT INTO mail_send_attempt
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1976:                "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1979:                "SELECT mail_send_attempt_id FROM mail_record WHERE id = 202"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1982:                "SELECT quota_counted FROM mail_send_attempt WHERE id = 101"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1985:                "SELECT quota_counted FROM mail_send_attempt WHERE id = 102"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1996:                INSERT INTO mail_send_attempt
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2014:            assertFalse(connection.columnExists("mail_send_attempt", "quota_counted"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2021:            assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2031:                INSERT INTO mail_send_attempt
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2051:                        (expert_contact_id, direction, mail_type, message_id, send_status, mail_send_attempt_id)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2060:                        (expert_contact_id, direction, mail_type, message_id, send_status, mail_send_attempt_id)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:3158:            "AND table_name = 'outbound_mail_attachment' AND column_name = '$column'"
+src/test/kotlin/com/weibo/talentintroduction/qa/service/QaRuleAuditServiceTest.kt:59:    fun `selected rule ids prefer mail_record_qa_rule over log qaRuleIds`() {

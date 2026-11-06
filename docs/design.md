@@ -175,6 +175,7 @@ Deferred:
 ## Regression Boundaries
 
 - Reader access to conversation template listing/preview and built-in attachment listing/addition is expert-scoped: the exact handler and HTTP verb must be allowed, and the current expert grant must be `FULL`. `READ`, absent or revoked grants remain denied; global template management is not opened. `AuthInterceptorTest` checks the complete mapped-handler allowlist, while `ExpertMailPermissionGuardTest` exercises resource authorization.
+- Delayed-reply detail/list accept the current expert grant at `READ` or `FULL`; restore/cancel/retry require current `FULL` access, in addition to job ownership checks. The exact delayed-reply handler and HTTP verb remain part of the complete allowlist regression.
 - Paper archive replay regressions compare the actual email/qualification extraction and preserve the historical `first` result and body bytes. Do not pin the PDF layout implementation version in these result-equivalence checks. Stale persisted parser versions must still invalidate analysis caches, independently of the identity-extraction compatibility version.
 - SSE progress throttling is measured between actual same-phase event emissions (at least one second), not by assuming an observer thread resumes within that window. Streaming regressions install capture before generation starts and wait for delayed progress to arrive before checking event intervals.
 
