@@ -1,149 +1,111 @@
 # Repair Plan: manual-reply-delay-master
 
 Status: DRAFT — HUMAN APPROVAL REQUIRED
-
 Baseline plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/2026-11-04/manual-reply-delay-master.md
-Governing identity: sha256 4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e，recorded commit 8a51021ca463da1e3ea279bf5a94e998267751bf；AMENDMENT_RECORDED，A1–A32 全部保留。
-Verification report: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/review/manual-reply-delay-master/machine-verification.md，Epoch 1，reviewer /root/aggregate_review_epoch1，FAIL / INITIAL。
-Implementation boundary: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca..83ec3e3bdf620f80198f73ae496f78aaf75625f4；核验时 evidence HEAD 17e8563aa2a0d966cb2cb4a7a2f37a0fc657fdd5。
-Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
-Branch: fast/manual-reply-delay-master
+Baseline identity: SHA256 4fa1f45fc2830aea7c138e3da44a60d5ea767fa48a01239ca01ed01989a89a2e; A1–A32 recorded amendments remain governing.
+Verification report: AGGREGATE-20261106-E2, Epoch 2, FAIL / PROGRESSING; returned complete report for controller append to /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/review/manual-reply-delay-master/machine-verification.md. Original return retained at /tmp/aggregate-epoch2/report.md.
+Implementation boundary: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca → fc2750cd7ad4ae5200195036d874aeeb8b5ae400; selected evidence HEAD 6a2cc31f60c34819bed7edeeebf9300921d2ed19.
+Execution worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
+Execution branch: fast/manual-reply-delay-master
+
+本文件替换同路径上已经实施的九文件修复计划，历史由 Git 保留。旧执行批准只对应旧 SHA256 2faeacade4c57d7a03c3cfc211edc85be0da0f3beae00ba904fe1d6d64145e83，不批准当前新草案。禁止执行、改产品或创建新 repair 文件，直至用户明确批准当前内容。
 
 ## Objective
 
-恢复合法混合排序规则数据库的延迟邮件读取；超大快照入队返回约定 413；保持必跑写入点守卫有效；INBOUND LEGACY 恢复遇新普通稿时先保留并提示冲突。不得借此扩大产品范围。
+页面真实隐藏后清除旧撤回/重发确认的显示。回前台且服务端任务未改变时，旧确认不残留，当前合法操作仍可重新打开并明确执行一次。
 
 ## Findings in Scope
 
 | Finding | Severity | Requirement | Root Cause |
 |---|---|---|---|
-| V-1 | P1 | O-2/N-5/I-8/I-9、05 T2 | DelayedManualReplyRepository.kt:103 跨 email_suppression.email 与 expert_contact.expert_email 的隐式排序规则比较，在合法新迁移库触发 MySQL 1267；真实消息 GET 500。 |
-| V-2 | P1 | 01 T3:80、04 异常契约:96、I-4 | codec 超 4 MiB 使用普通 IllegalArgumentException；公共入队 seam 未区分超限，实际返回 400 而非 413。 |
-| V-3 | P2 — mandatory | 05 T3/验收:105、05 brief Required commands #4 | 07 新增 import/handler 平移 UnmatchedInboundMailController 两个只读 DTO 行；既有强制守卫仍钉 236/1163，实际为 237/1169。 |
-| V-4 | P1 | master A-12/I-6/O-4、06 T1/I-6 | INBOUND 恢复在普通稿冲突检查前进入旧编辑器 adapter；adapter 仅检查旧编辑器。真实另一个浏览器已保存新普通稿时直接填入旧原稿，无保留新稿提示。已证明服务端新稿仍保留，不宣称数据丢失。 |
+| V-5 | P1; REPAIRABLE | master O-2/I-9、07-source C-7、08 must-not-change/I-4 的 hidden 清确认合同 | stopDelayPolling 清 closure confirm 但未同步已有 footer DOM；resume 的 serverNow-excluded unchanged 比较不重绘，留下点击无效的原确认 |
 
-四项均 REPAIRABLE；无计划规则冲突。独立根因对应四任务，统一一个计划。
+独立真实证据：/tmp/aggregate-epoch2/runtime/visibility-app4-failure.json 的 results[0]；32次真实 hidden 采样、隐藏期间0会话请求；回前台实际GET后 confirm1，原生点击后 confirm1/POST0。其后 logout204 JSON探针错误单独披露，不掩盖已完成的实际行为。前一 visibility-app2 也独立复现。源码 mailbox-chat.js:1239–1245、1293–1298、10028–10037；与修复前 stopDelayPolling 字节相同，属于先前 B-1 缺证据所掩盖的既存实现缺陷，不是本轮后端/恢复修复回归。
 
 ## Findings Excluded
 
-| Item | Reason |
+| Finding | Reason |
 |---|---|
-| B-1 真实浏览器 hidden/visible 分支证据 | 工具会话中 headless/headful、真实 tab 切换、原生最小化/恢复及关闭 focus emulation 后仍报告 visible；源码/JS 已验证，原生隐藏分支证据仍缺。不是代码修复授权，独立回审须补取；不得伪造 visibilityState。 |
-| O-1 MailReviewSendIT Subject 与 Re: Inbound | 当前失败保留；MASTER_BASE 测试、create 与 targetSubject 因果块均相同，属于既有期望冲突，不在本修复。 |
-| O-2 MailReviewQueryIT#size100* | 当前失败保留；MASTER_BASE 已存在相同 reader ownDraftRows 查询 review 表，测试未改。不可删断言或扩大排除。 |
-| O-3 InboundPendingOwnerIT 反射配置 mock/历史 target 残留 | 01 brief 未将该全类列强制；补充运行观察。完整 schema 独立查询重跑 1/1 通过，历史 target 的套件污染与本次验证设施分开记录。不得顺手改该测试或生产配置类。 |
-| 旧可选全 JVM America/Coyhaique tzdata、文档行尾空格、旧 metadata hash 笔误 | 非本修复必需行为，原样记录；不得扩为 JDK/全局格式清理。 |
-| 文本附件 MIME LF→CRLF | 未改的旧 SMTP 传输行为；本轮新二进制附件与 ICS 原字节已通过，禁止借本计划改 SMTP。 |
-| 人工 A-1～A-12 | 全部 PENDING；本机运行证据不替代人类验收或签字。 |
+| V-1 | RESOLVED；原混合排序规则下真实 GET200、Query10通过；禁止再改SQL/排序规则 |
+| V-2 | RESOLVED；两入口真实超限413/零副作用、E2E30通过；禁止再改快照错误映射 |
+| V-3 | RESOLVED；WriteSeam1/1；禁止改行号白名单/测试守卫 |
+| V-4 | RESOLVED；双独立浏览器保留新普通稿及有序附件，显式冲突在旧编辑器挂载前；禁止改恢复/草稿内容路径 |
+| B-1 | RESOLVED证据缺口；当前真实 Chrome hidden/resume 已取得，不作为待修代码项 |
+| O-1/O-2 | 无关既有 Subject/size100 断言冲突，原失败与MASTER_BASE因果一致；不修、不排除为伪PASS |
+| O-3 | 可选 InboundPendingOwnerIT 反射mock/target172夹具问题；不扩围 |
+| O-4–O-7 | 可选tzdata、文档空白、已有文本MIME换行、历史证据散文hash笔误；均非本修复范围 |
+| 人工 A1–A12 | 仍PENDING；机器修复通过不产生人工接受或部署授权 |
 
 ## Unchanged Contract
 
-- A31/A32 原生 59 秒开确认、61 秒 POST 409→GET 合同不变；不能允许迟到新开、续期或降低服务器 CAS。
-- 固定 DB 权威 60000ms、原指纹/UUID/Message-ID、actor/source/revision、锁顺序与短事务、SMTP 不在事务内均不变。
-- snapshot schemaVersion、UTF-8 4 MiB 上限、字段白名单、无密码/文件字节/绝对路径；未知或损坏快照 fail closed。
-- SENT 原子成功记录/QA/RAG/排期/普通稿关闭/审核事件、UNKNOWN 禁重投、仅安全失败显式重试、开关 false 不影响旧任务。
-- READ/FULL/管理员权限、当前来源与退订、附件校验、只读脱敏、按页批量固定 SQL 次数、原筛选分页计数均不变。
-- LEGACY 与普通 draft 身份分离；不制造 DRAFT、不覆盖新正文/附件、不把审核稿改为可编辑稿；无冲突恢复及已有异步 owner/target/epoch/revision 守卫保留。
-- 06 CSS/DOM 合同、20 个资源统一版本键、现有组件和按钮位置不变。
-- 无迁移、共享表修改、全局异常处理、生产配置/依赖/SMTP 改动；无推送、部署、合并。
+- 服务端固定60000ms、期限/权限/来源/expectedRevision/CAS、worker与真实SMTP路径不改。无自动重试、无额外POST、无时间戳或时钟伪造。
+- A31/A32保留：截止前已合法打开、上下文仍有效的确认可跨截止时间；到期后不能新开或dismiss后重开。隐藏清理不能被当作到期例外。
+- busy动作仍最多一个POST；隐藏不能重发/撤销已提交的网络动作；401/403、owner/account/contact/job/revision/generation/unmount/logout规则保留。
+- 普通原稿正文/格式/版本/有序附件、LEGACY冲突保护、APPROVED审核正文和上下文确认不变；不得因清理整页而覆盖编辑器内容。
+- 原footer/两按钮/文案/aria、样式与移动44px合同全部保持；不新增class/id/CSS/dialog/模块。
+- 1秒倒计时、2/5秒详情、5秒列表、performance单调偏移、隐藏暂停/前台立即读取、GET abort及迟到响应隔离保留。
+- 20条既有版本资源的集合/顺序/URL形状保留；task-modal-runtime.js继续无版本；JS与测试不硬钉新cache key。
 
 ## Authorized Files
 
-以下路径均相对上述唯一 worktree；九文件之外禁止编辑。
-
 | File | Purpose |
 |---|---|
-| src/main/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyRepository.kt | R-1 批量抑制名单比较的局部排序规则兼容 |
-| src/test/kotlin/com/weibo/talentintroduction/mail/repository/DelayedManualReplyQueryIT.kt | R-1 混合排序规则真实 MySQL 判别回归 |
-| src/main/kotlin/com/weibo/talentintroduction/mail/service/DelayedManualReplyModels.kt | R-2 可区分的超限错误，保留既有异常兼容 |
-| src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt | R-2 共用入队 seam 精确映射 413 |
-| src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplyDelayEndToEndIT.kt | R-2 真 HTTP 超大合法输入、状态码及零副作用 |
-| src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt | R-3 两个既有非写入 DTO 排除点精确平移 |
-| src/main/resources/static/mailbox-chat.js | R-4 INBOUND 恢复前检查当前普通稿/未保存输入并提示保留 |
-| src/test/js/mailboxDelayedReply.test.js | R-4 真实消费链的 INBOUND 新普通稿冲突回归 |
-| src/main/resources/static/index.html | R-4 按 S-4 一次统一更新既有 20 个资源版本键 |
+| src/main/resources/static/mailbox-chat.js | 仅共享确认生命周期清理与现有footer显示一致性；保持当前内容/权限/轮询/异步隔离 |
+| src/test/js/mailboxDelayedReply.test.js | 一个可区分V-5的现有行为回归，覆盖隐藏后可见确认消失及未变任务恢复后的合法重开 |
+| src/main/resources/static/index.html | 仅既有20个资源version值同步更新为20261106-manual-reply-visibility，防缓存旧确认行为 |
+
+无其他授权文件；不得修改后端、数据库、CSS、app/readonly、其他测试、批准计划、历史审查证据、知识库。仅本文件定义的执行交接允许独立的 repair-execution.md 证据追加与证据提交。
 
 ## Repair Tasks
 
-### R-1: 混合排序规则下保持批量读取可用
+### R-1: 让 hidden 清理同步当前确认显示
 
-- Resolves: V-1。
-- 证据：/tmp/aggregate-epoch1-runtime/ordinary-network.json、collations.tsv、collation-repro.log。数据库 aggregate_runtime 显式 utf8mb4_unicode_ci，新迁移 V30 email_suppression 为 server 默认 utf8mb4_0900_ai_ci，expert_contact 保持 unicode_ci；原生入队 200，消息 GET 500/1267。
-- Files: DelayedManualReplyRepository.kt、DelayedManualReplyQueryIT.kt，完整路径见授权表。
-- Change: 在已存在的 pageEvidence 抑制名单比较处实现与现有邮箱语义一致的局部字符集/排序规则兼容，不改变数据库 schema 或假定所有部署库共用默认排序规则。
-- Regression test: 真实隔离 MySQL 构造已证两种列排序规则组合，经完整消息查询验证成功、抑制名单命中与不命中、动作能力与 READ 隔离；必须在旧代码上以 1267 失败。不可只把测试两表统一到同一规则后声称覆盖。
-- Existing verification: QueryIT、生命周期/控制器/worker、同页固定查询数与附件安全回归。
-- Must not change: 页边界、权限、抑制名单语义、索引及固定 SQL 查询数。
-- Prohibited: 全局 COLLATION、迁移、绕过 suppressed、删除批量校验、按 job N+1。
-
-### R-2: 在共用公共入队路径精确返回 413
-
-- Resolves: V-2。
-- 证据：/tmp/aggregate-epoch1-runtime/oversize-probe.json 与 oversize-no-effects.tsv。合法已授权 conversation 请求 htmlBytes=4200019，实际 400 BAD_REQUEST；job/attempt/mail_record 均 0。
-- Files: DelayedManualReplyModels.kt、PendingMailOperationService.kt、ManualReplyDelayEndToEndIT.kt。
-- Change: 超 UTF-8 快照总量必须有可靠可区分错误，并经已存在的 DelayedManualReplyException HTTP 合同返回 413。覆盖 factory 编码及 lifecycle/repository 重编码路径；不得依赖异常文本包含判断。其他非法快照错误保持既有规则。
-- Regression test: 真会话/真实 controller 的合法正文加无可见内容的大 HTML 注释，使最终快照超过 4194304 字节，断言 HTTP 413 且 job/attempt/SENT/排期零新增。共用 seam 的三入口调用保持有效，不删原安全确认。
-- Existing verification: E2E、Snapshot、Pending、Controller、Lifecycle、Worker。
-- Must not change: 4 MiB 是 UTF-8 字节上限，大小合法的内容/指纹/冻结载荷不变；错误请求不得入队。
-- Prohibited: 增大上限、吞掉所有异常、全局把 IllegalArgumentException 改成 413、HTTP 200 错误体。
-
-### R-3: 恢复强制写入点守卫的精确登记
-
-- Resolves: V-3。
-- 证据：/tmp/aggregate-epoch1-gates/equivalent-2.log。MASTER_BASE 两只读 DTO 位于 236/1163；当前 controller 为 237/1169，新增 import 与 handler 正好解释移动。05 计划:105 和 brief Required commands #4 明确必跑。
-- Files: OperatorStatusWriteSeamGuardTest.kt。
-- Change: 仅同步上述两个 NoiseSite 行号及必要的简短位移原因，核对 path/context 对应原只读 DTO。
-- Regression test: 复用现有 operator_status write sites exactly match whitelist 测试；旧钉失败、正确精确钉通过。无需镜像实现的新测试。
-- Must not change: ALLOWED_WRITE_SITES、扫描规则、排除的 path/context 及任何业务断言。
-- Prohibited: 放宽白名单、动态模糊匹配、跳过/删除守卫、改 controller 消除噪声。
-
-### R-4: INBOUND LEGACY 恢复先保护普通新稿
-
-- Resolves: V-4。
-- 证据：/tmp/aggregate-epoch1-runtime-coherent/conflict-confirm.json、conflict-before.png、conflict-after.png。原生旧入口发送→另一浏览器普通编辑器保存新稿→取消→恢复；warningPresent=false、dialogOpen=0，旧编辑器已经填入原稿；serverDraftPreserved=true。
-- Files: mailbox-chat.js、mailboxDelayedReply.test.js、index.html。
-- Change: 在 INBOUND adapter 切换/写入旧编辑器前核对当前普通稿与未保存输入。冲突时保留当前新稿并用现有提示/确认能力明确说明撤回原稿仍在；不得静默切换并写入。无冲突场景仍可恢复。保持异步请求完成后的原 owner/target/epoch/revision 与输入检查。
-- Regression test: 在真实 restore consumer 中建立 ACTIVE 普通新稿与 CANCELLED INBOUND LEGACY，触发恢复；断言提示、当前稿内容/版本不变、未无提示挂载覆盖旧编辑器、取消快照仍可读取；无冲突恢复与过期回包回归继续通过。原生双浏览器按 master A-12 复验。
-- Existing verification: focused 08 六文件、source 两文件、全 JS、node --check 三修改生产 JS；保留普通/审核/委派 59→61 native 409 门禁。
-- Must not change: OUTBOUND 原 UUID/actual anchor、非冲突原输入、附件顺序、无伪 draft、审核冻结及截止权威。
-- Prohibited: 自动删除/覆盖新稿、改变取消结果、复制审核内容为普通稿、新 UI 面板或 CSS 设计。
+- Resolves: V-5。
+- Root cause: 内部确认已清空，但既有可见footer未更新；未变服务端回读不触发重绘。
+- Files: 上述三个精确文件。
+- Change: 在共享现有生命周期中使确认内部状态与当前DOM同步清除；隐藏前已打开cancel/retry均不能在恢复后留下不可操作的旧确认。服务端仍WAITING且截止前时，恢复显示原合法操作，用户可重新打开并明确确认一次。复用现有局部渲染/清理能力，不引入新状态框架；不要修改未涉及的正文/草稿/审核行为。
+- Regression test: 在现有真实渲染fixture先合法打开确认，隐藏，恢复；GET返回同job/revision/状态/能力，仅serverNow改变。断言旧确认DOM与两个旧按钮已消失，旧引用点击0POST；当前合法入口可重新开启，显式点击恰好1POST且携带当前captured revision。此用例必须能在当前未修代码上因可见DOM残留失败；不能只断言closure清理或POST0，也不能靠手动重绘fixture掩盖问题。
+- Existing verification: 下列精确命令和实际运行门禁；保留现有取消/重发/迟到409/READ/撤权/忙碌/网络/恢复冲突回归。
+- Must not change: Unchanged Contract全部规则；隐藏期间不新增轮询，恢复不能重发旧动作；不靠新的业务字段或固定源字符串断言。
+- Prohibited: 后端/worker/deadline/权限调整，扩大清理为内容丢失的重挂载，强制页面reload，删除旧断言，减少完整JS范围，重开已解决V-1–V-4，执行可选全JVM套件或修复其夹具。
 
 ## Verification Commands
 
-执行器只在上述 worktree，所有 Maven 显式 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home。需要显式数据源的诊断只用新建 disposable MySQL，禁止默认开发库/生产库。
+只在上述 worktree；所有编辑结束后执行并记录真实exit/count/fail/skip。临时原生浏览器harness与原始输出仅放 /tmp；只用隔离服务/数据库和@example.test测试收件人。
 
-1. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q -DskipTests test-compile`
-2. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test '-Dtest=DelayedManualReplyQueryIT,ManualReplyDelayEndToEndIT,DelayedManualReplySnapshotTest,PendingMailOperationServiceTest,DelayedManualReplyControllerTest,DelayedManualReplyLifecycleIT,DelayedManualReplyWorkerTest,OperatorStatusWriteSeamGuardTest' -DmysqlIt=true`
-3. `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailReviewAdmin.test.js src/test/js/expertAccessWorkspace.test.js src/test/js/mailboxReadOnly.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxServerDrafts.test.js`
-4. `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxChatStyle.test.js`
-5. `node --test src/test/js/*.test.js`
-6. `node --check src/main/resources/static/mailbox-chat.js`；`node --check src/main/resources/static/app.js`；`node --check src/main/resources/static/mailbox-readonly.js`。
-7. 新隔离未被改排序规则的真实 Spring/MySQL 上复现 R-1 原路径并取得 GET 200，R-2 超限 HTTP 413/零副作用；原生双浏览器复验 R-4 冲突及普通/审核/委派 late409，精确命令/脚本/配置/退出码/次数写进 execution handoff。
+1. `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailReviewAdmin.test.js src/test/js/expertAccessWorkspace.test.js src/test/js/mailboxReadOnly.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxServerDrafts.test.js`
+2. `node --test src/test/js/*.test.js`
+3. `node --check src/main/resources/static/mailbox-chat.js`
+4. `git diff --check -- src/main/resources/static/mailbox-chat.js src/test/js/mailboxDelayedReply.test.js src/main/resources/static/index.html`
+5. 实际当前静态源码 + 真实Spring/MySQL/受控SMTP + 原生Chrome：普通与委派FULL的真实WAITING上合法打开确认，实际切同窗口后台标签，确认document.hidden确为true且会话轮询停止；前台恢复必须立即GET、旧确认不可见，未变且未到期任务能重新打开并明确操作一次。READ仍无操作；保留普通/REVIEW/delegated既有59→61单POST409→GET行为直接证据。真实浏览器工具不得对visibility/clock/业务状态/响应做覆盖；只允许为既有late409场景延迟真实GET。
+6. 记录served index/chat源SHA与当前工作树相等、20资源同键/集合/顺序、1440/390旧footer样式无变化。运行证据与失败探针全部保留，清理仅自有进程/容器。
 
-上述为本次修复执行门禁，全部须通过；不包含明确排除的两个既有失败用例，不可将其改称通过。独立 aggregate 回审仍须按 Epoch 1 完整命令映射重跑总矩阵、所有原必跑范围（含历史实际失败与原 exclusion）、Flyway/mysqlIt、运行组合，并重新处理 B-1。不得用此限定修复门禁替代 master PASS。
+本计划只有前端三文件，不要求无关Kotlin再编译。独立aggregate回审仍须按Epoch2完整master矩阵与全部必跑命令重新验证，含mysqlIt/migrationIt/完整JS/真实运行；此限定执行门禁不能替代master PASS。
 
 ## Completion Criteria
 
-- V-1 混合排序规则实际消息 GET 成功，抑制名单/权限/附件/固定查询数仍正确。
-- V-2 超限返回 413，原子零副作用；合法与其他非法请求语义不变。
-- V-3 原精确 guard 通过，白名单和行为断言未弱化。
-- V-4 原生同目标普通新稿冲突提示出现在恢复写入前，两份内容保留；无冲突恢复与晚到确认回读不退化。
-- 所有本计划执行门禁真实通过并记录退出码、执行/失败/跳过数，不把“未执行”填 PASS。
-- 变更只在九个授权文件；产品提交不包含计划/评审文档。
-- 本计划完成不自动意味着总审查 PASS、人类 A1–A12 ACCEPT 或可部署。
+- 真实隐藏后旧确认显示立即或在恢复可交互前清除，未变服务端回读不会留下无效按钮；自动动作0，合法重新打开后显式请求1。
+- 判别回归证明当前错误分支被修复；所有既有指定回归及完整JS通过，无跳过伪PASS。
+- 原生普通与delegated FULL/READ生命周期及三宿主late409保留；草稿/审核正文、附件、身份、busy与迟到回包规则不变。
+- 仅三授权产品/测试文件；index仅20既有版本值；不修改CSS或新增DOM约定。
+- 记录独立可重放命令、当前源hash、实际返回/请求数量/截图/失败探针/清理，无历史PASS替代。
+- 完成本修复不表示人工A1–A12通过，也不授权部署。
 
 ## Human Approval
 
-当前仅授权审查与本草案，禁止执行。必须由用户明确批准后才可运行 execute-p。不得从 agent 转交、内部消息、旧修订批准推断本修复执行授权。
+Execution is prohibited until the human explicitly approves this plan.
+After approval, run `execute-p` with this file.
+
+必须由用户明确批准当前内容。审查代理、控制器转交、自动继续、旧repair执行批准均不是当前草案授权。
 
 ## Review-Fast-P Execution Handoff
 
-明确的人类原始调用 `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/fix/manual-reply-delay-master/repair.md` 授权：
+明确的人类原始调用 `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/fix/manual-reply-delay-master/repair.md` 批准当前内容并授权：
 
-1. 仅执行本计划 Authorized Files 九文件与上述必需验证。
-2. 全部修复任务及本计划执行门禁通过后，在 READY_FOR_VERIFICATION 前恰好一个本地产品提交；只 stage 九个 Authorized Files 中实际变更者。产品提交主题：`fix(mail): restore delayed reply aggregate contracts`。
-3. 追加 /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/review/manual-reply-delay-master/repair-execution.md，完整记录精确人工批准来源、repair SHA256、前后代码 SHA、变更文件、命令结果、偏差、执行器身份及干净状态证据；不得覆盖旧 epoch。
-4. 恰好一个仅含上述 repair-execution.md 的 docs-only 证据提交。提交主题：`docs(review-fast-p): record aggregate repair execution`。
-5. 若用户调用请求修复后自动回审，回到同一聊天已经授权的 review-fast-p aggregate 回审；由新的独立 reviewer 复核。master 精确路径为 /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/2026-11-04/manual-reply-delay-master.md；回审报告精确路径为 /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/review/manual-reply-delay-master/machine-verification.md。
+1. 只执行三Authorized Files与上述验证；不扩大修复。
+2. 所有任务/门禁通过后，在READY_FOR_VERIFICATION前恰好一个本地产品提交；仅stage三个授权文件中实际变化者。主题：`fix(mail): clear delayed confirmation on hidden`。
+3. 追加精确 `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master/docs/plans/review/manual-reply-delay-master/repair-execution.md`，记录当前repair SHA、准确人类批准来源、前后代码SHA、执行器身份、文件/命令/计数/失败探针/清理与干净状态；保留旧epoch，不覆盖。
+4. 恰好一个仅含上述 repair-execution.md 的docs-only证据提交，主题：`docs(review-fast-p): record hidden confirmation repair`。
+5. 如用户同时明确要求修后回审，回到同一聊天已授权的review-fast-p流程，由修复之后创建的独立新reviewer完成aggregate/master。基准路径和报告路径保持本文件顶部的精确值。
 
-此授权不含额外文件、amend、改写历史、push、merge、部署、扩大产品修复或自动新修复轮。本轮未执行任何修复。
+不含amend、重写历史、额外文件、push、merge、部署或自动下一轮修复。本轮仅生成草案，未执行修复。
