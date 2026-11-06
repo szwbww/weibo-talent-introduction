@@ -1,0 +1,8 @@
+{
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt": "2f8111efe0b9a52be6aea11916ac6475f1cb9b182306f17db7ad1c03df2374c9",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt": "983d00b4a4e7d8f9c9efb6400eba49dc16a9a741bb5385844e2d8a1f509a5bc4",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt": "8dc1766ed1518e71e0dcff980bf1d4e91d32bd812eba84f5cfeee8a379f80f7d",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessApplyService.kt": "c6ac5e758ac4e14cc884bde2ce116f66ab105bb8a1e5aede03f84de247e9e81d",
+  "src/main/resources/static/discovery-paper-reprocess.js": "aca54cf36af6e418136080b63b35010f95135a75e822e9e420f5637aa7083737",
+  "src/main/resources/static/index.html": "8c174010c4426bceaeb6deb87649bfb0edfb813baf11772a052fc9d5ad7b696c"
+}

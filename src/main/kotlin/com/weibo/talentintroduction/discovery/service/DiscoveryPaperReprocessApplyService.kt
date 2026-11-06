@@ -178,15 +178,8 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
         context: DiscoveryVerificationExecution) {
         repository.requirePermission(parent)
         val candidates = target.input.path("paperRefs").toList()
-        fun name(n: JsonNode) = listOf(n.path("givenNames").asText(""), n.path("familyNames").asText(""))
-            .joinToString(" ").trim().lowercase().replace(Regex("\\s+"), " ")
-        val names = candidates.filter { !it.path("givenNames").asText().isBlank() && !it.path("familyNames").asText().isBlank() }
-            .map(::name).distinct()
-        val conflict = names.size > 1 || listOf("orcidId", "openAlexAuthorId").any { key ->
-            candidates.mapNotNull { it.path(key).asText(null) }.distinct().size > 1
-        }
-        val bound = candidates.firstOrNull { !it.path("givenNames").asText().isBlank() &&
-            !it.path("familyNames").asText().isBlank() && DiscoveryIdentity.validEvidence(it.path("identityEvidence").asText(null)) }
+        val conflict = DiscoveryPaperReprocessService.sourceConflict(candidates)
+        val bound = DiscoveryPaperReprocessService.boundSource(candidates)
         if (conflict || bound == null) {
             result.put("targetOutcome", if (conflict) "CONFLICT" else "SKIPPED")
                 .put("reasonCode", if (conflict) "SOURCE_IDENTITY_CONFLICT" else "IDENTITY_NOT_BOUND").put("applied", true)
@@ -272,14 +265,23 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
             listOf("givenNames", "familyNames").any { key -> val current = hit.source[key]?.toString();
                 !current.isNullOrBlank() && !current.equals(bound.path(key).asText(), true) }
         }
-        if (protected || mismatched || raw == null || profile == null || !DiscoveryIdentity.isDiscoveryMap(raw.source)) {
+        val blockedReason = when {
+            protected -> "BUSINESS_PROTECTED"
+            raw == null -> "EXISTING_RAW_MISSING"
+            profile == null -> "EXISTING_PROFILE_UNAVAILABLE"
+            !DiscoveryIdentity.isDiscoveryMap(raw.source) -> "EXISTING_NOT_DISCOVERY"
+            mismatched -> "EXISTING_IDENTITY_CONFLICT"
+            else -> null
+        }
+        if (blockedReason != null) {
             result.put("targetOutcome", if (protected) "PROTECTED" else "CONFLICT")
-                .put("reasonCode", if (protected) "BUSINESS_PROTECTED" else "EXISTING_IDENTITY_CONFLICT").put("applied", true)
+                .put("reasonCode", blockedReason).put("applied", true)
             save(parent, target, result)
             return
         }
-        result.put("needsRecheck", true).put("repairExpected", profile.givenNames.isNullOrBlank() ||
-            profile.familyNames.isNullOrBlank() || !DiscoveryIdentity.allowed(profile))
+        val existingProfile = requireNotNull(profile)
+        result.put("needsRecheck", true).put("repairExpected", existingProfile.givenNames.isNullOrBlank() ||
+            existingProfile.familyNames.isNullOrBlank() || !DiscoveryIdentity.allowed(existingProfile))
             .put("targetOutcome", "UNCHANGED").put("applied", true)
         result.put("alreadyAdmitted", if (admission?.decision == "AUTO_PASSED") 1 else 0)
         trace(result, 4, "SUCCESS")
@@ -363,8 +365,7 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
     }
 
     private fun sourceRefs(input: JsonNode): List<PaperSourceRef> = input.path("paperRefs").filter { ref ->
-        !ref.path("givenNames").asText().isBlank() && !ref.path("familyNames").asText().isBlank() &&
-            DiscoveryIdentity.validEvidence(ref.path("identityEvidence").asText(null))
+        DiscoveryPaperReprocessService.boundSource(listOf(ref)) != null
     }.flatMap { ref ->
         ref.path("attemptIds").map { attempt -> PaperSourceRef(ref.path("recordId").asLong(), attempt.asLong(),
             ref.path("bodyHash").asText(), ref.path("sourceExecutionId").asLong(), ref.path("sourceName").asText(), ref.path("sourceItemKey").asText()) }

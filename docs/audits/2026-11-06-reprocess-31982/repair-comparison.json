@@ -1,0 +1,884 @@
+{
+  "manifestSha256": "de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c",
+  "networkCalls": 0,
+  "businessWriteServicesConstructed": 0,
+  "combinations": 337,
+  "beforeCorrect": 51,
+  "afterCorrect": 147,
+  "additionalCorrectCombinations": 96,
+  "lostCorrectCombinations": 0,
+  "wrongBindingsWithinConfirmedTruth": 0,
+  "known283NowRecoverableTargets": 96,
+  "gains": [
+    {
+      "recordId": 31413,
+      "emailHash": "edeb25be5a420ba870b84d7f",
+      "nameHash": "ad75b966bb1043e736cffa73",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31510,
+      "emailHash": "266c15a02476526f8ce1eb63",
+      "nameHash": "107f4da6ae0692fa1ec8432a",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31510,
+      "emailHash": "a8102e1e61e80742f22dc16b",
+      "nameHash": "cb5f3573ce8e696c8b735659",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31520,
+      "emailHash": "38deccdc8e864d63f1c7319a",
+      "nameHash": "19820e8a51fa199cde8156af",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31584,
+      "emailHash": "5fe55089220bba6d7b9aa88e",
+      "nameHash": "80ec850c61f7019eb709325a",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 31639,
+      "emailHash": "64e3b3b257a590bfc87f1614",
+      "nameHash": "07bec8a5f92c166c2445739f",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31646,
+      "emailHash": "b72bf58c4d9726691c8b5ee3",
+      "nameHash": "d21565f99fea188e7cf0fcb2",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 31706,
+      "emailHash": "1550b8aeb6ea2b4a25e90b14",
+      "nameHash": "d0a7322ab58c35dccdd310d1",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31742,
+      "emailHash": "0662e287db0e0d61dc6d883d",
+      "nameHash": "c6ab9845036f90a06213aac0",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 31768,
+      "emailHash": "a25c3d7239cde674787e581b",
+      "nameHash": "2111606803b212bd293bd08e",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31926,
+      "emailHash": "116783813304191b5e013b98",
+      "nameHash": "ff3192af08dc198a75ba0eb8",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 31949,
+      "emailHash": "a6047a50e5fef6ba9ac369c9",
+      "nameHash": "7f976f32772d2087d5d63674",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31961,
+      "emailHash": "0f3714aa9c7a6c46c6d74827",
+      "nameHash": "79ca79d7194dfd31b770e5b0",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31961,
+      "emailHash": "404b08f1922f5f3934d39868",
+      "nameHash": "aa17d159f0bd714375a8bdb4",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31961,
+      "emailHash": "54b70cebcd8d57097c484fcd",
+      "nameHash": "1159ed2dc7ea4b8f7e0b165e",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31961,
+      "emailHash": "de537034453a80967e182401",
+      "nameHash": "1fa303e7d93109db41d2132d",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 31961,
+      "emailHash": "e80600538568864bae985c66",
+      "nameHash": "43bd9fda7b03a7fecf675dd1",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 32126,
+      "emailHash": "1b34c72dd1702d696d44f208",
+      "nameHash": "f7f55a9a168ed5fb7ea29c6b",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 32136,
+      "emailHash": "f4f8f3d6553e9cc128d153db",
+      "nameHash": "7f3b6acf8519f914d5fe07f9",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 32259,
+      "emailHash": "7f7d7fc77d75ff259c7e4069",
+      "nameHash": "e1fd661985d6e81d3da53900",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 32325,
+      "emailHash": "54208eccef45069f273076d4",
+      "nameHash": "1a27d0c96b76d17c669dfb20",
+      "page": 2,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 32485,
+      "emailHash": "71aa6c3e8455e96f3f8fb3d0",
+      "nameHash": "8707e06a63b3d39b11e3d67c",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 32741,
+      "emailHash": "3d09a9552b98fe053d945957",
+      "nameHash": "065cf3c94b15f1c2649fa3a0",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 32741,
+      "emailHash": "99a6917345d09e73ca1f0fc8",
+      "nameHash": "a30447d9e51007fc51896f4c",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 33047,
+      "emailHash": "fc4608c19a816adf3eb5f62c",
+      "nameHash": "b6f53b3c17dfaa29b1653c15",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33252,
+      "emailHash": "512219a64c1875792c546a13",
+      "nameHash": "92ae832d9a3cf9e9e3d10f3d",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33266,
+      "emailHash": "81bad12c95d416883fa124fc",
+      "nameHash": "6153babf6b65846e6c454111",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 33620,
+      "emailHash": "c13db12b9abdeb00f7f84de1",
+      "nameHash": "bcd5875891d76fe1a60b5edf",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 33688,
+      "emailHash": "8b27e896502f1383cf00b41f",
+      "nameHash": "6a5a4705ffdaad9dd308719e",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33742,
+      "emailHash": "2595d4d8b6fcfe7820b5dc1a",
+      "nameHash": "476a8ae2892b2edb3072fbb4",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33742,
+      "emailHash": "43bc46cf97ae2dcc582e18bb",
+      "nameHash": "7ae3bac72363ae2a2536d120",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33742,
+      "emailHash": "f8c1aa5e6766245df86723e1",
+      "nameHash": "179c9b7b5e30ec93b4dacbc4",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33895,
+      "emailHash": "aec1f75e307a44c11d02d4e2",
+      "nameHash": "1c6c1e76df451caee7ded225",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33942,
+      "emailHash": "875f9391eb4dfa3237648a7e",
+      "nameHash": "ff12a13aaf02c423496f0b04",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33980,
+      "emailHash": "7442f5ddb5afc13f9e484fe4",
+      "nameHash": "8c361cdb9071c41569a3e435",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 33980,
+      "emailHash": "78870a9b2c11994eab38379d",
+      "nameHash": "f3d947fed137390fb0802267",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34070,
+      "emailHash": "9b5cb6705871e912c3f6fc67",
+      "nameHash": "dc11e5acc5a839e6618b32a6",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 34153,
+      "emailHash": "fe1cde81b435d120b0fe8d37",
+      "nameHash": "8c15f2fbbec48317ffe375cd",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 34194,
+      "emailHash": "14e6cb6e2a72414db370cb2e",
+      "nameHash": "c6497415417fd3cbe6948e3d",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34310,
+      "emailHash": "9e294de1fb38345e327cd4e4",
+      "nameHash": "30fbeb13df37086cd745765d",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 34396,
+      "emailHash": "447a8dc44ceff656033195f4",
+      "nameHash": "7e9fb8873fc1c52767354faf",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34462,
+      "emailHash": "074a1bbab156fa69a4c9ecc2",
+      "nameHash": "471b32b0b775c0df774883b4",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34548,
+      "emailHash": "c92a26595952614115ad7294",
+      "nameHash": "ecad9466ec45f544833140fe",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34683,
+      "emailHash": "1412398699c95d2f95b66b02",
+      "nameHash": "2cb4d4d7b09ccfbeafce7776",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34683,
+      "emailHash": "ff2ab531037dade2c7fe2c10",
+      "nameHash": "11cadf9bed723aa955874aea",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 34775,
+      "emailHash": "fc860be98df39fe3207b41d4",
+      "nameHash": "350c960e443583b3753814d8",
+      "page": 2,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 34873,
+      "emailHash": "2886a61ca1092a27aadaad6f",
+      "nameHash": "fc692bdd368505532e569863",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35054,
+      "emailHash": "2e693d4e4ba7520775047896",
+      "nameHash": "5e0266de1c84e0cf9ecc5afc",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35054,
+      "emailHash": "3aa8b87a0c96e4453195975a",
+      "nameHash": "b21c7ebd492d3d2ac54ab692",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35054,
+      "emailHash": "749a99cb23637dc81021fe66",
+      "nameHash": "2fcae1b0cd83f8c9ff578a67",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35054,
+      "emailHash": "a128792275cd697a128dd297",
+      "nameHash": "8c9145a3da70ecb45d883958",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35208,
+      "emailHash": "26d5ab589a4e260fae8eacd6",
+      "nameHash": "87b74529972abc1b8de3550f",
+      "page": 1,
+      "productionRules": [
+        "MARKER_OR_PARAGRAPH_CONTACT"
+      ]
+    },
+    {
+      "recordId": 35208,
+      "emailHash": "9ae79fd58b0926af3e4c7166",
+      "nameHash": "fca58cb37884f873daf11242",
+      "page": 1,
+      "productionRules": [
+        "MARKER_OR_PARAGRAPH_CONTACT"
+      ]
+    },
+    {
+      "recordId": 35236,
+      "emailHash": "f68e35eaa3e5f38f1c7fb7c0",
+      "nameHash": "89ff35d1efa4f1ff2dea4af1",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35238,
+      "emailHash": "14bf49f448f3e55ed930c690",
+      "nameHash": "29beecb21ec92298d1960e36",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35252,
+      "emailHash": "10413dd6831b163b5e132244",
+      "nameHash": "dd11de50914e60e05e119580",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35289,
+      "emailHash": "301b1b5ebcef65b964ebdc0c",
+      "nameHash": "60d407e8d90661e846ab33f9",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35289,
+      "emailHash": "758dbfc42fdbd5755b693e8c",
+      "nameHash": "13f03b0dc9093df4dc4f020f",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35289,
+      "emailHash": "9bd11b43a0e7ddac7e1a9cc3",
+      "nameHash": "422f8591b954ec89554e84b9",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35463,
+      "emailHash": "8ac0496e175f8de0d06b15ec",
+      "nameHash": "7b105934df77ef618c8fe913",
+      "page": 1,
+      "productionRules": [
+        "PDF_AUTHOR_CONTACT_BLOCK"
+      ]
+    },
+    {
+      "recordId": 35466,
+      "emailHash": "030fc0f2e49304a22cf4bbb0",
+      "nameHash": "5e04195827e4a57c9fe65c38",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 35595,
+      "emailHash": "9afe332b70ed8021e1cff0a8",
+      "nameHash": "73ee0b9e224328be01e3b5be",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 35595,
+      "emailHash": "aab0089b2fd1426c64e21b7f",
+      "nameHash": "82387d8b1f36012dbbbcf00d",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 35652,
+      "emailHash": "2ed4b8cc9faa494c0e3d8cfd",
+      "nameHash": "aeda77ff582b157351942a20",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35671,
+      "emailHash": "80df4161aba163de7c26ec21",
+      "nameHash": "9e97912cd653d3f5a87d3d6e",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 35715,
+      "emailHash": "48e00d7fac33ad8983619328",
+      "nameHash": "f62ef546908af835b8e1d281",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35715,
+      "emailHash": "605a9cb6ba9b713e13d02dcb",
+      "nameHash": "7e7b1313dac21538d84a6119",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35715,
+      "emailHash": "87f445b50ccbfddb2382aab2",
+      "nameHash": "a9d43ead76aeaf8095b860c0",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 35868,
+      "emailHash": "2a221d1d3ffcc21222ef0c2d",
+      "nameHash": "0a653bb446944da7ff765e41",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36021,
+      "emailHash": "2fb1da8ef5d75e97bcd4f9bb",
+      "nameHash": "217bba421f3cff897167d5c1",
+      "page": 2,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36158,
+      "emailHash": "c6d6852dec03e401f9e849c6",
+      "nameHash": "49128df42c54e28af186c2fc",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36208,
+      "emailHash": "54f14c094ff12e4cf007ef56",
+      "nameHash": "4b6275e4ca70eea91346f21a",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36208,
+      "emailHash": "a5c16009ce4123c2a5b1fbb0",
+      "nameHash": "c076c3131768bb9ec732b982",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36315,
+      "emailHash": "adef42f09a0fb977a69e624d",
+      "nameHash": "c202d1a655ff48faa1606633",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 36418,
+      "emailHash": "67bbc7bd3baf2a3a78aa9610",
+      "nameHash": "064b2139470182c80fa5b503",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36634,
+      "emailHash": "a6c8eaa3504cfa135dae36a3",
+      "nameHash": "7f290b612b514ca1b941709f",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36695,
+      "emailHash": "45c13f59f243514c3e30bfde",
+      "nameHash": "18ce82b14046ecb9bf6c1f64",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36721,
+      "emailHash": "7cff741031c2f373920f86d0",
+      "nameHash": "880171dd4e223188afe70e55",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 36739,
+      "emailHash": "bfa81ee600f7a42c528b21b9",
+      "nameHash": "f18d97d9af6b602d630eedcb",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 36857,
+      "emailHash": "b82269012a15b376d56929b8",
+      "nameHash": "67e00dfe561dd3124fb2cdf5",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 37140,
+      "emailHash": "46faaae06487a8f6280b8011",
+      "nameHash": "1ae52c825454b1e9103c1864",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37140,
+      "emailHash": "af45a5dec4e81e9626371346",
+      "nameHash": "b720741fd025cef744d77c38",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37167,
+      "emailHash": "162ce1fe2e8d0141b3b2e2f2",
+      "nameHash": "36198a2f2e74af4cf66909e1",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37226,
+      "emailHash": "837b3a0c49bf02bccd2826bd",
+      "nameHash": "38e37b7c2234424ce9bfc62f",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37226,
+      "emailHash": "85ac53a3f3baf0ed008ee7de",
+      "nameHash": "de3500dadd877c89adc2366e",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37226,
+      "emailHash": "a7905563bdf858aa2cc366db",
+      "nameHash": "6635ebd2e55f4bf647be9768",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37301,
+      "emailHash": "7a428db4afb4b9c892c5c985",
+      "nameHash": "5d488a13d1d5886a7b93f8b6",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 37516,
+      "emailHash": "28a79978ee9a1b12159f8ce2",
+      "nameHash": "6290d405e7587906ad5a5a94",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37580,
+      "emailHash": "2200e40f4f93cc35b0748a84",
+      "nameHash": "2d68ef1c40dc66310dff8bcb",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 37647,
+      "emailHash": "ab265f9994b64058dd6d96f9",
+      "nameHash": "f25728444199a8b64aeaa533",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37651,
+      "emailHash": "18254cf09ccd8d95e1dd349a",
+      "nameHash": "9bc865aed20aa9ad77792fa9",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 37785,
+      "emailHash": "9e7449d85398d4b0bc4c0515",
+      "nameHash": "56222db5fa0082c2aa5be65c",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37785,
+      "emailHash": "ff79b1fe9655516ebda7fcb3",
+      "nameHash": "d9049c4523946ba158791db0",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    },
+    {
+      "recordId": 37849,
+      "emailHash": "9a5fd47149e28b07adedfcc0",
+      "nameHash": "0b613c0a3d4a526401960753",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 37849,
+      "emailHash": "dd5bb05ab151ef74a24c6dad",
+      "nameHash": "f18c460f89b9742ba070bdc9",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAMED_CONTACT"
+      ]
+    },
+    {
+      "recordId": 37983,
+      "emailHash": "9790632d1d058f40d42d1683",
+      "nameHash": "779a4471653d2cb0ad275d9e",
+      "page": 1,
+      "productionRules": [
+        "PDF_NAME_EMAIL_ADJACENT"
+      ]
+    }
+  ],
+  "lost": [],
+  "limits": [
+    "Parser binding opportunities, not new experts or admissions.",
+    "47 unconfirmed column candidates remain excluded from truth; no negative-corpus coverage claim.",
+    "No claim of recoverability for the other 3276 unbound targets."
+  ]
+}

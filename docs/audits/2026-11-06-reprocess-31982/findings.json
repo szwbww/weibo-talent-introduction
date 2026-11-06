@@ -1,0 +1,43 @@
+{
+  "runId": 31982,
+  "sourceExecutionId": 30711,
+  "readOnly": true,
+  "businessChanges": false,
+  "checkedTargets": 3659,
+  "unbound": {
+    "total": 3559,
+    "confirmedPriorEvidence": 283,
+    "withoutIndependentBindingProof": 3276,
+    "replayReasons": {
+      "NO_PRODUCTION_LAYOUT_CONTACT": 276,
+      "EMAIL_NOT_LITERAL_IN_PDFBOX_PAGE": 1,
+      "CURRENT_BASELINE_RECOVERS_BINDING": 1,
+      "AUDITED_PAGE_OUTSIDE_PRODUCTION_SELECTION": 1,
+      "NAME_NOT_LITERAL_IN_PDFBOX_PAGE": 4
+    }
+  },
+  "conflicts": {
+    "sourceNullNameFalseConflict": 40,
+    "differentNameFields": 43,
+    "notDiscoveryScopeMislabelled": 15,
+    "rawMissingMislabelled": 2
+  },
+  "serverFreshProbe": {
+    "records": [
+      31413,
+      31863,
+      32259
+    ],
+    "runtimeDifference31863": {
+      "localBound": true,
+      "serverBound": false,
+      "localLayoutEmailMatches": true,
+      "serverLayoutEmailMatches": false
+    }
+  },
+  "limits": [
+    "All 3659 persisted records were classified; not all 3276 remaining originals received independent author-email confirmation.",
+    "Binding repair opportunities are not new-expert or admission counts.",
+    "Current ES read of 60 conflicts was one read-only terms query; checks are not a cross-database transaction snapshot."
+  ]
+}

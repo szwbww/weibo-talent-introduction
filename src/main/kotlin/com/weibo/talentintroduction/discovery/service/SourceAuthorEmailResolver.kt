@@ -17,7 +17,7 @@ internal object SourceAuthorEmailResolver {
     private val emails = PlainTextEmailExtractor()
     private val mailbox = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
     private val prefix = Regex("(?i)^[*∗†‡§\\s]*(?:(?:corresponding\\s+author|correspondence|contact)\\s*(?::|to\\b)\\s*)")
-    private val separator = Regex("(?i)^\\s*(?::|[–—]|<|\\(|\\[|(?:e-?mail|email address)\\s*:)\\s*(?:e-?mail\\s*:\\s*)?")
+    private val separator = Regex("(?i)^\\s*(?::|,|[–—]|<|\\(|\\[|(?:e-?mail|email address)\\s*:)\\s*(?:e-?mail\\s*:\\s*)?")
     private val emailLine = Regex("(?i)\\be-?mail(?: address)?\\s*:")
     private val shared = Regex("(?i)\\b(?:the\\s+authors|corresponding\\s+authors|equal\\s+contribution|all\\s+authors)\\b")
     private val sectionBoundary = Regex("(?i)^\\s*(?:references|bibliography|abstract|keywords?|introduction)\\b")
@@ -147,7 +147,21 @@ internal object SourceAuthorEmailResolver {
             if (block.size > 1) entries += block.joinToString("\n") { it.first } to block.joinToString(" ") { it.second }
         }
         val claims = mutableListOf<Claim>()
-        for ((originalEntry, entry) in entries) {
+        val contactEntries = entries.flatMap { (original, entry) ->
+            if (entry.length > 1000 || shared.containsMatchIn(entry)) return@flatMap emptyList()
+            val parts = entry.split(';').map(String::trim).filter(String::isNotEmpty)
+            // Split only complete named records. A semicolon in a shared author list
+            // or in one author's multiple-mailbox field is not an ownership boundary.
+            val separateOwners = parts.size > 1 && parts.all { part ->
+                val body = normalize(prefix.replaceFirst(part, "").trimStart(' ', '*', '∗', '†', '‡', '§'))
+                mailbox.containsMatchIn(part) && authors.any { author ->
+                    val name = fullName(author)
+                    name.isNotEmpty() && body.startsWith(name) && separator.containsMatchIn(body.removePrefix(name))
+                }
+            }
+            if (separateOwners) parts.map { original to it } else listOf(original to entry)
+        }
+        for ((originalEntry, entry) in contactEntries) {
             if (entry.length > 1000 || shared.containsMatchIn(entry)) continue
             // A trailing parenthesized owner belongs only to the immediately preceding mailbox.
             // Initials are admitted only here, never from the metadata roster alone.
@@ -158,7 +172,7 @@ internal object SourceAuthorEmailResolver {
                 val email = emails.extract(label.groupValues[1]).singleOrNull() ?: continue
                 claims += Claim(email, owner, originalEntry)
             }
-            val body = prefix.replaceFirst(comparable, "").trim()
+            val body = prefix.replaceFirst(comparable, "").trim().trimStart('*', '∗', '†', '‡', '§', ' ')
             for (author in authors) {
                 if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) continue
                 val namePattern = contactNameText(author.givenNames + " " + author.familyNames).trim().split(Regex("\\s+"))

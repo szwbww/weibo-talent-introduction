@@ -151,7 +151,7 @@ class DiscoveryPaperReprocessServiceTest {
                 if (++seen == at) throw CancellationException("fixture")
             } }
         }
-        assertEquals(20261101, analyzer.versions()["pdfLayout"])
+        assertEquals(20261106, analyzer.versions()["pdfLayout"])
         assertEquals(20261004, analyzer.versions()["identityExtraction"])
         assertEquals(default, analyzer.parse(input, metadata))
         val broken = "%PDF-1.4\ninvalid".toByteArray()

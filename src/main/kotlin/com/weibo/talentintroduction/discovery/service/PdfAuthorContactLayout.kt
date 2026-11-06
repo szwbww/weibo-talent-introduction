@@ -9,7 +9,7 @@ import java.util.Locale
 
 /** Bounded, same-page author/contact evidence; no inference from the article body or reference list. */
 internal object PdfAuthorContactLayout {
-    const val RULE_VERSION = 20261101
+    const val RULE_VERSION = 20261106
 
     data class Contact(val email: String, val authorIndex: Int, val page: Int, val authorText: String, val contactText: String, val rule: String? = null) {
         val evidenceText get() = "PDF_PAGE:$page\nAUTHOR:$authorText\nCONTACT:$contactText" +
@@ -163,6 +163,7 @@ internal object PdfAuthorContactLayout {
             val namedPrefix = prefix.containsMatchIn(line.text) && authors.any { containsName(line.text, it) }
             val splitDomain = mailboxLocalEnd.containsMatchIn(line.text) &&
                 authors.any { containsName(line.text, it) }
+            val openOwnerLabel = Regex("$mailbox\\s*\\([^()]*$").containsMatchIn(line.text)
             // A trailing label/wrapped mailbox may continue exactly once; an explicit named
             // correspondence block may contain affiliation lines. Neither follows arbitrary prose.
             val wrappedContinuation = mailbox.containsMatchIn(line.text) ||
@@ -175,7 +176,9 @@ internal object PdfAuthorContactLayout {
                 if (contactBoundary.containsMatchIn(next.text) || paragraphBoundary.containsMatchIn(next.text) ||
                     prefix.containsMatchIn(next.text) || markerGlyph.containsMatchIn(next.text)) break
                 if (splitDomain && !mailboxDomain.matches(next.text)) break
-                if (!namedPrefix && !splitDomain && !next.text.trimStart().startsWith("(") &&
+                if (openOwnerLabel &&
+                    !Regex("^[\\p{L} .,'’\\-]+\\)(?:\\s*[,;]\\s*.*)?$").matches(next.text.trim())) break
+                if (!namedPrefix && !splitDomain && !openOwnerLabel && !next.text.trimStart().startsWith("(") &&
                     !next.text.trimStart().startsWith("<")) break
                 if (namedPrefix && authors.any { containsName(next.text, it) }) break
                 block += next
@@ -197,7 +200,8 @@ internal object PdfAuthorContactLayout {
             Regex("^[\\s*∗†‡§★]+|[\\s,*∗†‡§★\\d]+$"), ""))]?.singleOrNull()
         val stop = Regex("^\\s*(abstract|references|introduction|acknowledg|keywords|conclusion)\\b", RegexOption.IGNORE_CASE)
         val institution = Regex("universit|department|institut|school|laborator|college|faculty|centre|center|academy", RegexOption.IGNORE_CASE)
-        val wholeMailbox = Regex("\\s*(?:e-?mail\\s*:\\s*)?([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})\\s*", RegexOption.IGNORE_CASE)
+        val wholeMailbox = Regex("\\s*(?:e-?mail\\s*:\\s*)?([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})\\s*" +
+            "(?:\\|\\s*(?:Twitter:\\s*@[A-Za-z0-9_]+|ORCID:\\s*\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX])\\s*)*", RegexOption.IGNORE_CASE)
         val ordered = lines.sortedWith(compareBy<Line> { it.y }.thenBy { it.x })
         val referenceHeading = Regex("^\\s*references\\b", RegexOption.IGNORE_CASE)
         // A reference-list name is not a new contact anchor, even when followed by a mailbox.
@@ -214,7 +218,10 @@ internal object PdfAuthorContactLayout {
             for (line in ordered) {
                 if (line.y <= anchor.y + 1f) continue
                 if (line.y - anchor.y > 90f) break
-                if (kotlin.math.abs(line.x - anchor.x) > 36f ||
+                val aligned = kotlin.math.abs(line.x - anchor.x) <= 36f ||
+                    kotlin.math.abs((line.x + line.right - anchor.x - anchor.right) / 2) <= 8f ||
+                    kotlin.math.abs(line.right - anchor.right) <= 8f
+                if (!aligned ||
                     line.right < anchor.x - 8f || line.x > anchor.right + 8f) continue
                 if (line.y - previousY > 24f) break
                 previousY = line.y
@@ -411,6 +418,8 @@ internal object PdfAuthorContactLayout {
         .lowercase(Locale.ROOT).trim().replace(Regex("\\s+"), " ")
 
     private fun toLines(page: Int, positions: List<TextPosition>, pageWidth: Float): List<Line> {
+        val sourceOrder = java.util.IdentityHashMap<TextPosition, Int>()
+        positions.forEachIndexed { index, position -> sourceOrder[position] = index }
         val rows = mutableListOf<MutableList<TextPosition>>()
         for (position in positions.sortedWith(compareBy<TextPosition> { it.yDirAdj }.thenBy { it.xDirAdj })) {
             val row = rows.lastOrNull()?.takeIf { kotlin.math.abs(it.first().yDirAdj - position.yDirAdj) < 5f }
@@ -448,26 +457,45 @@ internal object PdfAuthorContactLayout {
         }
         val lines = mutableListOf<Line>()
         for (row in rows) {
-            val ordered = row.sortedBy { it.xDirAdj }
+            // Keep each monotonic source run intact: substituted font widths can
+            // overlap a following text object. Sorting every glyph by X interleaves
+            // its letters into the previous word (including into a mailbox).
+            val runs = mutableListOf<MutableList<TextPosition>>()
+            for (position in row.sortedBy { sourceOrder[it] }) {
+                val previous = runs.lastOrNull()?.lastOrNull()
+                if (previous == null || sourceOrder[position] != sourceOrder[previous]!! + 1 ||
+                    position.xDirAdj < previous.xDirAdj || kotlin.math.abs(position.yDirAdj - previous.yDirAdj) > 1f)
+                    runs += mutableListOf<TextPosition>()
+                runs.last() += position
+            }
+            val ordered = runs.sortedBy { it.first().xDirAdj }.flatten()
             var text = StringBuilder()
             var left = ordered.first().xDirAdj
             var right = left
+            var baseline = ordered.firstOrNull { !it.unicode.matches(Regex("[\\d,*∗†‡§\\s]+")) }
+                ?.yDirAdj ?: ordered.first().yDirAdj
+            var previous: TextPosition? = null
             fun flush() {
-                if (text.isNotBlank()) lines += Line(page, left, right, row.first().yDirAdj, text.toString().trim())
+                if (text.isNotBlank()) lines += Line(page, left, right, baseline, text.toString().trim())
                 text = StringBuilder()
             }
             for (position in ordered) {
                 val x = position.xDirAdj
                 val gap = x - right
-                if (text.isNotEmpty() && (gap > 24f ||
+                if (text.isNotEmpty() && (kotlin.math.abs(position.yDirAdj - baseline) > 1f &&
+                        !position.unicode.matches(Regex("[\\d,*∗†‡§\\s]+")) || gap > 24f ||
+                        (gap > 6f && previous != null && sourceOrder[position] != sourceOrder[previous]!! + 1) ||
                         (gap > 6f && right < pageWidth * .5f && x > pageWidth * .5f))) {
                     flush()
                     left = x
+                    right = x
+                    baseline = position.yDirAdj
                 } else if (text.isNotEmpty() && gap > 1.2f) text.append(' ')
                 if (position.unicode.isBlank()) {
                     if (text.isNotEmpty() && text.last() != ' ') text.append(' ')
                 } else text.append(position.unicode)
                 right = maxOf(right, x + position.widthDirAdj)
+                previous = position
             }
             flush()
         }

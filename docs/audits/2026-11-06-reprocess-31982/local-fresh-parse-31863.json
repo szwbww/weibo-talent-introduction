@@ -1,0 +1,40 @@
+{
+  "recordId": 31863,
+  "bodyHash": "1a3b66ae6a278aa8eefcd09c42f25a05fe308c6672be80a02fe50ffc80f65b4a",
+  "parserVersions": {
+    "identityExtraction": 20261004,
+    "pdfLayout": 20261101,
+    "format": 1,
+    "qualification": 4
+  },
+  "reasons": [
+    "PAGE_NOT_SCANNED"
+  ],
+  "contactLines": [
+    "Line(page=1, x=35.4, right=188.02992, y=743.8559, text=* Corresponding author: [EMAIL])"
+  ],
+  "layoutContacts": 1,
+  "layoutEmailHashes": [
+    "36aca746a0f3fea1daf33827"
+  ],
+  "layoutMailboxMatchesExtracted": true,
+  "header": "Line(page=1, x=35.4, right=489.12997, y=138.85974, text=biologically-inspired neural dynamics Stanisław Woźniak1,*, Angeliki Pantazi1, Thomas Bohnstingl1,2, and Evangelos Eleftheriou1)",
+  "authorArea": "biologically-inspired neural dynamics Stanisław Woźniak1,*, Angeliki Pantazi1, Thomas Bohnstingl1,2, and Evangelos Eleftheriou1",
+  "markerOwners": {
+    "*": [
+      0
+    ]
+  },
+  "fonts": [
+    "Times-Roman embedded=false",
+    "AAXECZ+TimesNewRomanPSMT embedded=true",
+    "Times-Bold embedded=false"
+  ],
+  "emails": [
+    {
+      "emailHash": "36aca746a0f3fea1daf33827",
+      "bound": true,
+      "nameHash": "5af8b23a6d91b382601345fa"
+    }
+  ]
+}

@@ -311,13 +311,8 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                 checkpoint()
                 val target = repository.claimItem(id, token, run.generation, ReprocessKind.TARGET) ?: break
                 val refs = target.input.path("paperRefs").toList()
-                fun name(n: JsonNode) = listOf(n.path("givenNames").asText(""), n.path("familyNames").asText("")).joinToString(" ").trim().lowercase().replace(Regex("\\s+"), " ")
-                val names = refs.map(::name).filter { it.isNotBlank() }.distinct()
-                val authorIds = refs.mapNotNull { it.path("openAlexAuthorId").asText(null) }.distinct()
-                val orcids = refs.mapNotNull { it.path("orcidId").asText(null) }.distinct()
-                val conflict = names.size > 1 || authorIds.size > 1 || orcids.size > 1
-                val bound = names.size == 1 && refs.any { !it.path("givenNames").asText().isBlank() &&
-                    !it.path("familyNames").asText().isBlank() && DiscoveryIdentity.validEvidence(it.path("identityEvidence").asText(null)) }
+                val conflict = sourceConflict(refs)
+                val bound = boundSource(refs) != null
                 val reason = if (conflict) "CONFLICT" else if (!bound) "IDENTITY_NOT_BOUND" else "AUDIT_CANDIDATE"
                 val result = resultNode(reason, listOf(ReprocessTraceState.SUCCESS, ReprocessTraceState.SUCCESS,
                     if (conflict || !bound) ReprocessTraceState.INSUFFICIENT else ReprocessTraceState.SUCCESS,
@@ -388,7 +383,24 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
     @PreDestroy fun shutdown() { stopping.set(true); pool.shutdownNow() }
     companion object {
         const val TASK_TYPE = "DISCOVERY_PAPER_REPROCESS"
-        const val CODE_VERSION = "paper-reprocess-audit-1"
+        const val CODE_VERSION = "paper-reprocess-identity-20261106"
+
+        // Jackson NullNode.asText() is the literal "null". Both modes must use the
+        // same nullable-text rule before deciding whether a complete identity exists.
+        private fun sourceText(ref: JsonNode, key: String): String? = ref.path(key)
+            .takeIf { it.isTextual }?.textValue()?.trim()?.takeIf { it.isNotEmpty() }
+        private fun sourceName(ref: JsonNode): String? {
+            val given = sourceText(ref, "givenNames") ?: return null
+            val family = sourceText(ref, "familyNames") ?: return null
+            return "$given $family".lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ")
+        }
+        internal fun sourceConflict(refs: List<JsonNode>): Boolean =
+            refs.mapNotNull(::sourceName).distinct().size > 1 || listOf("orcidId", "openAlexAuthorId").any { key ->
+                refs.mapNotNull { sourceText(it, key) }.distinct().size > 1
+            }
+        internal fun boundSource(refs: List<JsonNode>): JsonNode? = refs.firstOrNull {
+            sourceName(it) != null && DiscoveryIdentity.validEvidence(sourceText(it, "identityEvidence"))
+        }
         private fun hash(value: String) = DiscoveryPaperArchiveService.sha(value.toByteArray(Charsets.UTF_8))
     }
 }

@@ -1,0 +1,65 @@
+{
+  "jvm": {
+    "suites": [
+      {
+        "test": "PaperReprocessIdentityRegressionTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "test": "PaperContactRecallRegressionTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "test": "DiscoveryPaperLayoutRegressionTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      },
+      {
+        "test": "SourceAuthorEmailResolverTest",
+        "tests": 30,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "test": "PdfEmailExtractorTest",
+        "tests": 43,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "test": "DiscoveryPaperReprocessServiceTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      {
+        "test": "DiscoveryPaperReprocessApplyServiceTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "totals": {
+      "tests": 102,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3
+    }
+  },
+  "node": {
+    "tests": 16,
+    "passed": 16
+  }
+}
