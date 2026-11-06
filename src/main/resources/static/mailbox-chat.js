@@ -958,6 +958,7 @@
             },
             followup: { open: false, targetKey: null, selectedId: null, selectedCopy: null, trigger: null },
             replyIdentity: { seq: 0, busy: null },
+            outboundPicker: null,
             materialRequest: { open: false, identity: null, items: [], seq: 0, trigger: null },
             // fast-p 01（I-6）：引用模板弹框的单次临时状态；不是持久 store，不加 draft 字段。
             templateReference: {
@@ -3574,6 +3575,7 @@
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             if (instance.workbench.instance) {
                 try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
                 instance.workbench.instance = null;
@@ -4117,6 +4119,7 @@
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             const doc = docRoot();
             const node = doc.createElement("dialog");
             // The existing module-wide sequence guarantees IDs do not collide across instances.
@@ -5950,7 +5953,8 @@
                     events: [], translation: "", message: "", busy: false };
                 instance.meeting.editorRevision += 1;
                 closeFollowUpDialog({ restoreFocus: false }); closeMaterialRequestDialog({ restoreFocus: false });
-                closeTemplateReferenceDialog({ restoreFocus: false }); teardownMeetingViews();
+                closeTemplateReferenceDialog({ restoreFocus: false });
+                closeOutboundAttachmentPicker(false); teardownMeetingViews();
                 const panel = reviewNode("review-discussion"); if (panel) { panel.hidden = true; panel.innerHTML = ""; }
                 if (value === "manual") {
                     r.mode = "manual"; r.requestedId = null;
@@ -6300,7 +6304,7 @@
                         <button class="button" type="button" data-action="mc-rich-command" data-command="italic">I</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="insertUnorderedList">列表</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="createLink">链接</button>
-                        <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
+                        <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="添加附件" aria-label="添加附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
                         <input type="file" data-role="outbound-file-input" multiple hidden>
                         ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
                         <button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>
@@ -6624,6 +6628,7 @@
                 closeFollowUpDialog({ restoreFocus: false });
                 closeMaterialRequestDialog({ restoreFocus: false });
                 closeTemplateReferenceDialog({ restoreFocus: false });
+                closeOutboundAttachmentPicker(false);
                 const root = ensurePortalRoot();
                 if (!root) {
                     hostShowStatus("管理面板挂载失败", "error");
@@ -7183,12 +7188,152 @@
             refreshSendAvailability();
         }
 
-        /** S-1：唯一图标入口只打开同一个隐藏 input（无 accept、multiple 不过滤类型）。 */
-        function openOutboundFilePicker() {
-            if (!currentTargetKey()) return;
-            const input = outboundFileInputEl();
-            if (!input || typeof input.click !== "function") return;
-            input.click();
+        function outboundPickerCurrent(state) {
+            const rec = currentDraftRecord();
+            return !!state && instance.outboundPicker === state && !instance.disposed
+                && currentTargetKey() === state.targetKey && !!rec && rec === state.rec
+                && draftOwnerLive(rec) && rec.loaded && !rec.loading && !rec.readOnly && !rec.paused
+                && !rec.error && !rec.conflict && !rec.closed && !rec.sendUnconfirmed && !rec.sending && !instance.manual.busy
+                && !(rec.detail && ["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(rec.detail.sendAttemptStatus));
+        }
+
+        function closeOutboundAttachmentPicker(restoreFocus) {
+            const state = instance.outboundPicker;
+            instance.outboundPicker = null;
+            if (!state) return;
+            if (state.dialog) {
+                if (typeof state.dialog.close === "function") state.dialog.close();
+                if (state.dialog.parentNode) state.dialog.parentNode.removeChild(state.dialog);
+            }
+            state.files = [];
+            if (restoreFocus && state.trigger && typeof state.trigger.focus === "function") state.trigger.focus();
+        }
+
+        /** Selection is transient until Add; catalog responses belong to this exact draft/opening. */
+        function openOutboundAttachmentPicker() {
+            closeManageOverlay({ restoreFocus: false });
+            closeFollowUpDialog({ restoreFocus: false });
+            closeMaterialRequestDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
+            const state = { targetKey: currentTargetKey(), rec: currentDraftRecord(), items: [],
+                selected: new Set(), files: [], loading: false, error: "", dialog: null,
+                trigger: host.querySelector('[data-action="mc-upload-attachment"]') };
+            instance.outboundPicker = state;
+            if (!state.targetKey || !outboundPickerCurrent(state)) {
+                closeOutboundAttachmentPicker(false);
+                return;
+            }
+            const root = ensurePortalRoot();
+            if (!root) { closeOutboundAttachmentPicker(false); return; }
+            root.innerHTML = `<dialog class="outbound-picker" aria-label="添加附件">
+                <header class="outbound-picker-head"><h3>添加附件</h3><button type="button" class="outbound-picker-close" data-role="attachment-cancel" aria-label="关闭附件选择">×</button></header>
+                <div class="outbound-picker-body">
+                    <input type="search" class="outbound-picker-search" data-role="builtin-search" placeholder="筛选内置文件" aria-label="筛选内置文件">
+                    <div class="outbound-picker-list" data-role="builtin-list"></div>
+                    <button type="button" data-role="builtin-retry" hidden>重新加载内置文件</button>
+                    <div class="outbound-picker-local"><button type="button" class="outbound-picker-local-button" data-role="attachment-local"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></svg>选择本地文件</button>
+                        <input type="file" data-role="attachment-local-input" multiple hidden>
+                        <div data-role="attachment-local-list"></div>
+                    </div>
+                    <p class="outbound-picker-error" data-role="attachment-error" role="alert" hidden></p>
+                </div>
+                <footer class="outbound-picker-foot"><span data-role="attachment-count" aria-live="polite">未选择文件</span><button type="button" data-role="attachment-cancel">取消</button><button type="button" class="outbound-picker-add" data-role="attachment-add" disabled>添加</button></footer>
+            </dialog>`;
+            const dialog = root.querySelector(".outbound-picker");
+            state.dialog = dialog;
+            const field = (role) => dialog.querySelector('[data-role="' + role + '"]');
+            dialog.querySelectorAll('[data-role="attachment-cancel"]').forEach((button) =>
+                button.addEventListener("click", () => closeOutboundAttachmentPicker(true)));
+            dialog.addEventListener("cancel", (event) => { event.preventDefault(); closeOutboundAttachmentPicker(true); });
+            field("builtin-search").addEventListener("input", () => renderOutboundPicker(state));
+            field("builtin-retry").addEventListener("click", () => loadBuiltinAttachments(state));
+            field("builtin-list").addEventListener("change", (event) => {
+                const id = event.target.getAttribute("data-builtin-id");
+                if (!id || !outboundPickerCurrent(state)) return;
+                if (event.target.checked) state.selected.add(id); else state.selected.delete(id);
+                renderOutboundPicker(state);
+            });
+            field("attachment-local").addEventListener("click", () => {
+                if (outboundPickerCurrent(state)) field("attachment-local-input").click();
+            });
+            field("attachment-local-input").addEventListener("change", (event) => {
+                if (!outboundPickerCurrent(state)) return;
+                state.files = state.files.concat(Array.from(event.target.files || []));
+                event.target.value = "";
+                renderOutboundPicker(state);
+            });
+            field("attachment-local-list").addEventListener("click", (event) => {
+                const button = event.target.closest('[data-local-index]');
+                if (!button || !outboundPickerCurrent(state)) return;
+                state.files.splice(Number(button.getAttribute("data-local-index")), 1);
+                renderOutboundPicker(state);
+            });
+            field("attachment-add").addEventListener("click", () => addOutboundPickerSelection(state));
+            if (typeof dialog.showModal === "function") dialog.showModal();
+            else dialog.setAttribute("open", "");
+            loadBuiltinAttachments(state);
+        }
+
+        function loadBuiltinAttachments(state) {
+            if (!outboundPickerCurrent(state) || state.loading) return;
+            state.loading = true;
+            state.error = "";
+            renderOutboundPicker(state);
+            hostApi()(`/api/mail/conversations/${state.rec.target.contactId}/builtin-attachments`).then((items) => {
+                if (!outboundPickerCurrent(state)) return;
+                state.items = Array.isArray(items) ? items : [];
+            }).catch(() => {
+                if (outboundPickerCurrent(state)) state.error = "内置文件加载失败，仍可选择本地文件";
+            }).finally(() => {
+                if (!outboundPickerCurrent(state)) return;
+                state.loading = false;
+                renderOutboundPicker(state);
+            });
+        }
+
+        function renderOutboundPicker(state) {
+            if (!outboundPickerCurrent(state) || !state.dialog) return;
+            const field = (role) => state.dialog.querySelector('[data-role="' + role + '"]');
+            const search = String(field("builtin-search").value || "").trim().toLowerCase();
+            const items = state.items.filter((item) => String(item.filename).toLowerCase().includes(search));
+            field("builtin-list").innerHTML = state.loading || state.error
+                ? `<p class="outbound-picker-empty" role="status">${escapeText(state.error || "正在加载内置文件…")}</p>`
+                : items.map((item) => `<label class="outbound-picker-file"><input type="checkbox" data-builtin-id="${escapeText(item.id)}"${state.selected.has(item.id) ? " checked" : ""}>
+                    <span class="outbound-picker-pdf" aria-hidden="true">PDF</span><span class="outbound-picker-info"><span class="outbound-picker-name">${escapeText(item.filename)}</span><span class="outbound-picker-meta">${escapeText(formatOutboundFileSize(item.byteLength))}</span></span></label>`).join("")
+                    || '<p class="outbound-picker-empty">没有匹配的内置文件</p>';
+            field("builtin-retry").hidden = !state.error;
+            field("attachment-local-list").innerHTML = state.files.map((file, index) =>
+                `<div class="outbound-picker-local-file"><span>${escapeText(file.name)}</span><button type="button" data-local-index="${index}" aria-label="移除 ${escapeText(file.name)}">移除</button></div>`).join("");
+            const count = state.selected.size + state.files.length;
+            field("attachment-count").textContent = count ? "已选 " + count + " 个文件" : "未选择文件";
+            field("attachment-add").disabled = !count;
+            field("attachment-add").textContent = count ? "添加（" + count + "）" : "添加";
+        }
+
+        function addOutboundPickerSelection(state) {
+            if (!outboundPickerCurrent(state)) { closeOutboundAttachmentPicker(false); return; }
+            const picked = Array.from(state.selected).map((id) => {
+                const item = state.items.find((entry) => entry.id === id);
+                return item && { name: item.filename, size: item.byteLength, builtinId: item.id };
+            }).filter(Boolean).concat(state.files);
+            if (!picked.length) return;
+            const existing = currentOutboundAttachmentItems();
+            const count = existing.length + (state.rec.outboundQueuedCount || 0) + picked.length;
+            const bytes = existing.reduce((sum, item) => sum + (Number(item.byteLength) || 0), 0)
+                + (state.rec.outboundQueuedBytes || 0) + picked.reduce((sum, file) => sum + file.size, 0);
+            const error = count > OUTBOUND_MAX_FILES ? "最多 " + OUTBOUND_MAX_FILES + " 个通用附件"
+                : picked.some((file) => file.size > OUTBOUND_MAX_FILE_BYTES) ? "单个附件不能超过 10MiB"
+                : bytes > OUTBOUND_MAX_TOTAL_BYTES ? "通用附件总计不能超过 20MiB" : "";
+            if (error) {
+                const field = state.dialog.querySelector('[data-role="attachment-error"]');
+                field.textContent = error; field.hidden = false;
+                return;
+            }
+            const captured = captureOutboundOwner(state.targetKey);
+            if (!captured) return;
+            closeOutboundAttachmentPicker(true);
+            queueOutboundFiles(captured, picked);
         }
 
         /** I-1：选择文件只入草稿队列；取消系统选择器 = 零请求、零草稿变化。 */
@@ -7203,15 +7348,27 @@
             if (picked.length === 0) return;
             const captured = captureOutboundOwner(key);
             if (!captured) return;
-            if (outboundItemsIn(captured).length + picked.length > OUTBOUND_MAX_FILES) {
+            if (outboundItemsIn(captured).length + (captured.rec.outboundQueuedCount || 0) + picked.length > OUTBOUND_MAX_FILES) {
                 hostShowStatus("最多 " + OUTBOUND_MAX_FILES + " 个通用附件", "error");
                 return;
             }
-            // 顺序队列：一次只上传一个文件，不同时持有多个原件。
-            let chain = Promise.resolve();
-            picked.map((file) => () => uploadOutboundFile(captured, file)).forEach((run) => {
+            queueOutboundFiles(captured, picked);
+        }
+
+        function queueOutboundFiles(captured, picked) {
+            // Reserve queued files as well as visible cards, including repeated opens during upload.
+            captured.rec.outboundQueuedCount = (captured.rec.outboundQueuedCount || 0) + picked.length;
+            captured.rec.outboundQueuedBytes = (captured.rec.outboundQueuedBytes || 0)
+                + picked.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+            let chain = captured.rec.outboundUploadQueue || Promise.resolve();
+            picked.map((file) => () => {
+                captured.rec.outboundQueuedCount -= 1;
+                captured.rec.outboundQueuedBytes -= Number(file.size) || 0;
+                return uploadOutboundFile(captured, file);
+            }).forEach((run) => {
                 chain = chain.then(run, run);
             });
+            captured.rec.outboundUploadQueue = chain;
             captured.rec.uploads.add(chain);
             chain.finally(() => {
                 captured.rec.uploads.delete(chain);
@@ -7245,13 +7402,16 @@
                     : "通用附件总计不能超过 " + (OUTBOUND_MAX_TOTAL_BYTES / (1024 * 1024)) + "MiB");
                 return Promise.resolve();
             }
-            const form = typeof FormData === "function" ? new FormData() : null;
-            if (!form) {
+            const form = !file.builtinId && typeof FormData === "function" ? new FormData() : null;
+            if (!file.builtinId && !form) {
                 failOutboundItem(captured, item.key, "当前浏览器不支持附件上传");
                 return Promise.resolve();
             }
-            form.append("file", file, name);
-            return hostApi()(`/api/mail/conversations/${captured.contactId}/outbound-attachments`, {
+            if (form) form.append("file", file, name);
+            const url = file.builtinId
+                ? `/api/mail/conversations/${captured.contactId}/builtin-attachments/${encodeURIComponent(file.builtinId)}`
+                : `/api/mail/conversations/${captured.contactId}/outbound-attachments`;
+            return hostApi()(url, {
                 method: "POST",
                 // headers 整体覆盖宿主的 JSON 默认值，让浏览器自己写 multipart 边界。
                 headers: {},
@@ -7641,6 +7801,7 @@
             closeManageOverlay({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             const root = ensurePortalRoot();
             if (!root) {
                 hostShowStatus("跟进邮件面板挂载失败", "error");
@@ -7943,6 +8104,7 @@
             closeManageOverlay({ restoreFocus: false });
             closeFollowUpDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             const root = ensurePortalRoot();
             if (!root) {
                 hostShowStatus("材料索取面板挂载失败", "error");
@@ -8664,6 +8826,7 @@
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             const root = ensurePortalRoot();
             if (!root) {
                 hostShowStatus("引用模板弹框挂载失败", "error");
@@ -8682,6 +8845,7 @@
             const dialog = templateReferenceDialogEl();
             if (!dialog) {
                 closeTemplateReferenceDialog({ restoreFocus: false });
+                closeOutboundAttachmentPicker(false);
                 return;
             }
             // I-7：原生 cancel（Esc）走同一个关闭函数。
@@ -8802,6 +8966,7 @@
             handleManualComposeInput(inputs.editor);
             saveConversationState();
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             focusIfAvailable(inputs.editor);
             hostShowStatus("模板已填入回复，可继续编辑", "ok");
         }
@@ -9041,6 +9206,7 @@
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
+            closeOutboundAttachmentPicker(false);
             teardownMeetingViews();
             // c3（I-3）：账号上下文变化同样作废推荐代次与自有弹窗。
             closeContactTimingDialog({ restoreFocus: false });
@@ -9660,6 +9826,7 @@
                     }
                     teardownMeetingViews();
                     closeTemplateReferenceDialog({ restoreFocus: false });
+                    closeOutboundAttachmentPicker(false);
                     const message = (instance.conversation.items || []).find((item) => item.source === "INBOUND_PROCESSING" && Number(item.id) === Number(newProcessingId));
                     const migrated = Object.assign({}, draft || {}, { subject: chatSubjectPrefill(message ? message.subject : ""),
                         requestId: null, meeting: draft && draft.meeting ? Object.assign({}, draft.meeting, { state: "stale" }) : null });
@@ -10015,7 +10182,7 @@
                 return;
             }
             if (action === "mc-upload-attachment") {
-                openOutboundFilePicker();
+                openOutboundAttachmentPicker();
                 return;
             }
             if (action === "mc-remove-attachment") {

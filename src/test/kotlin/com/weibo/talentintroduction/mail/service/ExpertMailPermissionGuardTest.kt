@@ -54,6 +54,7 @@ class ExpertMailPermissionGuardTest {
     private lateinit var calendar: MeetingCalendarService
     private lateinit var meetings: MeetingConfirmationService
     private lateinit var outbound: OutboundAttachmentService
+    private lateinit var builtin: BuiltinAttachmentService
     private lateinit var logs: com.weibo.talentintroduction.audit.service.OperatorActionLogService
     private lateinit var snippets: com.weibo.talentintroduction.reply.service.ReplySnippetService
     @TempDir lateinit var root: Path
@@ -103,6 +104,7 @@ class ExpertMailPermissionGuardTest {
         calendar = Mockito.mock(MeetingCalendarService::class.java)
         meetings = Mockito.mock(MeetingConfirmationService::class.java)
         outbound = Mockito.mock(OutboundAttachmentService::class.java)
+        builtin = Mockito.mock(BuiltinAttachmentService::class.java)
         val auth = Mockito.mock(AuthService::class.java)
         for (user in listOf("admin", "user1")) {
             Mockito.`when`(auth.findUser(user)).thenReturn(AdminUser(username = user, passwordHash = "unused",
@@ -122,7 +124,7 @@ class ExpertMailPermissionGuardTest {
             beans.registerSingleton("locations", ExpertContactLocationController(Mockito.mock(ExpertContactLocationService::class.java), Mockito.mock(ExpertContactLocationCatalog::class.java)))
             beans.registerSingleton("calendar", MeetingCalendarController(calendar, guard))
             beans.registerSingleton("meetings", MeetingConfirmationController(meetings))
-            beans.registerSingleton("outbound", OutboundAttachmentController(outbound))
+            beans.registerSingleton("outbound", OutboundAttachmentController(outbound, builtinAttachments = builtin))
             logs = Mockito.mock(com.weibo.talentintroduction.audit.service.OperatorActionLogService::class.java)
             snippets = Mockito.mock(com.weibo.talentintroduction.reply.service.ReplySnippetService::class.java)
             Mockito.`when`(logs.search(1L, null, null, null, null, null, 20, 0)).thenReturn(emptyList<com.weibo.talentintroduction.audit.domain.OperatorActionLog>() to 0L)
@@ -197,6 +199,25 @@ class ExpertMailPermissionGuardTest {
         mvc.perform(get("/api/mail/contact-locations/3/timing").session(session())).andExpect(status().isForbidden)
         mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,2").session(session())).andExpect(status().isOk)
         mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,3").session(session())).andExpect(status().isForbidden)
+    }
+
+    @Test fun `builtin catalog and selection require FULL and revoke before file creation`() {
+        val root = "/api/mail/conversations"
+        mvc.perform(get("$root/1/builtin-attachments").session(session())).andExpect(status().isOk)
+        mvc.perform(post("$root/1/builtin-attachments/qiming-program-information-v1").session(session()))
+            .andExpect(status().isCreated)
+        Mockito.verify(builtin).list(1L)
+        Mockito.verify(builtin).add(1L, "qiming-program-information-v1", "user1")
+        Mockito.clearInvocations(builtin)
+        for (id in listOf(2, 3)) {
+            mvc.perform(get("$root/$id/builtin-attachments").session(session())).andExpect(status().isForbidden)
+            mvc.perform(post("$root/$id/builtin-attachments/qiming-program-information-v1").session(session()))
+                .andExpect(status().isForbidden)
+        }
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        mvc.perform(post("$root/1/builtin-attachments/qiming-program-information-v1").session(session()))
+            .andExpect(status().isForbidden)
+        Mockito.verifyNoInteractions(builtin)
     }
 
     @Test fun `calendar query arrays and event IDs are resolved before service execution`() {

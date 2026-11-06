@@ -99,7 +99,8 @@ class OutboundAttachmentServiceTest {
         Mockito.`when`(authService.findUser(OWNER)).thenReturn(adminUser(OWNER))
         Mockito.`when`(authService.findUser(OTHER_USER)).thenReturn(adminUser(OTHER_USER))
         mockMvc = MockMvcBuilders
-            .standaloneSetup(OutboundAttachmentController(service))
+            .standaloneSetup(OutboundAttachmentController(service,
+                builtinAttachments = BuiltinAttachmentService(service, expertContactRepository)))
             .addInterceptors(AuthInterceptor(authService, ObjectMapper(), org.mockito.Mockito.mock(ExpertMailPermissionGuard::class.java)))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
@@ -647,6 +648,56 @@ class OutboundAttachmentServiceTest {
     // ------------------------------------------------------------------
     // 辅助
     // ------------------------------------------------------------------
+
+    @Test
+    fun `builtin catalog is read only and selection copies exact packaged bytes into owned attachments`() {
+        val catalog = BuiltinAttachmentService(service, expertContactRepository)
+        val entry = catalog.list(CONTACT_ID).single()
+        assertEquals("Qiming_Program_Information.pdf", entry.filename)
+        assertEquals("application/pdf", entry.contentType)
+        assertTrue(rows.isEmpty())
+        val bytes = org.springframework.core.io.ClassPathResource("mail-attachments/${entry.filename}")
+            .inputStream.use { it.readBytes() }
+        assertEquals(bytes.size.toLong(), entry.byteLength)
+
+        val response = mockMvc.perform(post("/api/mail/conversations/$CONTACT_ID/builtin-attachments/${entry.id}")
+            .session(sessionOf(OWNER))).andExpect(status().isCreated).andReturn().response
+        val id = ObjectMapper().readTree(response.contentAsString)["id"].asText()
+        val again = catalog.add(CONTACT_ID, entry.id, OWNER)
+        assertTrue(id != again.id)
+        assertArrayEquals(bytes, service.resolveDraftDownload(CONTACT_ID, id, OWNER).bytes)
+        assertEquals(outboundSha256Hex(bytes), rows[id]?.sha256)
+        assertEquals(OWNER, rows[id]?.createdBy)
+        assertEquals(CONTACT_ID, rows[id]?.expertContactId)
+        assertThrows(OutboundAttachmentException::class.java) { service.resolveDraftDownload(CONTACT_ID, id, OTHER_USER) }
+        assertThrows(OutboundAttachmentException::class.java) { service.resolveDraftDownload(999L, id, OWNER) }
+
+        val local = upload("local".toByteArray(), "local.txt")
+        val mixed = service.resolveForSend(CONTACT_ID, listOf(id, local.id), OWNER)
+        assertEquals(listOf(entry.filename, "local.txt"), mixed.snapshots.map { it.filename })
+        // Removing/replacing an unrelated copy cannot mutate the first selected document.
+        Files.delete(storageRoot.resolve("outbound/${again.id}"))
+        assertArrayEquals(bytes, service.resolveDraftDownload(CONTACT_ID, id, OWNER).bytes)
+    }
+
+    @Test
+    fun `builtin endpoints require login and reject unknown IDs and missing experts without writes`() {
+        val path = "/api/mail/conversations/$CONTACT_ID/builtin-attachments"
+        mockMvc.perform(get(path)).andExpect(status().isUnauthorized)
+        mockMvc.perform(post("$path/qiming-program-information-v1")).andExpect(status().isUnauthorized)
+        mockMvc.perform(get(path).session(sessionOf(OWNER))).andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "private,no-store"))
+            .andExpect(jsonPath("$[0].filename").value("Qiming_Program_Information.pdf"))
+        mockMvc.perform(post("$path/unknown").session(sessionOf(OWNER))).andExpect(status().isNotFound)
+        mockMvc.perform(get("/api/mail/conversations/999/builtin-attachments").session(sessionOf(OWNER)))
+            .andExpect(status().isNotFound)
+        mockMvc.perform(post("/api/mail/conversations/999/builtin-attachments/qiming-program-information-v1")
+            .session(sessionOf(OWNER))).andExpect(status().isNotFound)
+        assertThrows(OutboundAttachmentException::class.java) {
+            BuiltinAttachmentService(service, expertContactRepository).add(CONTACT_ID, "../application.yml", OWNER)
+        }
+        assertTrue(rows.isEmpty())
+    }
 
     private fun upload(
         bytes: ByteArray,

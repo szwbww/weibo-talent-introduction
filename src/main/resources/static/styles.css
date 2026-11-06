@@ -11878,6 +11878,41 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .outbound-files button:disabled,.outbound-upload:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
 .outbound-files[hidden]{display:none!important}
 @media(max-width:760px){.outbound-file{flex-wrap:wrap}.outbound-file-actions{width:100%;padding-left:42px}}
+
+/* Compact attachment picker: built-in resources and local files share one dialog. */
+.mail-chat .outbound-picker{box-sizing:border-box;width:420px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);padding:0;border:1px solid #dce4ef;border-radius:10px;background:#fff;color:#334155;box-shadow:0 12px 42px #0f172a25;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:auto}
+.mail-chat .outbound-picker::backdrop{background:#0f172a26}
+.mail-chat .outbound-picker [hidden]{display:none!important}
+.mail-chat .outbound-picker button{font:inherit;cursor:pointer;border:1px solid #dce4ef;border-radius:6px;background:#fff;color:#475569;padding:7px 12px}
+.mail-chat .outbound-picker button:hover{background:#f4f7fb}
+.mail-chat .outbound-picker button:disabled{opacity:.4;cursor:default}
+.mail-chat .outbound-picker button:focus-visible,.mail-chat .outbound-picker input:focus-visible{outline:2px solid #93b4ff;outline-offset:2px}
+.mail-chat .outbound-picker-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #e5ebf3}
+.mail-chat .outbound-picker-head h3{font-size:14px;font-weight:600;margin:0}
+.mail-chat .outbound-picker .outbound-picker-close{font-size:20px;border:0;padding:0 3px;color:#94a3b8}
+.mail-chat .outbound-picker-body{padding:14px 16px}
+.mail-chat .outbound-picker-search{box-sizing:border-box;width:100%;padding:8px 10px;border:1px solid #e0e7f0;background:#f8fafc;border-radius:6px;font:inherit;font-size:12px;color:#334155}
+.mail-chat .outbound-picker-list{max-height:240px;overflow:auto}
+.mail-chat .outbound-picker-file{display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px;border:1px solid #dce4ef;border-radius:6px;cursor:pointer}
+.mail-chat .outbound-picker-file:has(input:checked){background:#f3f7ff;border-color:#bcd0ff}
+.mail-chat .outbound-picker-file input{width:15px;height:15px;margin:0;flex-shrink:0;accent-color:#2563eb}
+.mail-chat .outbound-picker-pdf{display:grid;place-items:center;flex-shrink:0;width:28px;height:34px;background:#fff0ed;color:#ce6156;border-radius:4px;font-size:10px}
+.mail-chat .outbound-picker-info{display:flex;flex-direction:column;min-width:0;gap:5px}
+.mail-chat .outbound-picker-name{font-size:12px;font-weight:500;overflow-wrap:anywhere}
+.mail-chat .outbound-picker-meta{font-size:11px;color:#8b98aa}
+.mail-chat .outbound-picker-local{border-top:1px solid #edf1f6;margin-top:14px;padding-top:12px}
+.mail-chat .outbound-picker .outbound-picker-local-button{display:flex;align-items:center;justify-content:center;width:100%;height:36px;gap:8px;font-size:12px}
+.mail-chat .outbound-picker-local-button svg{width:16px;height:16px}
+.mail-chat .outbound-picker-local-file{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px}
+.mail-chat .outbound-picker-local-file span{min-width:0;flex:1;overflow-wrap:anywhere}
+.mail-chat .outbound-picker-local-file button{flex-shrink:0;font-size:12px;padding:3px 6px}
+.mail-chat .outbound-picker-empty{padding:12px 0;margin:0;color:#94a3b8;font-size:12px}
+.mail-chat .outbound-picker-error{color:#b91c1c;font-size:12px;margin:10px 0 0}
+.mail-chat .outbound-picker-foot{padding:10px 16px;border-top:1px solid #e5ebf3;display:flex;align-items:center;gap:8px}
+.mail-chat .outbound-picker-foot span{font-size:12px;color:#94a3b8;margin-right:auto}
+.mail-chat .outbound-picker .outbound-picker-add{background:#2563eb;color:#fff;border-color:#2563eb}
+.mail-chat .outbound-picker .outbound-picker-add:hover{background:#1d4ed8}
+
 /* 批量介绍邮件：Emailable 执行明细（仅此区域） */
 .batch-email-verification { margin: 14px 0; }
 .batch-email-verification h4 { margin: 0 0 8px; font-size: 13px; color: var(--text-main); }

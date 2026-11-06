@@ -52,6 +52,8 @@ class ExpertMailPermissionGuard(
             route(MailboxAttachmentController::class.java, "listAttachments", "GET", Target.MESSAGE)
             route(MailboxAttachmentController::class.java, "download", "GET", Target.ATTACHMENT)
             route(OutboundAttachmentController::class.java, "upload", "POST", Target.CONTACT)
+            route(OutboundAttachmentController::class.java, "listBuiltin", "GET", Target.CONTACT)
+            route(OutboundAttachmentController::class.java, "addBuiltin", "POST", Target.CONTACT)
             route(OutboundAttachmentController::class.java, "downloadDraft", "GET", Target.OUTBOUND)
             route(OutboundAttachmentController::class.java, "downloadSentAttachment", "GET", Target.SENT_OUTBOUND)
             route(CalendarAttachmentController::class.java, "download", "GET", Target.MAIL)

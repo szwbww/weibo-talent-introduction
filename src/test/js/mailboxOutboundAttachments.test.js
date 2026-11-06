@@ -847,6 +847,16 @@ function createChatSandbox(options) {
     let timerSequence = 0;
 
     const defaultRoute = function defaultRoute(url, method, body) {
+        if (/\/builtin-attachments$/.test(url) && method === "GET") {
+            if (opts.builtinError) return Promise.reject(new Error("catalog unavailable"));
+            return Promise.resolve([{ id: "qiming-v1", filename: "Qiming_Program_Information.pdf", contentType: "application/pdf", byteLength: 7956 }]);
+        }
+        if (/\/builtin-attachments\/qiming-v1$/.test(url) && method === "POST") {
+            if (opts.builtinAddError) return Promise.reject(new Error("内置附件原件缺失"));
+            return Promise.resolve({ id: "builtin-copy-1", filename: "Qiming_Program_Information.pdf",
+                byteLength: 7956, contentType: "application/pdf", sha256: "builtin-sha",
+                downloadUrl: "/api/mail/conversations/1/outbound-attachments/builtin-copy-1/download" });
+        }
         if (url === "/api/auth/me") return Promise.resolve(opts.authMe || { authenticated: true, username: "admin" });
         const draftResult = draftServer.route(owner(), url, method, body);
         if (draftResult !== undefined) return draftResult;
@@ -1597,7 +1607,7 @@ function statusTexts(ctx) {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
-    it("按钮无可见文字、title/aria=上传附件；input multiple 无 accept；保留富文本按钮", async () => {
+    it("按钮无可见文字、title/aria=添加附件；input multiple 无 accept；保留富文本按钮", async () => {
         const ctx = await bootInbound({ meetingEnabled: true });
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const button = compose.querySelector('[data-action="mc-upload-attachment"]');
@@ -1605,8 +1615,8 @@ describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
         assert.strictEqual(button.tagName, "BUTTON");
         assert.strictEqual(button.getAttribute("type"), "button");
         assert.strictEqual(button.textContent.trim(), "", "不得出现可见按钮文字");
-        assert.strictEqual(button.getAttribute("title"), "上传附件");
-        assert.strictEqual(button.getAttribute("aria-label"), "上传附件");
+        assert.strictEqual(button.getAttribute("title"), "添加附件");
+        assert.strictEqual(button.getAttribute("aria-label"), "添加附件");
         assert.ok(button.classList.contains("button"), "复用既有 .button");
         assert.ok(button.classList.contains("outbound-upload"), "S-2 的 outbound-upload");
         const svg = button.querySelector("svg");
@@ -1639,27 +1649,117 @@ describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
         assert.ok(children.indexOf(files) < children.indexOf(compose.querySelector(".mc-compose-footer")), "附件卡在发送 footer 之前");
     });
 
-    it("点击图标只打开同一个隐藏 input；取消选择零请求、零草稿变化、不影响发送可用性", async () => {
+    it("图标打开同窗选择器；选择本地文件后取消零上传、零草稿变化", async () => {
         const ctx = await bootInbound();
-        const input = outboundInput(ctx);
+        click(ctx.host.querySelector('[data-action="mc-upload-attachment"]'));
+        await flush();
+        const dialog = ctx.doc.body.querySelector(".outbound-picker");
+        assert.ok(dialog);
+        assert.strictEqual(dialog.querySelector('[role="tab"]'), null);
+        assert.ok(dialog.textContent.includes("Qiming_Program_Information.pdf"));
+        assert.ok(!dialog.textContent.includes("启明计划"));
+        const input = dialog.querySelector('[data-role="attachment-local-input"]');
         let openings = 0;
         input.click = () => { openings += 1; };
-        click(ctx.host.querySelector('[data-action="mc-upload-attachment"]'));
-        assert.strictEqual(openings, 1, "图标点击必须打开系统选择器");
+        click(dialog.querySelector('[data-role="attachment-local"]'));
+        assert.strictEqual(openings, 1);
 
-        const before = ctx.calls.api.length;
-        pickFiles(ctx, []);
+        const before = ctx.calls.api.filter((entry) => entry.method !== "GET").length;
+        input.files = [fakeFile("a.txt")];
+        changeEvent(input);
         await flush();
-        assert.strictEqual(ctx.calls.api.length, before, "取消选择不发任何请求");
-        assert.strictEqual(fileCards(ctx).length, 0, "取消选择不产生附件卡");
-        assert.deepStrictEqual(statusTexts(ctx), [], "取消选择不提示");
-        assert.strictEqual(sendButton(ctx).disabled, false, "取消选择不改变发送可用性");
+        assert.strictEqual(ctx.calls.uploads.length, 0, "点击添加前不得上传");
+        click(dialog.querySelector('[data-role="attachment-cancel"]'));
+        assert.strictEqual(ctx.calls.api.filter((entry) => entry.method !== "GET").length, before);
+        assert.strictEqual(fileCards(ctx).length, 0);
+        assert.strictEqual(sendButton(ctx).disabled, false);
 
         pickFiles(ctx, [fakeFile("a.txt")]);
         await flush();
         assert.strictEqual(input.value, "", "选择后立即释放选择器引用（同文件可移除后重选）");
         assert.deepStrictEqual(ctx.calls.uploads.map((entry) => entry.filename), ["a.txt"]);
         assert.strictEqual(ctx.calls.formData[0].entries[0].name, "file", "multipart 字段固定为 file");
+    });
+});
+
+describe("内置附件统一选择器", () => {
+    async function openPicker(ctx) {
+        click(ctx.host.querySelector('[data-action="mc-upload-attachment"]'));
+        await flush();
+        return ctx.doc.body.querySelector(".outbound-picker");
+    }
+    function selectBuiltin(dialog) {
+        const checkbox = dialog.querySelector('[data-builtin-id="qiming-v1"]');
+        checkbox.checked = true;
+        changeEvent(checkbox);
+    }
+    it("筛选保留勾选；内置与本地混合提交，复用发送 attachmentIds", async () => {
+        const ctx = await bootInbound();
+        const dialog = await openPicker(ctx);
+        selectBuiltin(dialog);
+        const search = dialog.querySelector('[data-role="builtin-search"]');
+        search.value = "unmatched"; inputEvent(search);
+        assert.strictEqual(dialog.querySelectorAll('[data-builtin-id]').length, 0);
+        search.value = "qiming"; inputEvent(search);
+        assert.ok(dialog.querySelector('[data-builtin-id]').hasAttribute("checked"));
+        const input = dialog.querySelector('[data-role="attachment-local-input"]');
+        input.files = [fakeFile("local.txt")]; changeEvent(input);
+        assert.strictEqual(dialog.querySelector('[data-role="attachment-count"]').textContent, "已选 2 个文件");
+        click(dialog.querySelector('[data-role="attachment-add"]'));
+        await flush(); await flush();
+        assert.deepStrictEqual(cardNames(ctx), ["Qiming_Program_Information.pdf", "local.txt"]);
+        assert.deepStrictEqual(cardStates(ctx), ["ready", "ready"]);
+        assert.strictEqual(ctx.calls.uploads.length, 1, "内置件无需浏览器上传");
+        assert.ok(ctx.calls.api.some((entry) => entry.url.endsWith("/builtin-attachments/qiming-v1") && entry.method === "POST"));
+        manualEditor(ctx).innerHTML = "<p>Reply with files</p>"; inputEvent(manualEditor(ctx));
+        click(sendButton(ctx)); await flush(); await flush();
+        assert.deepStrictEqual(Array.from(ctx.calls.sendRich[0].body.attachmentIds), ["builtin-copy-1", "att-1"]);
+    });
+    it("内置列表失败仍可选本地文件；超量或超大文件不产生上传", async () => {
+        const ctx = await bootInbound({ builtinError: true });
+        const dialog = await openPicker(ctx);
+        assert.ok(dialog.textContent.includes("内置文件加载失败"));
+        const input = dialog.querySelector('[data-role="attachment-local-input"]');
+        input.files = [fakeFile("large.zip", 11 * 1024 * 1024)]; changeEvent(input);
+        click(dialog.querySelector('[data-role="attachment-add"]')); await flush();
+        assert.strictEqual(ctx.calls.uploads.length, 0);
+        assert.ok(dialog.querySelector('[data-role="attachment-error"]').textContent.includes("10MiB"));
+        click(dialog.querySelector('[data-local-index="0"]'));
+        input.files = [fakeFile("local.txt")]; changeEvent(input);
+        click(dialog.querySelector('[data-role="attachment-add"]')); await flush();
+        assert.deepStrictEqual(cardNames(ctx), ["local.txt"]);
+    });
+    it("取消旧弹窗后迟到的列表不能污染新专家弹窗", async () => {
+        let resolveList;
+        const ctx = await bootInbound({ route: (url, method, body, entry, next) => {
+            if (url === "/api/mail/conversations/1/builtin-attachments") return new Promise((resolve) => { resolveList = resolve; });
+            return next(url, method, body);
+        } });
+        await openPicker(ctx);
+        selectPerson(ctx, "2"); await flush();
+        assert.strictEqual(ctx.doc.body.querySelector(".outbound-picker"), null);
+        const nextDialog = await openPicker(ctx);
+        resolveList([{ id: "old", filename: "OLD.pdf", byteLength: 1 }]); await flush();
+        assert.ok(!nextDialog.textContent.includes("OLD.pdf"));
+        assert.strictEqual(fileCards(ctx).length, 0);
+    });
+    it("内置原件添加失败保留失败卡并阻止发送", async () => {
+        const ctx = await bootInbound({ builtinAddError: true });
+        const dialog = await openPicker(ctx); selectBuiltin(dialog);
+        click(dialog.querySelector('[data-role="attachment-add"]')); await flush();
+        assert.deepStrictEqual(cardStates(ctx), ["failed"]);
+        assert.strictEqual(sendButton(ctx).disabled, true);
+    });
+    it("连续打开时待上传队列也计入 10 个文件限制", async () => {
+        const ctx = await bootInbound({ deferUploads: true });
+        pickFiles(ctx, Array.from({ length: 10 }, (_, i) => fakeFile(i + ".txt")));
+        await flush();
+        const dialog = await openPicker(ctx); selectBuiltin(dialog);
+        click(dialog.querySelector('[data-role="attachment-add"]')); await flush();
+        assert.ok(dialog.querySelector('[data-role="attachment-error"]').textContent.includes("10"));
+        assert.ok(!ctx.calls.api.some((entry) => entry.url.endsWith("/builtin-attachments/qiming-v1")));
+        click(dialog.querySelector('[data-role="attachment-cancel"]'));
+        for (let i = 0; i < 10; i += 1) await resolvePendingUpload(ctx, i);
     });
 });
 

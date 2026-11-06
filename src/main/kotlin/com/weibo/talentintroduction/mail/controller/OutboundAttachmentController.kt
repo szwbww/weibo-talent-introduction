@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.BuiltinAttachmentService
 import com.weibo.talentintroduction.mail.service.OutboundAttachmentException
 import com.weibo.talentintroduction.mail.service.OutboundAttachmentService
 import com.weibo.talentintroduction.mail.service.OutboundAttachmentSnapshot
@@ -51,7 +52,8 @@ class OutboundAttachmentController(
     // 读取规则）。可空默认值只让既有的直接构造（standalone）测试零改动；Spring 运行时按
     // 主构造器完整注入，新端点在入口 requireNotNull 防御性校验，绝不静默放行。
     private val mailRecordRepository: MailRecordRepository? = null,
-    private val mailSenderAccountRepository: MailSenderAccountRepository? = null
+    private val mailSenderAccountRepository: MailSenderAccountRepository? = null,
+    private val builtinAttachments: BuiltinAttachmentService? = null
 ) {
     private companion object {
         const val DIRECTION_OUTBOUND = "OUTBOUND"
@@ -60,6 +62,24 @@ class OutboundAttachmentController(
 
         /** 06 已发下载的统一 404 文案：不存在/错专家/错消息/快照未引用一律同款，不泄露存在性。 */
         const val SENT_NOT_AVAILABLE_MESSAGE = "已发送附件不可用"
+    }
+
+    @GetMapping("/{contactId}/builtin-attachments")
+    fun listBuiltin(@PathVariable contactId: Long, servletRequest: HttpServletRequest): ResponseEntity<Any> {
+        sessionUsername(servletRequest) ?: return unauthorized()
+        return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "private,no-store")
+            .body(requireNotNull(builtinAttachments).list(contactId))
+    }
+
+    @PostMapping("/{contactId}/builtin-attachments/{builtinId}")
+    fun addBuiltin(
+        @PathVariable contactId: Long,
+        @PathVariable builtinId: String,
+        servletRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        val operator = sessionUsername(servletRequest) ?: return unauthorized()
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(requireNotNull(builtinAttachments).add(contactId, builtinId, operator))
     }
 
     @PostMapping("/{contactId}/outbound-attachments")
