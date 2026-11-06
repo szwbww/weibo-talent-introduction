@@ -1056,20 +1056,22 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         val scheduler = Executors.newSingleThreadScheduledExecutor()
         val id = 109L
         val generationId = UUID.randomUUID().toString()
-        val firstPublished = CountDownLatch(1)
+        val releaseProvider = CountDownLatch(1)
+        val firstSent = CountDownLatch(1)
+        val secondSent = CountDownLatch(1)
         val releaseSecond = CountDownLatch(1)
         val releaseResult = CountDownLatch(1)
+        val callingSentAt = java.util.concurrent.CopyOnWriteArrayList<Long>()
         try {
             stubEndpointContext(id)
             Mockito.doAnswer { invocation ->
+                releaseProvider.await()
                 val reporter = invocation.getArgument<AiReplyProgressReporter>(13)
                 reporter.startBudget(AiReplyTimeoutPolicy.resolve(30, 300).budget())
-                val sink = reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
-                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 1, 1)
-                firstPublished.countDown()
-                releaseSecond.await(1, TimeUnit.SECONDS)
-                sink.onActivity(com.weibo.talentintroduction.llm.service.LlmStreamActivity.WRITING, 2, 2)
-                releaseResult.await(1, TimeUnit.SECONDS)
+                reporter.beginProviderCall(AiReplyProgressPhase.CALLING, 30_000L)
+                releaseSecond.await()
+                reporter.transition(AiReplyProgressPhase.CALLING)
+                releaseResult.await()
                 runtimeResult()
             }.`when`(aiReplyDraftService).generate(
                 Mockito.anyString(), Mockito.anyList(), anyNullable(), anyNullable(), anyNullable(), anyNullable(),
@@ -1081,19 +1083,27 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                 id,
                 AiReplyTurnRequest(generationId = generationId, llmAttemptTimeoutSeconds = 30, llmTotalTimeoutSeconds = 300)
             ).body as SseEmitter
-            val capture = captureEmitterChunks(emitter)
-            assertTrue(firstPublished.await(1, TimeUnit.SECONDS))
+            val capture = captureEmitterChunks(emitter, onChunk = { chunk ->
+                if (chunk is Map<*, *> && chunk["phase"] == AiReplyProgressPhase.CALLING.name) {
+                    callingSentAt += System.nanoTime()
+                    firstSent.countDown()
+                    if (callingSentAt.size >= 2) secondSent.countDown()
+                }
+            })
+            releaseProvider.countDown()
+            assertTrue(firstSent.await(5, TimeUnit.SECONDS), "first CALLING progress was not emitted")
             releaseSecond.countDown()
-            eventually("first CALLING endpoint progress") {
-                progressEventPhases(capture).count { it == AiReplyProgressPhase.CALLING.name } >= 1
-            }
-            assertEquals(
-                1,
-                progressEventPhases(capture).count { it == AiReplyProgressPhase.CALLING.name },
-                "endpoint same phase progress must wait for the 1 Hz window"
-            )
+            assertTrue(secondSent.await(5, TimeUnit.SECONDS), "pending CALLING progress was not emitted")
             releaseResult.countDown()
+            eventually("throttled endpoint result") { capture.chunks.any { it is AiReplyTurnResponse } }
+            callingSentAt.zipWithNext().forEach { (previous, next) ->
+                assertTrue(
+                    next - previous >= TimeUnit.SECONDS.toNanos(1),
+                    "same phase progress events must be at least one second apart"
+                )
+            }
         } finally {
+            releaseProvider.countDown()
             releaseSecond.countDown()
             releaseResult.countDown()
             executor.shutdownNow()
@@ -1294,7 +1304,8 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
         emitter: SseEmitter,
         failOnEvent: String? = null,
         failureEntered: CountDownLatch? = null,
-        releaseFailure: CountDownLatch? = null
+        releaseFailure: CountDownLatch? = null,
+        onChunk: (Any?) -> Unit = {}
     ): CapturedEmitter {
         val chunks = java.util.concurrent.CopyOnWriteArrayList<Any?>()
         val timeoutCallbacks = java.util.concurrent.CopyOnWriteArrayList<Runnable>()
@@ -1319,6 +1330,7 @@ class UnmatchedInboundAiReplyTurnKnowledgeTest {
                         throw java.io.IOException("test emitter disconnected")
                     }
                     chunks += data
+                    onChunk(data)
                 }
                 "onTimeout" -> timeoutCallbacks += args?.get(0) as Runnable
                 "onCompletion" -> completionCallbacks += args?.get(0) as Runnable
