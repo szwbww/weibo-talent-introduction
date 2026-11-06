@@ -2459,7 +2459,7 @@ function ensureDiscoveryRecheck() {
         discoveryRecheckView = window.createDiscoveryRecheck({
             root, api,
             getSelectedDocIds: () => Array.from(discoveryReviewState.selected),
-            getFilter: () => ({ q: discoveryReviewState.q, issue: discoveryReviewState.issue, decision: discoveryReviewState.decision }),
+            getFilter: () => ({ q: discoveryReviewState.q, issue: discoveryReviewState.issue, decision: discoveryReviewState.decision, emailRouting: discoveryReviewState.emailRouting || undefined }),
             onApplied: () => {
                 if (!discoveryReviewState.active || discoveryReviewState.tab !== "review") return;
                 refreshDiscoveryReviewCounts();
@@ -2598,7 +2598,9 @@ const discoveryReviewState = {
     records: [],
     recordsLoaded: false,
     recordsError: null,
-    recordDetails: {}
+    recordDetails: {},
+    emailRouting: "",
+    emailRoutingBusy: false
 };
 let discoveryReviewEventsBound = false;
 
@@ -2617,6 +2619,9 @@ function discoveryReviewElements() {
         counts: $("#discoveryReviewCounts"),
         countStatus: $("#discoveryReviewCountStatus"),
         search: $("#discoveryReviewSearch"),
+        emailRouting: $("#discoveryEmailRoutingFilter"),
+        routingRefresh: $("#discoveryEmailRoutingRefresh"),
+        routingStatus: $("#discoveryEmailRoutingStatus"),
         issue: $("#discoveryReviewIssue"),
         decision: $("#discoveryReviewDecision"),
         pageSize: $("#discoveryReviewPageSize"),
@@ -2803,6 +2808,8 @@ function resetDiscoveryReviewTransient() {
     discoveryReviewState.q = "";
     discoveryReviewState.issue = "";
     discoveryReviewState.decision = "";
+    discoveryReviewState.emailRouting = "";
+    if (discoveryReviewElements().emailRouting) discoveryReviewElements().emailRouting.value = "";
     discoveryReviewState.total = 0;
     discoveryReviewState.rows = [];
     discoveryReviewState.loaded = false;
@@ -2946,6 +2953,8 @@ function bindDiscoveryReviewEvents() {
     });
     bind(els.issue, "change", discoveryReviewApplyFilterChange);
     bind(els.decision, "change", discoveryReviewApplyFilterChange);
+    bind(els.emailRouting, "change", discoveryReviewApplyFilterChange);
+    bind(els.routingRefresh, "click", refreshDiscoveryEmailRoutingPage);
     bind(els.pageSize, "change", function () {
         const size = Number(els.pageSize ? els.pageSize.value : NaN);
         discoveryReviewState.pageSize = DISCOVERY_REVIEW_PAGE_SIZES.indexOf(size) >= 0 ? size : 20;
@@ -2988,6 +2997,7 @@ function discoveryReviewApplyFilterChange() {
     const els = discoveryReviewElements();
     discoveryReviewState.issue = els.issue && els.issue.value != null ? String(els.issue.value) : "";
     discoveryReviewState.decision = els.decision && els.decision.value != null ? String(els.decision.value) : "";
+    discoveryReviewState.emailRouting = els.emailRouting ? String(els.emailRouting.value || "") : "";
     discoveryReviewState.page = 1;
     discoveryReviewState.selected.clear();
     if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
@@ -3163,6 +3173,7 @@ function discoveryReviewListPath(refresh) {
     if (discoveryReviewState.q) params.set("q", discoveryReviewState.q);
     if (discoveryReviewState.issue) params.set("issue", discoveryReviewState.issue);
     if (discoveryReviewState.decision) params.set("decision", discoveryReviewState.decision);
+    if (discoveryReviewState.emailRouting) params.set("emailRouting", discoveryReviewState.emailRouting);
     return DISCOVERY_REVIEW_PATH + "/experts?" + params.toString();
 }
 
@@ -3288,6 +3299,9 @@ function discoveryReviewStatusRow(text) {
 }
 
 function renderDiscoveryReviewRows() {
+    const routingRefresh = discoveryReviewElements().routingRefresh;
+    if (routingRefresh) routingRefresh.disabled = discoveryReviewState.emailRoutingBusy || discoveryReviewState.loading
+        || discoveryReviewState.rows.length === 0;
     const els = discoveryReviewElements();
     const tbody = els.rows;
     if (!discoveryReviewCanRender(tbody)) return;
@@ -3309,6 +3323,59 @@ function renderDiscoveryReviewRows() {
     discoveryReviewState.rows.forEach(function (row) {
         tbody.appendChild(buildDiscoveryReviewRow(row));
     });
+}
+
+function discoveryEmailRoutingLabel(routing) {
+    if (!routing) return "收信服务：未检测";
+    return routing.status === "MICROSOFT" ? "微软收信服务" : "收信服务：未确认";
+}
+
+function discoveryEmailRoutingEvidence(routing) {
+    const reasons = { CONSUMER_DOMAIN: "微软公共邮箱域名", MICROSOFT_MX: "主收信服务器为微软",
+        DNS_ERROR: "DNS 查询失败", NO_MX: "未查到 MX", NO_MX_EVIDENCE: "缺少 MX 明细",
+        MIXED_MX: "主收信服务器混合", OTHER_MX: "MX 指向其他网关，无法确认后端" };
+    return "域名 " + routing.domain + " · " + (reasons[routing.reason] || "未确认")
+        + " · 检测时间 " + routing.checkedAt + " · MX：" + (routing.mxRecords || []).join("；");
+}
+
+async function refreshDiscoveryEmailRoutingPage() {
+    if (discoveryReviewState.emailRoutingBusy || discoveryReviewState.loading) return;
+    const ids = Array.from(new Set(discoveryReviewState.rows.map(row => row.docId).filter(Boolean)));
+    if (!ids.length) return;
+    const seq = discoveryReviewState.requestSeq, listSeq = discoveryReviewState.listSeq;
+    const current = () => discoveryReviewListCurrent(seq, listSeq) && discoveryReviewState.tab === "review";
+    let completed = 0, microsoft = 0, unknown = 0, failed = 0;
+    discoveryReviewState.emailRoutingBusy = true;
+    const report = (suffix = "") => {
+        if (!current()) return;
+        const status = discoveryReviewElements().routingStatus;
+        if (status) status.textContent = "已补查 " + completed + "/" + ids.length + "；微软 " + microsoft
+            + "；未确认 " + unknown + "；写入异常 " + failed + suffix;
+    };
+    renderDiscoveryReviewRows();
+    report();
+    try {
+        for (const docId of ids) {
+            if (!current()) break;
+            const result = await api("/api/discovery/email-routing/refresh", {
+                method: "POST", timeoutMs: 60000, body: JSON.stringify({ docId })
+            });
+            if (!current()) break;
+            completed++;
+            if (Object.keys(result.failedLayers || {}).length) failed++;
+            if ((result.updatedLayers || []).includes("RAW")) {
+                if (result.routing && result.routing.status === "MICROSOFT") microsoft++; else unknown++;
+                discoveryReviewState.rows.filter(row => row.docId === docId).forEach(row => { row.emailRouting = result.routing; });
+            }
+            report();
+        }
+    } catch (error) {
+        report("；已停止：" + discoveryReviewErrorMessage(error) + "。当前请求可能已写入，请刷新核对。");
+    } finally {
+        discoveryReviewState.emailRoutingBusy = false;
+        renderDiscoveryReviewRows();
+        if (current()) refreshDiscoveryReviewList();
+    }
 }
 
 function buildDiscoveryReviewRow(row) {
@@ -3337,6 +3404,9 @@ function buildDiscoveryReviewRow(row) {
     name.textContent = discoveryReviewExpertName(row);
     tdExpert.appendChild(name);
     tdExpert.appendChild(discoveryReviewNode("span", null, "邮箱 " + discoveryReviewFieldText(row, "email")));
+    const routingLabel = discoveryReviewNode("span", "dr-email-routing", discoveryEmailRoutingLabel(row.emailRouting));
+    routingLabel.setAttribute("data-status", row.emailRouting ? row.emailRouting.status : "UNCHECKED");
+    tdExpert.appendChild(routingLabel);
     tr.appendChild(tdExpert);
 
     // 3. 机构 / 所在国家
@@ -3397,6 +3467,9 @@ function buildDiscoveryReviewRow(row) {
         : "提示：" + hints.map(function (hint) { return discoveryReviewReasonLine(hint); }).join("；")));
     const tags = row && Array.isArray(row.tags) && row.tags.length ? row.tags.join("、") : DISCOVERY_REVIEW_MISSING;
     evidence.appendChild(discoveryReviewNode("p", null, "标签 " + tags));
+    if (row.emailRouting) {
+        evidence.appendChild(discoveryReviewNode("p", "dr-routing-evidence", discoveryEmailRoutingEvidence(row.emailRouting)));
+    }
     const historyHolder = document.createElement("div");
     evidence.appendChild(discoveryReviewButton("审核历史", "button small secondary", function () {
         loadDiscoveryReviewExpertHistory(docId, historyHolder);
@@ -3726,6 +3799,7 @@ async function discoveryReviewPrepare(confirm) {
         params.set("level", DISCOVERY_REVIEW_LEVEL);
         if (discoveryReviewState.q) params.set("q", discoveryReviewState.q);
         if (discoveryReviewState.issue) params.set("issue", discoveryReviewState.issue);
+        if (discoveryReviewState.emailRouting) params.set("emailRouting", discoveryReviewState.emailRouting);
         let status;
         try {
             status = await api(DISCOVERY_REVIEW_PATH + "/batches/prepare?" + params.toString(), {

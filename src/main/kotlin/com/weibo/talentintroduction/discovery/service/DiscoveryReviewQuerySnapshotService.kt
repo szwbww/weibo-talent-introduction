@@ -35,6 +35,7 @@ class DiscoveryReviewQuerySnapshotService(
     @Synchronized
     fun page(filter: DiscoveryReviewScanService.DiscoveryReviewFilter, from: Int, size: Int, refresh: Boolean): ReviewQueryPage {
         require(from >= 0 && size in 1..100)
+        com.weibo.talentintroduction.expert.domain.EmailRouting.normalizeFilter(filter.emailRouting)
         require(filter.q == null || filter.q.length <= 100)
         require(filter.issue == null || filter.issue.length <= 100)
         require(filter.decision == null || filter.decision in setOf("ALL", "UNINITIALIZED", "AUTO_PASSED", "NEEDS_REVIEW",

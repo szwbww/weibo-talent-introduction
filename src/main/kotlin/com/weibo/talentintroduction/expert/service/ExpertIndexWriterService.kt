@@ -699,6 +699,18 @@ class ExpertIndexWriterService(
 
     data class DiscoverySnapshot(val source: Map<String, Any?>, val seqNo: Long, val primaryTerm: Long)
 
+    /** Provider evidence only, CAS against the exact email-bearing source; never creates a document. */
+    fun writeEmailRoutingIfVersionMatches(level: ExpertIndexLevel, docId: String,
+        snapshot: DiscoverySnapshot, routing: com.weibo.talentintroduction.expert.domain.EmailRouting): Boolean {
+        require(com.weibo.talentintroduction.expert.domain.EmailRouting.domainOf(snapshot.source["email"] as? String) == routing.domain)
+        val index = expertIndexService.indexName(level)
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/$index/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}&refresh=wait_for",
+            HttpMethod.POST, HttpEntity(mapOf("doc" to mapOf("emailRouting" to routing)), headers()), JsonNode::class.java
+        ).body
+        return response?.path("result")?.asText() in setOf("updated", "noop")
+    }
+
     /** Unlike readRawDocument, a transport failure is never mistaken for missing RAW. */
     fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
         val index = expertIndexService.indexName(level)
@@ -790,7 +802,9 @@ class ExpertIndexWriterService(
             }, researchFieldIds = strings("researchFieldIds"),
             // 02（I-1/I-3）：完整 profile 读取必须带上发送门禁依赖的证据与资格键；
             // 旧文档没有这两个键 → null（不是合格），不在本方法做任何 ES 写。
-            institutionEvidence = text("institutionEvidence"), filterResult = text("filterResult")
+            institutionEvidence = text("institutionEvidence"), filterResult = text("filterResult"),
+            emailRouting = com.weibo.talentintroduction.expert.domain.EmailRouting.read(
+                objectMapper.valueToTree(source["emailRouting"]), text("email"))
         )
     }
 

@@ -30,7 +30,7 @@ import java.util.concurrent.RejectedExecutionException
 
 // This wire contract is deliberately separate from the side-effectful manual-review prepare request.
 enum class RecheckScope { IDS, ALL_MATCHING, ALL_PENDING }
-data class RecheckFilter(val q: String? = null, val issue: String? = null, val decision: String? = null)
+data class RecheckFilter(val q: String? = null, val issue: String? = null, val decision: String? = null, @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) val emailRouting: String? = null)
 data class RecheckPrepareRequest(val requestKey: String, val scope: RecheckScope = RecheckScope.IDS,
     val docIds: List<String> = emptyList(), val filter: RecheckFilter = RecheckFilter(),
     val mode: VerificationMode = VerificationMode.AUDIT, val evidenceMode: RecheckEvidenceMode = RecheckEvidenceMode.REUSE)
@@ -158,6 +158,7 @@ class DiscoveryRecheckService(
             request.docIds.forEach { verificationText(it, 128); require(it == it.trim() && !it.contains('/')) { "Invalid docId" } }
             require(request.filter == RecheckFilter()) { "IDS does not accept a filter" }
         } else require(request.docIds.isEmpty()) { "ALL_MATCHING does not accept docIds" }
+        com.weibo.talentintroduction.expert.domain.EmailRouting.normalizeFilter(request.filter.emailRouting)
         require(request.filter.q == null || request.filter.q.length <= 100)
         require(request.filter.issue == null || request.filter.issue.matches(Regex("[A-Z_0-9]{1,100}")))
         require(request.filter.decision == null || request.filter.decision in setOf("ALL", "UNINITIALIZED", "AUTO_PASSED",
@@ -165,7 +166,8 @@ class DiscoveryRecheckService(
         return mapper.writeValueAsString(linkedMapOf("actor" to actor, "scope" to request.scope,
             "docIds" to request.docIds.distinct().sorted(), "filter" to RecheckFilter(
                 request.filter.q?.trim()?.takeIf { it.isNotEmpty() }, request.filter.issue?.takeUnless { it == "ALL" },
-                request.filter.decision?.takeUnless { it == "ALL" }), "mode" to request.mode, "evidenceMode" to request.evidenceMode))
+                request.filter.decision?.takeUnless { it == "ALL" },
+                com.weibo.talentintroduction.expert.domain.EmailRouting.normalizeFilter(request.filter.emailRouting)), "mode" to request.mode, "evidenceMode" to request.evidenceMode))
     }
 
     private fun normalizedRequest(request: RecheckPrepareRequest): RecheckPrepareRequest =
@@ -278,7 +280,7 @@ class DiscoveryRecheckService(
             } else {
                 // The scroll callback only persists the input; paper lookups never hold an ES cursor open.
                 scan.scanAll(DiscoveryReviewScanService.DiscoveryReviewFilter(ExpertIndexLevel.RAW, "discovered",
-                    request.filter.q, request.filter.issue, request.filter.decision), 500) { experts ->
+                    request.filter.q, request.filter.issue, request.filter.decision, request.filter.emailRouting), 500) { experts ->
                     spool(experts.map { Input(it.docId, it.profile, if (it.row.initialized) it.row.revision else null,
                         if (it.row.initialized) it.row.decision else null) })
                     true

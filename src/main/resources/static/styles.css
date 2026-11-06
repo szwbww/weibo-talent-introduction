@@ -13571,6 +13571,39 @@ body[data-mail-read-only="true"] #mailboxConversationPanel>.panel-head{padding:1
 .mail-chat .mailbox-progress-status[data-access="FULL"]{color:#1e40af;background:#eff4ff;border-color:#d3dff6}
 body[data-mail-read-only="true"] #view-mailbox.mc-refined #mailboxList{padding:12px}
 
+/* Discovery email routing evidence: inbound route, independent of admission. */
+.dr-review .dr-email-routing {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    max-width: 100%;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.dr-review .dr-email-routing[data-status="MICROSOFT"] {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+.dr-review .dr-routing-evidence,
+#discoveryEmailRoutingStatus {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: #475569;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
 /* paper-reprocess-contract:start */
 .rp-batch{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px;border:1px solid #c7d2fe;border-radius:8px;background:#f6f8ff}
 .rp-batch strong{font-size:14px;color:#1e293b}

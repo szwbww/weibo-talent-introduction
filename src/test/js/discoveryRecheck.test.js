@@ -143,14 +143,14 @@ test('default audit/reuse, READY authority, paginated frozen roster, option/filt
 test('prepare wire separates selected IDs, all-page filters and server-owned ALL_PENDING', async () => {
     for (const scope of ['IDS', 'ALL_MATCHING', 'ALL_PENDING']) {
         const h = harness();
-        h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
+        h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW', emailRouting: 'MICROSOFT' });
         h.find('open').click(); await flush();
         for (const input of h.root.querySelectorAll('input[name="rr-scope"]')) input.checked = input.value === scope;
         h.find('prepare').click(); await flush();
         const body = h.calls.find(c => c.url.endsWith('/prepare')).body;
         assert.equal(body.scope, scope);
         assert.deepEqual(body.docIds, scope === 'IDS' ? ['doc-1', 'doc-2'] : []);
-        if (scope === 'ALL_MATCHING') assert.deepEqual(body.filter, { q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
+        if (scope === 'ALL_MATCHING') assert.deepEqual(body.filter, { q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW', emailRouting: 'MICROSOFT' });
         else assert.ok(!Object.hasOwn(body, 'filter'));
         assert.equal(body.mode, 'AUDIT'); assert.equal(body.evidenceMode, 'REUSE');
         h.view.unmount();

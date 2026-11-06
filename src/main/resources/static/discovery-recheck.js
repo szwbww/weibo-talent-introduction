@@ -144,7 +144,7 @@
             submitting = true; controls(); status("prepare-status", "正在固定名单… 尚不可启动。");
             try {
                 const filter = Object.fromEntries(Object.entries(spec.filter).filter(([key, entry]) =>
-                    ["q", "issue", "decision"].includes(key) && entry != null && entry !== ""));
+                    ["q", "issue", "decision", "emailRouting"].includes(key) && entry != null && entry !== ""));
                 const wire = { scope: spec.scope, docIds: spec.scope === "IDS" ? spec.docIds : [],
                     ...(spec.scope === "ALL_MATCHING" ? { filter } : {}), mode: spec.mode, evidenceMode: spec.evidenceMode };
                 const wireSpec = JSON.stringify(wire);

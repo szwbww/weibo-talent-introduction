@@ -50,7 +50,8 @@ data class ExpertProfile(
      * 02（I-3）：ES `filterResult` keyword 的读取投影。发送门禁要求新发现档案为 `PASSED`；
      * 旧文档没有这个键 → null，不默认合格。
      */
-    val filterResult: String? = null
+    val filterResult: String? = null,
+    val emailRouting: EmailRouting? = null
 ) {
     val displayName: String
         get() = listOfNotNull(givenNames, familyNames)

@@ -335,7 +335,7 @@ class DiscoveryVerificationRegistrationService(
     }
 
     private fun factsWithoutCountry(profile: ExpertProfile) =
-        profile.copy(country = null, institutionEvidence = null)
+        profile.copy(country = null, institutionEvidence = null, emailRouting = null)
 
     /** Absent member keeps the pre-supplement semantics; present member must be a complete COUNTRY_V1 receipt. */
     private fun validateReceipt(snapshotJson: String, frozen: ExpertProfile) {

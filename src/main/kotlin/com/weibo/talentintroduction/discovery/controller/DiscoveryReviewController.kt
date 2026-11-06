@@ -46,15 +46,17 @@ class DiscoveryReviewController(private val service: DiscoveryReviewService,
         @RequestParam(required = false) q: String?,
         @RequestParam(required = false) issue: String?,
         @RequestParam(required = false) decision: String?,
-        @RequestParam(defaultValue = "false") refresh: Boolean = false
+        @RequestParam(defaultValue = "false") refresh: Boolean = false,
+        @RequestParam(required = false) emailRouting: String? = null
     ): ResponseEntity<Any> {
         sessionUsername(request) ?: return unauthorized()
+        com.weibo.talentintroduction.expert.domain.EmailRouting.normalizeFilter(emailRouting)
         if (snapshots != null && (!decision.isNullOrBlank() && decision != "ALL" || !issue.isNullOrBlank())) {
             val parsedLevel = com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.valueOf((level ?: "RAW").uppercase())
             return ResponseEntity.ok(snapshots.page(com.weibo.talentintroduction.discovery.service.DiscoveryReviewScanService.DiscoveryReviewFilter(
-                parsedLevel, tag, q, issue, decision), from, size, refresh))
+                parsedLevel, tag, q, issue, decision, emailRouting), from, size, refresh))
         }
-        return ResponseEntity.ok(service.listExperts(level, tag, from, size, q, issue, decision))
+        return ResponseEntity.ok(service.listExperts(level, tag, from, size, q, issue, decision, emailRouting))
     }
 
     /**
@@ -72,12 +74,13 @@ class DiscoveryReviewController(private val service: DiscoveryReviewService,
         @RequestParam(required = false) tag: String?,
         @RequestParam(required = false) q: String?,
         @RequestParam(required = false) issue: String?,
-        @RequestParam(required = false) requestKey: String?
+        @RequestParam(required = false) requestKey: String?,
+        @RequestParam(required = false) emailRouting: String? = null
     ): ResponseEntity<Any> {
         val actor = sessionUsername(request) ?: return unauthorized()
         return if (body.scope?.trim().equals(DiscoveryReviewService.SCOPE_ALL_MATCHING, ignoreCase = true)) {
             ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(service.prepareAllMatching(body, tag, q, issue, requestKey, actor))
+                .body(service.prepareAllMatching(body, tag, q, issue, requestKey, actor, emailRouting))
         } else {
             ResponseEntity.ok(service.prepare(body, actor))
         }

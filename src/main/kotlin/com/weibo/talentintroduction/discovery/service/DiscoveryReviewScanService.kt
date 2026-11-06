@@ -49,7 +49,8 @@ class DiscoveryReviewScanService(
         val tag: String?,
         val q: String?,
         val issue: String?,
-        val decision: String?
+        val decision: String?,
+        val emailRouting: String? = null
     )
 
     /** 一条完整 ES 命中：真实 `_id` + 全量 `_source` + 真实 seq/term（禁止用缺字段的旧 DTO 冒充事实）。 */
@@ -90,7 +91,8 @@ class DiscoveryReviewScanService(
         size: Int,
         q: String?,
         issue: String?,
-        decision: String?
+        decision: String?,
+        emailRouting: String? = null
     ): DiscoveryReviewExpertPage {
         require(from >= 0) { "from 必须 >= 0" }
         require(size in 1..MAX_PAGE_SIZE) { "size 必须在 1～$MAX_PAGE_SIZE" }
@@ -99,7 +101,8 @@ class DiscoveryReviewScanService(
             tag = tag,
             q = q,
             issue = issue,
-            decision = decision?.takeIf { it.isNotBlank() && it != FILTER_ALL }
+            decision = decision?.takeIf { it.isNotBlank() && it != FILTER_ALL },
+            emailRouting = com.weibo.talentintroduction.expert.domain.EmailRouting.normalizeFilter(emailRouting)
         )
         val issueFilter = issue?.takeIf { it.isNotBlank() && it != FILTER_ALL }
         if (filter.decision == null && issueFilter == null) {
@@ -217,6 +220,7 @@ class DiscoveryReviewScanService(
 
     private fun searchBody(filter: DiscoveryReviewFilter, size: Int, from: Int?): Map<String, Any> {
         val filters = mutableListOf<Map<String, Any>>()
+        com.weibo.talentintroduction.expert.domain.EmailRouting.filterQuery(filter.emailRouting)?.let { filters += it }
         filter.tag?.trim()?.takeIf { it.isNotEmpty() }?.let { filters += mapOf("term" to mapOf("tags" to it)) }
         filter.q?.trim()?.takeIf { it.isNotEmpty() }?.let { query ->
             val escaped = query.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
@@ -307,7 +311,8 @@ class DiscoveryReviewScanService(
                     identityChanged = identityChanged,
                     reviewedActor = reviewedItem?.actor,
                     reviewedAt = reviewedItem?.appliedAt,
-                    addressWarning = addressWarning(profile.email)
+                    addressWarning = addressWarning(profile.email),
+                    emailRouting = profile.emailRouting
                 )
             )
         }
@@ -358,7 +363,7 @@ class DiscoveryReviewScanService(
             "orcidId", "email", "givenNames", "familyNames", "country", "age", "degree", "nationality",
             "hIndex", "citationCount", "lastPublicationYear", "researchFields", "researchFieldIds",
             "disciplineCategory", "institution", "institutionType", "emailSource", "externalIds",
-            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification",
+            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification", "emailRouting",
             // I-7：研发分类器与 policy 消费的输入字段必须与完整档案一致，缺一个都会让审核投影误判
             // （线上实测 4,642 条已初始化档案中 1 条因此多出「研发证据不足」）。
             "keyword", "employment", "worksCount", "recentWorkTitles", "patentTitles"

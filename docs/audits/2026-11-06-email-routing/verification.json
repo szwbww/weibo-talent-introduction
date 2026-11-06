@@ -1,0 +1,137 @@
+{
+  "baselineCommit": "e2591d4",
+  "branch": "main",
+  "jvm": [
+    {
+      "name": "EmailRoutingServiceTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "EmailRoutingPersistenceTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "DiscoveryEmailRoutingServiceTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "EmailValidationServiceTest",
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "DiscoveryReviewServiceTest",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "DiscoveryReviewAllPagesTest",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "DiscoveryReviewControllerTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "DiscoveryRecheckServiceTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "DiscoveryCountryRegistrationTest",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "ExpertSearchServiceTest",
+      "tests": 96,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "ExpertIndexServiceTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "ExpertIndexWriterServiceTest",
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "OperatorStatusWriteSeamGuardTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "frontend": {
+    "tests": 2058,
+    "passed": 2058,
+    "failed": 0
+  },
+  "deployment": "NOT_DEPLOYED",
+  "sourceHashes": {
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryEmailRoutingController.kt": "73d58cce60d863725d42a1c68770bde28c35a29debade482e7fe1bc64243101e",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewController.kt": "063c7755dca35c1a50758e31f916bf094d638198ea22ae712d6bac2e7f8640ba",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt": "99b54f8f74caf348de6d70f793303c7138e86534d6dfc2ad80b9a83d7f95cbde",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryEmailRoutingService.kt": "a519c021ff070ebffc2f5f99fa218ce4491c20abb6fba53c4e1277f3327c6e12",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt": "3b7cbb9405f6f14f94e3f0b0c5d52d42e552ee041e8b5c60b9a9beafb614839a",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewQuerySnapshotService.kt": "071b4bc8ce770f24a192cd1f231934361ccbe621c7b60ab3924381407125c21e",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt": "cd771e82821991a3103e1e5e2377d6e5f1ae06cfe20a4ccd27449142954bbfeb",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt": "c40c7145dbe93407169982bbd301966dc7f4b9a26cacface2bc73d7bfb479725",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt": "52a979e0125d0dce0e8dcd52507e0e3a4f2f99dc040aa8b3c4c6c83a803e7431",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt": "ac8b0685f90a639c048324849561a9a6ac31328aebfbef507400d16e8fcf953f",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/domain/EmailRouting.kt": "c88a19ca4b1e4c447378294586546c29f40aac4b09f4046f9625b4fb52d45d0f",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt": "7550a343d362ced58747f2307b8770ab8ff30bb3af09e234e484f0dac3dd53d3",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/DnsMxLookupClient.kt": "548386abbd32ec84f5b3f531723c9798b3e523e9cc5e3c6501ee50106026f464",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/EmailRoutingService.kt": "62bb5c2ec9218a6c008d430654c50f729e1bd385bbd269d7ab10aa0081ffb33b",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/EmailValidationService.kt": "db14f5697e2032c8073d5639caa6e316da1787b90c42639e8bcc7faaed5cd0c3",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt": "9efa4e274be7f99805d9b5fc0421468e0bdf71f3af9717e798631324791d1562",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt": "2c4a68921938266927c80fa8cfd75adacce38b7c45785b9702af10cd1505ca7b",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/MxLookupClient.kt": "bc9104bf0884549756b59517d2cf70eb4ca01cf011700d9b680ea64dc985b6ed",
+    "src/main/resources/es/orcid_info_application.json": "9f042168534f7f50d460b0ca158e5525722331e617fa80e1b1312e86b707d322",
+    "src/main/resources/es/orcid_info_candidate.json": "eb6cab632981502478c30e167c7437abbbb19e1104c01b71a5e73ae97869173c",
+    "src/main/resources/es/orcid_info_raw.json": "ee282026361cf85b2815d956440577a95169ec93dc74bb2d54c3ec68d1a6d026",
+    "src/main/resources/static/app.js": "f4560f7c6303677e4340e8749ebe385a5d39708c77fcd8236a8e09e42a2dbe1e",
+    "src/main/resources/static/discovery-recheck.js": "8079320372345b1428eb415ead7e8850fc6fe79333c7e41cd95923f0d5954e6d",
+    "src/main/resources/static/index.html": "7e4572889afc87877eeab931890cc8f65e57c0e1132be0fd959d532dfafe731e",
+    "src/main/resources/static/styles.css": "586329c610a6b08253016ee49a7c18cf8cfaa2d76289d3b3cda273edf83ca376",
+    "src/test/js/discoveryEmailRouting.test.js": "d5ae81f049f48669b7415118c09283233660709adffae3838538a9e44711770a",
+    "src/test/js/discoveryRecheck.test.js": "1c1c613a4ebdef5cedfb3ff97becc9be20fc6377d6237d24368b984183e501c2",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt": "fecffe6231a40e271ed888fe9ca22f315a768ec9c2a74404797637739b424962",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryEmailRoutingServiceTest.kt": "3baa5c9c123280981737ae447394cbd6eb23ab5f03452acd4b0409b8b33a060e",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/service/EmailRoutingPersistenceTest.kt": "27e0cc5798c4198e80e39cc936d991c3a42e7d3ffb2210ea9fdd72aab7f71a1e",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/service/EmailRoutingServiceTest.kt": "675a2526683ab0bf3d8042fee778ee5bf4ff50d982cf744ee1711e2c78971878",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt": "6b04c69925c7df9500a159f2d0dcd6589e51417937e8b4fdfb06919441261987"
+  }
+}

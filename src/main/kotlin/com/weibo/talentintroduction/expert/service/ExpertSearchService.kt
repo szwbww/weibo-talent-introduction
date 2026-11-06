@@ -537,7 +537,8 @@ class ExpertSearchService(
             researchFieldIds = stringArrayOrNull(source, "researchFieldIds"),
             // 02（I-3）：发送模型必须读到证据与资格；旧文档没有这两个键 → null，不默认合格。
             institutionEvidence = source.nullableText("institutionEvidence"),
-            filterResult = source.nullableText("filterResult")
+            filterResult = source.nullableText("filterResult"),
+            emailRouting = com.weibo.talentintroduction.expert.domain.EmailRouting.read(source.path("emailRouting"), source.nullableText("email"))
         )
     }
 
@@ -635,7 +636,7 @@ class ExpertSearchService(
             "hIndex", "citationCount", "lastPublicationYear",
             "researchFields", "researchFieldIds", "disciplineCategory", "institution", "institutionType",
             "filterResult", "institutionEvidence",
-            "emailSource", "emailVerifiedLevel",
+            "emailSource", "emailVerifiedLevel", "emailRouting",
             "dataSource", "externalIds", "worksCount", "identityVerification",
             "tags",
             "updatedAt",

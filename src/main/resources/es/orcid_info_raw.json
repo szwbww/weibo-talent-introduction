@@ -29,6 +29,11 @@
       "institutionEvidence": { "type": "keyword" },
       "emailSource": { "type": "keyword" },
       "emailVerifiedLevel": { "type": "integer" },
+      "emailRouting": { "type": "object", "dynamic": false, "properties": {
+        "domain": { "type": "keyword" }, "status": { "type": "keyword" },
+        "reason": { "type": "keyword" }, "mxRecords": { "type": "keyword", "index": false },
+        "checkedAt": { "type": "date", "format": "strict_date_optional_time||epoch_millis" }
+      } },
       "dataSource": { "type": "keyword" },
       "identityVerification": { "type": "object", "dynamic": false, "properties": {
         "status": { "type": "keyword" }, "version": { "type": "integer" },

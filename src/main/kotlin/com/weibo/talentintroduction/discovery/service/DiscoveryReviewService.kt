@@ -291,9 +291,10 @@ class DiscoveryReviewService(
         size: Int,
         q: String?,
         issue: String?,
-        decision: String?
+        decision: String?,
+        emailRouting: String? = null
     ): DiscoveryReviewExpertPage =
-        scanService.listPage(parseLevel(levelRaw), tag, from, size, q, issue, decision)
+        scanService.listPage(parseLevel(levelRaw), tag, from, size, q, issue, decision, emailRouting)
 
     fun history(docId: String, limit: Int = HISTORY_LIMIT): List<ExpertDiscoveryReviewItem> {
         require(docId.isNotBlank()) { "docId 必填" }
@@ -390,7 +391,8 @@ class DiscoveryReviewService(
         q: String?,
         issue: String?,
         requestKey: String?,
-        actor: String
+        actor: String,
+        emailRouting: String? = null
     ): DiscoveryReviewBatchStatus {
         require(actor.isNotBlank()) { "缺少操作者身份" }
         require(request.scope?.trim().equals(SCOPE_ALL_MATCHING, ignoreCase = true)) {
@@ -408,7 +410,8 @@ class DiscoveryReviewService(
             tag = tag?.trim()?.takeIf { it.isNotEmpty() },
             q = q?.trim()?.takeIf { it.isNotEmpty() },
             issue = issue?.trim()?.takeIf { it.isNotEmpty() },
-            decision = DiscoveryReviewDecision.NEEDS_REVIEW.name
+            decision = DiscoveryReviewDecision.NEEDS_REVIEW.name,
+            emailRouting = com.weibo.talentintroduction.expert.domain.EmailRouting.normalizeFilter(emailRouting)
         )
         val payload = preparePayload(batchKey, action, filter, actor)
 
@@ -1847,7 +1850,7 @@ class DiscoveryReviewService(
             "q" to filter.q,
             "issue" to filter.issue,
             "decision" to filter.decision
-        ),
+        ).let { if (filter.emailRouting == null) it else it + ("emailRouting" to filter.emailRouting) },
         "actor" to actor
     )
 

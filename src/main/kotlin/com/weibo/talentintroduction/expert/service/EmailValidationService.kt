@@ -24,6 +24,10 @@ class EmailValidationService(
     private fun mxCheckEnabled(): Boolean =
         eligibilityFilterService.getEmailValidationConfig().enableMxCheck
 
+    /** Independent enrichment: never reads or changes the email validity/admission cache. */
+    fun identifyRouting(email: String?): com.weibo.talentintroduction.expert.domain.EmailRouting? =
+        EmailRoutingService(mxLookupClient).identify(email)
+
     fun validate(email: String): EmailValidationResult {
         val normalized = email.lowercase(Locale.ROOT).trim()
         if (normalized.isBlank()) return reject(0, "EMPTY_EMAIL")

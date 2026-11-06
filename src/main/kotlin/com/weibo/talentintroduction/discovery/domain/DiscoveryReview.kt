@@ -213,7 +213,8 @@ data class DiscoveryReviewExpertRow(
     val identityChanged: Boolean,
     val reviewedActor: String?,
     val reviewedAt: LocalDateTime?,
-    val addressWarning: String?
+    val addressWarning: String?,
+    val emailRouting: com.weibo.talentintroduction.expert.domain.EmailRouting? = null
 )
 
 data class DiscoveryReviewExpertPage(

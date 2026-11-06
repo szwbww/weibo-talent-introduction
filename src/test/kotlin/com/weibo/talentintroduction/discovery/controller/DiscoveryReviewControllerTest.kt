@@ -192,7 +192,7 @@ class DiscoveryReviewControllerTest {
 
     @Test
     fun `a scan timeout maps to 503`() {
-        Mockito.`when`(service.listExperts(any(), anyString(), anyInt(), anyInt(), any(), any(), any()))
+        Mockito.`when`(service.listExperts(any(), anyString(), anyInt(), anyInt(), any(), any(), any(), any()))
             .thenThrow(DiscoveryReviewTimeoutException("审核查询超出服务端时间预算"))
 
         mockMvc.perform(get("/api/discovery/review/experts").session(sessionOf("op1")))
@@ -229,11 +229,11 @@ class DiscoveryReviewControllerTest {
 
     @Test
     fun `all-page prepare returns 202 and forwards the server-side filter`() {
-        Mockito.`when`(service.prepareAllMatching(anyRequest(), any(), any(), any(), any(), anyString()))
+        Mockito.`when`(service.prepareAllMatching(anyRequest(), any(), any(), any(), any(), anyString(), any()))
             .thenReturn(batchStatus(DiscoveryReviewBatchPhase.PREPARING))
 
         mockMvc.perform(
-            post("/api/discovery/review/batches/prepare?scope=ALL_MATCHING&tag=discovered&q=ada&issue=EMAIL_MISSING&requestKey=win-1")
+            post("/api/discovery/review/batches/prepare?scope=ALL_MATCHING&tag=discovered&q=ada&issue=EMAIL_MISSING&requestKey=win-1&emailRouting=MICROSOFT")
                 .session(sessionOf("op1"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"scope":"ALL_MATCHING","action":"APPROVE"}""")
@@ -247,7 +247,8 @@ class DiscoveryReviewControllerTest {
             Mockito.eq("ada") ?: "ada",
             Mockito.eq("EMAIL_MISSING") ?: "EMAIL_MISSING",
             Mockito.eq("win-1") ?: "win-1",
-            Mockito.eq("op1") ?: "op1"
+            Mockito.eq("op1") ?: "op1",
+            Mockito.eq("MICROSOFT") ?: "MICROSOFT"
         )
         assertEquals("ALL_MATCHING", captured.value.scope)
     }
