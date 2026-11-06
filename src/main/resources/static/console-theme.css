@@ -1,0 +1,93 @@
+/* Explicit themes: modules stay light for reading; only the surrounding shell is dark. */
+:root[data-console-theme] { color-scheme: light; }
+body.console-ui .console-theme-toggle { width:32px; padding:6px; flex-shrink:0; }
+.console-theme-toggle svg { display:block; width:17px; height:17px; }
+.console-theme-toggle .console-theme-sun { display:none; }
+:root[data-console-theme=dark] .console-theme-toggle .console-theme-moon { display:none; }
+:root[data-console-theme=dark] .console-theme-toggle .console-theme-sun { display:block; }
+
+:root[data-console-theme=dark] body.console-ui {
+    --primary:#246aeb; --primary-hover:#1858ce; --primary-active:#174fba;
+    --primary-rgb:36,106,235; --primary-light:#dfe9fc; --primary-tint:#dfe9fc;
+    --bg-main:#e9ebee; --bg-sidebar:#e9ebee; --bg-subtle:#e3e6eb; --surface:#e0e5ec;
+    --panel-bg:#e9ebee; --panel-border:#d5d9df; --line:#d6dae1; --border:#cbd1da;
+    --border-strong:#a9b4c3; --text-main:#273446; --text-strong:#334155; --ink:#273446;
+    --text-muted:#5e6b7d; --text-secondary:#526174;
+    background:#1c1f24;
+}
+:root[data-console-theme=dark] .console-ui .app-shell { background:linear-gradient(135deg,#2b3038 0%,#202329 32%,#191c21 100%); }
+:root[data-console-theme=dark] .console-ui .main { background:transparent; }
+:root[data-console-theme=dark] .console-ui .topnav { background:linear-gradient(110deg,#ffffff04,transparent 75%); border-color:#ffffff0d; }
+:root[data-console-theme=dark] .console-ui .brand-title { color:#f1f3f6; }
+:root[data-console-theme=dark] .console-ui :is(.brand-subtitle,.user-info) { color:#a7b1c0; }
+:root[data-console-theme=dark] .console-ui .nav-tab { color:#b4bdcb; }
+:root[data-console-theme=dark] .console-ui .nav-tab:not(.active):hover { color:#fff; background:#ffffff0e; }
+:root[data-console-theme=dark] .console-ui .nav-tab.active { background:#246aeb; color:#fff; box-shadow:0 3px 10px #0003,inset 0 1px #ffffff20; }
+:root[data-console-theme=dark] .console-ui .topbar { background:transparent; border-color:#ffffff0d; }
+:root[data-console-theme=dark] .console-ui #viewTitle { color:#f3f5f8; }
+:root[data-console-theme=dark] .console-ui #viewSubtitle { color:#acb5c3; }
+:root[data-console-theme=dark] .console-ui .task-center-pill { background:#dfe7f4; color:#235bc2; border-color:#b9cae7; }
+:root[data-console-theme=dark] .console-ui :is(.topbar,.topnav) .task-center-pill { background:#2c323d; color:#c3d3f4; border-color:#ffffff12; }
+:root[data-console-theme=dark] .console-ui .button:not(.danger) { background:#f0f3f8; border-color:#b9cae7; color:#235bc2; box-shadow:none; }
+:root[data-console-theme=dark] .console-ui .button:not(.danger):not(:disabled):hover { background:#e4ecfa; border-color:#86a6dc; color:#1b4eaa; }
+:root[data-console-theme=dark] .console-ui .button.primary:not(:disabled) { background:#246aeb; border-color:#246aeb; color:#fff; box-shadow:0 1px 2px #0000000d; }
+:root[data-console-theme=dark] .console-ui .button.primary:not(:disabled):hover { background:#1858ce; border-color:#1858ce; color:#fff; }
+:root[data-console-theme=dark] .console-ui .button.danger { background:#f5e6e7; border-color:#e7bec2; color:#ad313c; }
+:root[data-console-theme=dark] .console-ui .button:disabled { background:#e0e3e8; border-color:#d5d9e0; color:#919aa8; box-shadow:none; }
+:root[data-console-theme=dark] .console-ui #mailboxRefreshBtn { background:#f0f3f8; border-color:#b9cae7; color:#235bc2; box-shadow:none; }
+:root[data-console-theme=dark] .console-ui #mailboxRefreshBtn:not(:disabled):hover { background:#e4ecfa; border-color:#86a6dc; color:#1b4eaa; }
+:root[data-console-theme=dark] .console-ui .topbar :is(#refreshBtn,.console-theme-toggle) { background:#252b35; border-color:#5776a7; color:#c0d4fb; }
+:root[data-console-theme=dark] .console-ui .topbar :is(#refreshBtn,.console-theme-toggle):hover { background:#303b4e; border-color:#6f91c8; color:#e0ebff; }
+:root[data-console-theme=dark] .console-ui .topnav :is(.console-sidebar-toggle,#logoutBtn) { background:transparent; border-color:transparent; color:#aab7ca; box-shadow:none; }
+:root[data-console-theme=dark] .console-ui .topnav :is(.console-sidebar-toggle,#logoutBtn):hover { background:#ffffff0a; color:#e1e8f3; }
+:root[data-console-theme=dark] .console-ui .world-clock-trigger { background:#292f39; color:#bdd0ee; border-color:#46536b; }
+:root[data-console-theme=dark] .console-ui .topnav.world-clock-header { --wc-bg:#e9ebee; --wc-soft:#e3e6eb; --wc-border:#cbd1da; --wc-ink:#273446; --wc-muted:#5e6b7d; --wc-blue:#235bc2; --wc-tint:#dfe9fc; }
+:root[data-console-theme=dark] .console-ui :is(.panel,.panel-head,.world-clock-panel) { background:#e9ebee; border-color:#d6dae1; }
+:root[data-console-theme=dark] .console-ui :is(input,select,textarea) { background:#f3f4f6; border-color:#cdd3dc; color:#344154; }
+:root[data-console-theme=dark] .console-ui :is(input,textarea)::placeholder { color:#69788c; opacity:1; }
+:root[data-console-theme=dark] .console-ui table { background:#eceef1; }
+:root[data-console-theme=dark] .console-ui th { background:#e0e4e9; color:#526174; }
+:root[data-console-theme=dark] .console-ui :is(td,th) { border-color:#d4d9e1; }
+
+/* Opaque surfaces, including dialogs mounted directly under body. */
+:root[data-console-theme=dark] .console-ui :is(.modal-panel,.modal-content,.action-dialog,.auth-card,.cr-dialog,.em-drawer,.calendar-dialog,.followup-dialog,.material-request-dialog,.em-upload-dialog,.reply-template-dialog,.contact-timing-dialog,.dp-dialog,.dr-confirm,.rr-dialog,.batch-log-drawer,.dropdown-menu,.mc-filter-popover,.mailbox-progress-menu) { background:#e9ebee; color:#273446; border-color:#cbd1da; }
+:root[data-console-theme=dark] .console-ui :is(.batch-config-editor-actions,.batch-manual-actions-sticky,.rag-prompt-savebar,.followup-actions,.material-request-actions,.em-upload-actions,.reply-template-footer,.dp-dialog-foot) { background:#e9ebee; border-color:#cbd1da; }
+:root[data-console-theme=dark] .console-ui :is(.task-center-card,.task-center-empty,.task-center-detail,.ec-section,.expert-materials,.calendar-root .calendar-panel,.calendar-root .calendar-agenda,.calendar-root .calendar-filter-bar,.calendar-root .calendar-overview,.dr-recheck .rr-panel) { background:#e9ebee; border-color:#d5d9df; }
+:root[data-console-theme=dark] .console-ui :is(.cr-meetbody,.calendar-root .calendar-day,.followup-mail-option,.reply-template-paper,.material-request-paper,.em-upload-row) { background:#f3f4f6; border-color:#d5d9df; }
+:root[data-console-theme=dark] .console-ui :is(.calendar-root .calendar-weekday,.calendar-root .calendar-day[data-outside=true],.reply-template-sidebar,.followup-list-pane) { background:#e3e6eb; }
+:root[data-console-theme=dark] .console-ui .calendar-root .calendar-day[data-today=true] { background:#dfe9fc; }
+:root[data-console-theme=dark] .console-ui :is(.console-loading,.trust-reply-busy-overlay,.trust-reply-item-busy-overlay,.tag-editor-loading-overlay,.ai-reply-loading-overlay) { background:rgba(233,235,238,.92); color:#526174; }
+:root[data-console-theme=dark] .console-ui :is(.trust-reply-busy-card,.trust-reply-item-busy-card) { background:#f3f4f6; border-color:#cbd1da; color:#273446; }
+
+/* Mailbox uses the reviewed graphite / light-grey composition. */
+:root[data-console-theme=dark] .console-ui #view-mailbox.active { padding:14px; background:transparent; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined #mailboxConversationPanel { background:transparent; overflow:visible; }
+:root[data-console-theme=dark] .console-ui #mailboxConversationPanel>.panel-head { background:#e9ebee; border:1px solid #ffffff12; border-radius:10px; margin-bottom:12px; padding:10px 14px; box-shadow:0 2px 8px #0c10151a; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat { gap:12px; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat :is(.mc-experts,.mc-conversation) { background:#e9ebee; border:1px solid #ffffff12; border-radius:10px; box-shadow:0 2px 8px #0c10151a; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat :is(.mc-list-tools,.mc-header) { background:#e9ebee; border-color:#d5dae2; border-radius:10px 10px 0 0; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-search-row input { background:#f3f4f6; border-color:#cdd3dc; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-icon { background:#f3f4f6; color:#246aeb; border-color:#cdd3dc; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-person { background:#f2f4f6; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-person:hover { background:#e4eaf4; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-person[data-active=true] { background:#dfe9fc; border-left-color:#246aeb; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat :is(.mc-person-main small,.mailbox-reply-list,.mc-person-meta,.mc-identity p,.mc-message header,.mc-timeline-head,.mc-pager,.mc-day,.mc-note-trigger,.mc-note-label,.contact-timing,.mc-header-meta) { color:#5e6b7d; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-person-tag { background:#e0e5ec; color:#52647d; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mailbox-progress-status { color:#4e6d9a; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-filter { color:#5e6b7d; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-filter[aria-pressed=true] { background:#dce7fb; border-color:#b4c9ed; color:#205aca; border-radius:6px; }
+:root[data-console-theme=dark] .console-ui .mc-filter[aria-pressed=true] :is(.mailbox-suspend-count,.mailbox-draft-count) { background:#cbdcf8; color:#205aca; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-pager { border-color:#d5dae2; background:#e9ebee; border-radius:0 0 10px 10px; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-header-meta.mc-inline-info { border-color:#d5dae2; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-timeline-head { background:#e3e6eb; border-color:#d1d7e0; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-scroll { background:#e3e6eb; border-radius:0 0 10px 10px; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-message { background:#f3f4f6; border-color:#d3d9e1; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-message[data-direction=OUTBOUND] { background:#dce7fa; border-color:#c7d8f4; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat :is(.mc-section,.mc-section>summary) { background:#eceef1; border-color:#cfd6e0; }
+:root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat .mc-editor { background:#f3f4f6; border-color:#cdd3dc; }
+:root[data-console-theme=dark] .console-ui .mc-text-button { color:#235bc2; }
+@media(max-width:760px) {
+    body.console-ui .console-theme-toggle { min-width:44px; min-height:44px; }
+    :root[data-console-theme=dark] .console-ui #view-mailbox.active { padding:8px; }
+    :root[data-console-theme=dark] .console-ui #view-mailbox.mc-refined .mail-chat { gap:8px; }
+}

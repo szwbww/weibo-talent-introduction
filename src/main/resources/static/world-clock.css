@@ -144,8 +144,8 @@
     .world-clock-panel input, .world-clock-panel select { font-size: 16px; }
 }
 @media (prefers-color-scheme: dark) {
-    .topnav.world-clock-header { --wc-bg: #182232; --wc-soft: #1e293b; --wc-border: #364359; --wc-ink: #e2e8f0; --wc-muted: #a8b6ca; --wc-blue: #a5c4ff; --wc-tint: #243855; --wc-warning-bg: #443222; --wc-warning: #f5c38f; --wc-error: #ff9db5; }
-    .world-clock-panel { box-shadow: 0 16px 48px rgba(0, 0, 0, .4); }
+    :root:not([data-console-theme]) .topnav.world-clock-header { --wc-bg: #182232; --wc-soft: #1e293b; --wc-border: #364359; --wc-ink: #e2e8f0; --wc-muted: #a8b6ca; --wc-blue: #a5c4ff; --wc-tint: #243855; --wc-warning-bg: #443222; --wc-warning: #f5c38f; --wc-error: #ff9db5; }
+    :root:not([data-console-theme]) .world-clock-panel { box-shadow: 0 16px 48px rgba(0, 0, 0, .4); }
 }
 @media (prefers-reduced-motion: reduce) {
     .world-clock-trigger { transition: none; }

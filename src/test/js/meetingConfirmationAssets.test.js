@@ -55,7 +55,7 @@ describe("T3: 缓存键三件套与资源注册（I-1/S-1）", () => {
             "注册资源名不得重复");
     });
 
-    it("link 全在 head、script 全在 body；task-modal-runtime.js 未版本化且位于组件脚本之前", () => {
+    it("link 与主题启动脚本在 head、业务 script 在 body；runtime 保持原位", () => {
         const headEnd = html.indexOf("</head>");
         const bodyEnd = html.lastIndexOf("</body>");
         assert.ok(headEnd > 0 && bodyEnd > headEnd, "index.html 结构异常");
@@ -66,6 +66,10 @@ describe("T3: 缓存键三件套与资源注册（I-1/S-1）", () => {
             assert.ok(match.index < headEnd, "样式 link 必须位于 head 内");
         }
         while ((match = scriptRe.exec(html)) !== null) {
+            if (match[0].includes('src="console-theme.js?v=')) {
+                assert.ok(match.index < html.indexOf('<link rel="stylesheet"'), "主题脚本必须早于样式和首屏渲染");
+                continue;
+            }
             assert.ok(match.index > headEnd && match.index < bodyEnd, "脚本必须位于 body 内");
         }
         const runtimeAt = html.indexOf('<script src="task-modal-runtime.js"></script>');

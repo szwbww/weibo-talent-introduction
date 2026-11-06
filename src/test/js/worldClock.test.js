@@ -1030,8 +1030,13 @@ describe("T1 纯换算：parseBeijingInput / projectZones（I-4）", () => {
 // ---------------------------------------------------------------------------
 
 describe("T4 契约：world-clock.css 与模板（S-4/I-9）", () => {
-    it("CSS 与计划 WORLD_CLOCK_CSS 标记块逐字一致", () => {
-        assert.strictEqual(cssSource, planBlock("CSS", "css"));
+    it("CSS 保留原计划声明，仅将 OS 深色限制为未选择控制台主题的页面", () => {
+        const expected = planBlock("CSS", "css")
+            .replace("@media (prefers-color-scheme: dark) {\n    .topnav.world-clock-header",
+                "@media (prefers-color-scheme: dark) {\n    :root:not([data-console-theme]) .topnav.world-clock-header")
+            .replace("    .world-clock-panel { box-shadow: 0 16px 48px rgba(0, 0, 0, .4); }",
+                "    :root:not([data-console-theme]) .world-clock-panel { box-shadow: 0 16px 48px rgba(0, 0, 0, .4); }");
+        assert.strictEqual(cssSource, expected);
         assert.ok(cssSource.endsWith("}\n"), "CSS 末尾必须只有一个换行");
         assert.strictEqual(cssSource.indexOf("\r"), -1, "CSS 不得含 CR");
     });

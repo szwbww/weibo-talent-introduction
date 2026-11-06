@@ -10029,7 +10029,7 @@ body.preview-available:not(.preview-docked) .preview-rail {
 /* ================= Dark theme =================
    Auto-follows OS color scheme. */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-console-theme]) {
         color-scheme: dark;
 
         --bg-main: #0d1420;
@@ -10084,58 +10084,58 @@ body.preview-available:not(.preview-docked) .preview-rail {
         --shadow-xl: 0 20px 48px -12px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.4);
     }
 
-    body {
+    :root:not([data-console-theme]) body {
         background: linear-gradient(135deg, #0a0f1a 0%, #0f172a 50%, #111827 100%);
         background-attachment: fixed;
     }
 
-    .topnav {
+    :root:not([data-console-theme]) .topnav {
         background: rgba(13, 20, 32, 0.6);
         border-bottom-color: rgba(148, 163, 184, 0.14);
     }
 
-    .nav-tab:hover {
+    :root:not([data-console-theme]) .nav-tab:hover {
         background-color: rgba(148, 163, 184, 0.12);
     }
 
-    .nav-tab.active {
+    :root:not([data-console-theme]) .nav-tab.active {
         background-color: rgba(148, 163, 184, 0.16);
         color: var(--primary-bright);
         box-shadow: none;
     }
 
-    .panel {
+    :root:not([data-console-theme]) .panel {
         border-color: rgba(148, 163, 184, 0.14);
     }
 
-    .auth-card {
+    :root:not([data-console-theme]) .auth-card {
         background-color: rgba(21, 31, 48, 0.86);
         border-color: rgba(148, 163, 184, 0.22);
     }
 
-    .button.primary {
+    :root:not([data-console-theme]) .button.primary {
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
-    .trust-reply-busy-overlay {
+    :root:not([data-console-theme]) .trust-reply-busy-overlay {
         background: rgba(13, 20, 32, 0.92);
     }
 
-    .trust-reply-item-busy-overlay {
+    :root:not([data-console-theme]) .trust-reply-item-busy-overlay {
         background: rgba(13, 20, 32, 0.9);
     }
 
-    .trust-reply-busy-card {
+    :root:not([data-console-theme]) .trust-reply-busy-card {
         background: rgba(21, 31, 48, 0.98);
         border-color: rgba(148, 163, 184, 0.22);
     }
 
-    .trust-reply-item-busy-card {
+    :root:not([data-console-theme]) .trust-reply-item-busy-card {
         background: rgba(21, 31, 48, 0.98);
         border-color: rgba(148, 163, 184, 0.22);
     }
 
-    .action-dialog {
+    :root:not([data-console-theme]) .action-dialog {
         background: rgba(21, 31, 48, 0.97);
     }
 }
@@ -12363,69 +12363,69 @@ body.preview-available:not(.preview-docked) .preview-rail {
     }
 }
 @media (prefers-color-scheme: dark) {
-    .task-center-card {
+    :root:not([data-console-theme]) .task-center-card {
         background: rgba(21, 31, 48, 0.85);
         border-color: #334155;
         box-shadow: none;
     }
-    .task-center-card h3 {
+    :root:not([data-console-theme]) .task-center-card h3 {
         color: #e2e8f0;
     }
-    .task-center-note,
-    .task-center-source,
-    .task-center-id,
-    .task-center-message,
-    .task-center-progress-text,
-    .task-center-log {
+    :root:not([data-console-theme]) .task-center-note,
+    :root:not([data-console-theme]) .task-center-source,
+    :root:not([data-console-theme]) .task-center-id,
+    :root:not([data-console-theme]) .task-center-message,
+    :root:not([data-console-theme]) .task-center-progress-text,
+    :root:not([data-console-theme]) .task-center-log {
         color: #a8b6c8;
     }
-    .task-center-pill,
-    .task-center-count {
+    :root:not([data-console-theme]) .task-center-pill,
+    :root:not([data-console-theme]) .task-center-count {
         background: #172d50;
         color: #93c5fd;
     }
-    .task-center-global {
+    :root:not([data-console-theme]) .task-center-global {
         background: #172d50;
         border-color: #345580;
     }
-    .task-center-global:hover {
+    :root:not([data-console-theme]) .task-center-global:hover {
         background: #1e3a5f;
         border-color: #60a5fa;
     }
-    .task-center-global:active {
+    :root:not([data-console-theme]) .task-center-global:active {
         background: #23456f;
     }
-    .task-center-dot {
+    :root:not([data-console-theme]) .task-center-dot {
         box-shadow: 0 0 0 3px #1e3a5f;
     }
-    .task-center-nav-count .task-center-dot {
+    :root:not([data-console-theme]) .task-center-nav-count .task-center-dot {
         box-shadow: none;
     }
-    .task-center-stale {
+    :root:not([data-console-theme]) .task-center-stale {
         background: #3e301a;
         color: #fbbf24;
     }
-    .task-center-stale .task-center-dot {
+    :root:not([data-console-theme]) .task-center-stale .task-center-dot {
         background: #fbbf24;
         box-shadow: none;
     }
-    .task-center-progress,
-    .task-center-progress::-webkit-progress-bar {
+    :root:not([data-console-theme]) .task-center-progress,
+    :root:not([data-console-theme]) .task-center-progress::-webkit-progress-bar {
         background: #334155;
     }
-    .task-center-progress-text strong,
-    .task-center-link {
+    :root:not([data-console-theme]) .task-center-progress-text strong,
+    :root:not([data-console-theme]) .task-center-link {
         color: #93c5fd;
     }
-    .task-center-link:hover,
-    .task-center-link:active {
+    :root:not([data-console-theme]) .task-center-link:hover,
+    :root:not([data-console-theme]) .task-center-link:active {
         color: #bfdbfe;
     }
-    .task-center-card-footer {
+    :root:not([data-console-theme]) .task-center-card-footer {
         border-color: #334155;
     }
-    .task-center-empty,
-    .task-center-detail {
+    :root:not([data-console-theme]) .task-center-empty,
+    :root:not([data-console-theme]) .task-center-detail {
         background: #1a2436;
         border-color: #334155;
         color: #a8b6c8;
