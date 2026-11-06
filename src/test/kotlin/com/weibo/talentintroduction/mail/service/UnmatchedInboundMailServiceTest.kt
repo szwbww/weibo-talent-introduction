@@ -379,6 +379,18 @@ class UnmatchedInboundMailServiceTest {
     }
 
     @Test
+    fun `markResolved confirms an automatic response`() {
+        val record = processing(id = 1L, email = "expert@example.com", status = "PROCESSED")
+            .copy(reasonType = "AUTO_RESPONSE", processReason = "AUTO_RESPONSE_HEADER")
+        Mockito.`when`(inboundMailProcessingRepository.findById(1L)).thenReturn(Optional.of(record))
+        stubWrites(record)
+        val confirmed = service.markResolved(1L, "admin", null)
+        assertEquals("MANUAL_RESOLVED", confirmed.reasonType)
+        assertEquals("admin", confirmed.resolvedBy)
+        org.junit.jupiter.api.Assertions.assertNotNull(confirmed.resolvedAt)
+    }
+
+    @Test
     fun `markResolved resolves record and clears attention if last`() {
         val recordId = 1L
         val contactId = 10L

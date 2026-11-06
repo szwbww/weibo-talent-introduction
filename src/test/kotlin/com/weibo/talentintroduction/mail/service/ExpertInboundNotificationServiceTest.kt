@@ -183,4 +183,15 @@ class ExpertInboundNotificationServiceTest {
         Mockito.verify(inbound).findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid("owner", "Junk", 2, 3)
         Mockito.verify(inbound, Mockito.never()).findByMailboxOwnerCodeAndUidValidityAndImapUid(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong())
     }
+    @Test fun `automatic responses never enqueue group notifications`() {
+        Mockito.doAnswer { invocation -> invocation.getArgument<() -> Unit>(0).invoke(); null }
+            .`when`(repository).inReceiptSavepoint(Mockito.any<() -> Unit>() ?: {})
+        Mockito.`when`(inbound.findByMailboxOwnerCodeAndUidValidityAndImapUid("owner", 2, 3))
+            .thenReturn(source().copy(processStatus = "PROCESSED", reasonType = "AUTO_RESPONSE"))
+        service().enqueueBestEffort("owner", 2, 3)
+        Mockito.verifyNoInteractions(contacts)
+        Mockito.verify(repository).inReceiptSavepoint(Mockito.any<() -> Unit>() ?: {})
+        Mockito.verifyNoMoreInteractions(repository)
+    }
+
 }

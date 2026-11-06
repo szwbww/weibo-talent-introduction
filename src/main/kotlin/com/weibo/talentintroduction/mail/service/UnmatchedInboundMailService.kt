@@ -44,7 +44,7 @@ class UnmatchedInboundMailService(
             .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
             .map { it.accountCode }
         val (records, totalCount) = if (unmatchedOnly) {
-            // I-1：成员资格由 MANUAL_REVIEW + expert_contact_id IS NULL 共同决定。
+            // 待确认包含未匹配来信和未人工确认的自动回复。
             val normalizedQuery = query?.trim()?.takeIf { it.isNotEmpty() }
             if (activeCodes.isEmpty()) {
                 // 账号集合为空：直接返回空结果，禁止生成空 IN (...) SQL。
@@ -236,7 +236,8 @@ class UnmatchedInboundMailService(
     fun markResolved(recordId: Long, resolvedBy: String, note: String?): InboundMailProcessing {
         val record = inboundMailProcessingRepository.findById(recordId)
             .orElseThrow { error("Inbound mail processing not found: $recordId") }
-        require(record.processStatus == "MANUAL_REVIEW") { "Record $recordId is not in MANUAL_REVIEW" }
+        require(record.processStatus == "MANUAL_REVIEW" ||
+            (record.processStatus == "PROCESSED" && record.reasonType == "AUTO_RESPONSE" && record.resolvedAt == null)) { "Record $recordId is not in MANUAL_REVIEW" }
         record.expertContactId?.let { contactId ->
             check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
                 "Expert contact not found: $contactId"

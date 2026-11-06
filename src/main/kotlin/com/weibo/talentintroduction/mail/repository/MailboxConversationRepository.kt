@@ -954,6 +954,8 @@ class MailboxConversationRepository(
                 EXISTS (
                     SELECT 1 FROM inbound_mail_processing imp_replied
                      WHERE imp_replied.expert_contact_id = u.expert_contact_id
+                       AND (imp_replied.reason_type IS NULL OR imp_replied.reason_type <> 'AUTO_RESPONSE'
+                            OR imp_replied.resolved_at IS NOT NULL)
                        AND imp_replied.sender_account_code IN (:accountCodes)
                        AND (:accountCode IS NULL OR imp_replied.sender_account_code = :accountCode)
                        AND imp_replied.id > COALESCE((

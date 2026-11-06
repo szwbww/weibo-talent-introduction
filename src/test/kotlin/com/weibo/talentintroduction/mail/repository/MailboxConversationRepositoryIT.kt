@@ -61,6 +61,9 @@ import java.util.concurrent.atomic.AtomicReference
 )
 @Import(MailboxConversationRepository::class, InboundAutoResponseDetector::class)
 class MailboxConversationRepositoryIT {
+    @Autowired
+    private lateinit var inboundProcessingRepository: InboundMailProcessingRepository
+
 
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
@@ -1083,6 +1086,14 @@ class MailboxConversationRepositoryIT {
             """.trimIndent()
         )
 
+        assertTrue(page(filter(repliedOnly = true)).none { it.expertContactId == 1L },
+            "尚未确认的自动回复不进入已回复")
+        jdbcTemplate.update("UPDATE inbound_mail_processing SET pending_owner_username = 'admin' WHERE message_id = 'auto-a'")
+        val confirmation = inboundProcessingRepository.findUnmatchedManualReviewQueue(listOf("acc-a"), null, 20, 0)
+        assertEquals(setOf("auto-a", "unmatched-c"), confirmation.map { it.messageId }.toSet())
+        assertEquals(2L, inboundProcessingRepository.countUnmatchedManualReviewQueue(listOf("acc-a"), null))
+        assertEquals(listOf("auto-a"), inboundProcessingRepository
+            .findUnmatchedManualReviewQueue(listOf("acc-a"), "Intro A", 1, 0).map { it.messageId })
         val pending = page(filter(pendingOnly = true))
         assertEquals(listOf(2L), pending.map { it.expertContactId },
             "被排除的首封离开待处理；第二封普通回复保持待处理")

@@ -101,7 +101,8 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
            SET process_status = 'PROCESSED', process_reason = 'MANUAL_RESOLVED',
                reason_type = 'MANUAL_RESOLVED', resolved_by = :operator,
                resolved_at = :now, updated_at = :now
-         WHERE id = :id AND process_status = 'MANUAL_REVIEW'
+         WHERE id = :id AND (process_status = 'MANUAL_REVIEW'
+             OR (process_status = 'PROCESSED' AND reason_type = 'AUTO_RESPONSE' AND resolved_at IS NULL))
     """)
     fun resolvePending(id: Long, operator: String, now: LocalDateTime): Int
 
@@ -194,15 +195,15 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     ): Long
 
     /**
-     * 收发件箱“待匹配”队列（I-1/I-2/I-8）：仅未关联专家的 MANUAL_REVIEW 来信，
+     * 收发件箱“待确认”队列：未关联专家的 MANUAL_REVIEW 来信及尚未确认的自动回复，
      * 账号范围由调用方传入（非模拟器集合），搜索/排序/分页全部在 SQL 完成。
      */
     @Query("""
         SELECT * FROM inbound_mail_processing
-        WHERE process_status = 'MANUAL_REVIEW'
+        WHERE ((process_status = 'MANUAL_REVIEW' AND expert_contact_id IS NULL)
+               OR (process_status = 'PROCESSED' AND reason_type = 'AUTO_RESPONSE' AND resolved_at IS NULL))
           AND pending_owner_username = :actor
           AND :actor <> 'user1'
-          AND expert_contact_id IS NULL
           AND sender_account_code IN (:accountCodes)
           AND (:query IS NULL
                OR from_email LIKE CONCAT('%', :query, '%')
@@ -221,10 +222,10 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     /** 同上 WHERE 的计数（I-8：过滤必须在 LIMIT/OFFSET 之前）。 */
     @Query("""
         SELECT COUNT(*) FROM inbound_mail_processing
-        WHERE process_status = 'MANUAL_REVIEW'
+        WHERE ((process_status = 'MANUAL_REVIEW' AND expert_contact_id IS NULL)
+               OR (process_status = 'PROCESSED' AND reason_type = 'AUTO_RESPONSE' AND resolved_at IS NULL))
           AND pending_owner_username = :actor
           AND :actor <> 'user1'
-          AND expert_contact_id IS NULL
           AND sender_account_code IN (:accountCodes)
           AND (:query IS NULL
                OR from_email LIKE CONCAT('%', :query, '%')

@@ -17955,7 +17955,8 @@ async function showUnmatchedDetail(id) {
             </div>
         </details>
     ` : "";
-    const resolvedActionHtml = record.processStatus === "MANUAL_REVIEW"
+    const resolvedActionHtml = (record.processStatus === "MANUAL_REVIEW"
+        || (record.processStatus === "PROCESSED" && record.reasonType === "AUTO_RESPONSE" && !record.resolvedAt))
         ? `<button class="button primary" data-action="mark-unmatched-resolved" data-id="${id}">标记已处理</button>`
         : "";
 

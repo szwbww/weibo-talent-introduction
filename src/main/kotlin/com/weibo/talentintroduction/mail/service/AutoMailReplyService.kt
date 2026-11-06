@@ -185,6 +185,7 @@ class AutoMailReplyService(
                 val classified = reclassifyFirstReplyAutoResponse(source, businessMail, firstReplyReason, processed)
                 if (notifyGroups && !skipImapAck && classified.expertContactId != null &&
                     owner.accountCode != "SIMULATOR_NOOP" && account.accountCode != "SIMULATOR_NOOP" &&
+                    classified.outcome != SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED &&
                     classified.outcome != SinglePipelineOutcome.DUPLICATE_IMAP_UID &&
                     classified.outcome != SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE) {
                     checkNotNull(inboundNotificationService) { "Expert inbound notification service is required" }

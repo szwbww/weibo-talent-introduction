@@ -1637,7 +1637,8 @@ class PendingMailOperationService(
     ) {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
-        require(record.processStatus == "MANUAL_REVIEW") { "Record $inboundProcessingId is not in MANUAL_REVIEW" }
+        require(record.processStatus == "MANUAL_REVIEW" ||
+            (record.processStatus == "PROCESSED" && record.reasonType == "AUTO_RESPONSE" && record.resolvedAt == null)) { "Record $inboundProcessingId is not in MANUAL_REVIEW" }
         record.expertContactId?.let { contactId ->
             check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
                 "Expert contact not found: $contactId"
@@ -1671,7 +1672,7 @@ class PendingMailOperationService(
             expertContactId = contactId,
             inboundProcessingId = inboundProcessingId,
             before = mapOf(
-                "processStatus" to "MANUAL_REVIEW",
+                "processStatus" to record.processStatus,
                 "processReason" to record.processReason,
                 "reasonType" to record.reasonType
             ),

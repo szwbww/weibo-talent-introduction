@@ -7078,7 +7078,7 @@ describe("Crisp inline expert information", () => {
     });
 });
 
-it("list loading follows real request settlement, latest request wins, and unmount cancels it", async () => {
+it("tab loading follows real request settlement, latest request wins, and unmount cancels it", async () => {
     let hold = false;
     const pending = [];
     const ctx = await bootChat({
@@ -7095,19 +7095,36 @@ it("list loading follows real request settlement, latest request wins, and unmou
     const viewport = ctx.host.querySelector('.mc-list-viewport');
     const list = ctx.host.querySelector('.mc-expert-list');
     hold = true;
-    const older = ctx.api.refresh();
-    const newer = ctx.api.refresh();
+    click(chipButton(ctx, 'all')); await flush();
+    click(chipButton(ctx, 'followed')); await flush();
     assert.equal(viewport.getAttribute('aria-busy'), 'true');
     assert.equal(list.inert, true);
-    pending[0].resolve({items: [], total: 0}); await older;
+    pending[0].resolve({items: [], total: 0}); await flush();
     assert.equal(viewport.getAttribute('aria-busy'), 'true', 'old response must not dismiss current loading');
-    pending[1].reject(new Error('offline')); await newer;
+    pending[1].reject(new Error('offline')); await flush();
     assert.equal(viewport.getAttribute('aria-busy'), null);
     assert.notEqual(list.inert, true);
     assert.match(list.textContent, /加载失败|重试/);
-    const leaving = ctx.api.refresh();
+    click(chipButton(ctx, 'all')); await flush();
     ctx.sandbox.MailboxChat.unmount(ctx.host);
     assert.equal(viewport.getAttribute('aria-busy'), null);
-    pending[2].resolve({items: [expertA()], total: 1}); await leaving;
+    pending[2].resolve({items: [expertA()], total: 1}); await flush();
     assert.equal(ctx.host.textContent, '');
+});
+
+it("conversation selection keeps the list and refreshes silently outside tab changes", async () => {
+    const ctx = await bootChat({ conversations: { items: [expertA(), expertB()], total: 2 } });
+    const starts = [];
+    ctx.sandbox.ConsoleMotion = { begin() { starts.push(true); return () => {}; }, cancel() {} };
+    const before = conversationsRequests(ctx).length;
+    click(personButtons(ctx.host)[0]); await flush();
+    click(personButtons(ctx.host)[1]); await flush();
+    assert.equal(conversationsRequests(ctx).length, before, 'selection must not reload the list');
+    assert.equal(starts.length, 0);
+    assert.equal(ctx.host.querySelector('.mc-person[data-contact-id="2"]').getAttribute('data-active'), 'true');
+    await ctx.api.refresh(); await flush();
+    assert.equal(starts.length, 0, 'ordinary refresh stays quiet');
+    click(chipButton(ctx, 'all')); await flush();
+    assert.equal(starts.length, 1, 'tab change shows loading');
+    ctx.api.unmount();
 });

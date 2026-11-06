@@ -77,6 +77,7 @@ class ExpertInboundNotificationService(
                 val source = (if (folder == "INBOX") inboundRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(ownerCode, uidValidity, uid)
                     else inboundRepository.findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid(ownerCode, folder, uidValidity, uid))
                     ?: return@inReceiptSavepoint
+                if (source.reasonType == InboundAutoResponseDetector.REASON_TYPE_AUTO_RESPONSE) return@inReceiptSavepoint
                 if (source.senderAccountCode == "SIMULATOR_NOOP") return@inReceiptSavepoint
                 val contactId = source.expertContactId ?: return@inReceiptSavepoint
                 if (source.id == null || source.mailboxOwnerCode != ownerCode || source.folder != folder || source.uidValidity != uidValidity || source.imapUid != uid) return@inReceiptSavepoint

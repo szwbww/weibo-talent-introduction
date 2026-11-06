@@ -2277,7 +2277,7 @@
                         <span class="mc-person-heading"><strong>${escapeText(item.subject || "（无主题）")}</strong></span>
                         <small>${escapeText(item.fromEmail || "-")}</small>
                         <small>${escapeText(item.receivedAt || "-")} · 账号：${escapeText(item.senderAccountCode || "-")}</small>
-                        <span class="mc-person-meta"><span class="mc-badge" data-tone="pending">未关联专家</span></span>
+                        <span class="mc-person-meta"><span class="mc-badge" data-tone="pending">${item.reasonType === "AUTO_RESPONSE" ? "自动回复" : "未关联专家"}</span></span>
                     </button>
                 </div>
             `;
@@ -2480,9 +2480,9 @@
                 if (!instance.disposed && instance.options.onChanged) instance.options.onChanged();
                 return Promise.resolve(null);
             }
-            const finishLoading = global.ConsoleMotion
-                ? global.ConsoleMotion.begin(host.querySelector(".mc-list-viewport"), expertsRoot(), "正在加载会话…") : () => {};
             const options = extra || {};
+            const finishLoading = global.ConsoleMotion && (options.showLoading || !instance.initialized)
+                ? global.ConsoleMotion.begin(host.querySelector(".mc-list-viewport"), expertsRoot(), "正在加载会话…") : () => {};
             const page = options.page != null ? options.page : instance.list.page;
             if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page).finally(finishLoading);
             instance.listSeq += 1;
@@ -2563,9 +2563,9 @@
             }).finally(finishLoading);
         }
 
-        function loadList() {
+        function loadList(options) {
             if (delegated) return Promise.resolve();
-            return fetchList({ page: instance.list.page }).then((data) => {
+            return fetchList(Object.assign({ page: instance.list.page }, options)).then((data) => {
                 if (instance.disposed) return data;
                 if (instance.chip === CHIP_DRAFTS) return data;
                 if (isUnmatchedChip()) resolveUnmatchedSelection();
@@ -3609,6 +3609,8 @@
             instance.existingTargetDraft = null;
             instance.selectedContactId = Number(item.contactId);
             instance.selectedSummary = item;
+            // 切换会话只更新本地选中态，不重新请求左侧列表。
+            if (!delegated) renderList();
             instance.seq += 1;
             instance.convEpoch += 1;
             const mySeq = instance.seq;
@@ -3687,9 +3689,6 @@
                 loadReviewDrafts(false, instance.filters.expertScope === "PENDING_REVIEW");
                 // 02（I-3）：时间线就绪后重算完成提示锚点位置。
                 renderSuspensionDetail();
-                if (!opts.skipListReload) {
-                    fetchList({ page: instance.list.page });
-                }
             }).catch(() => {
                 if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch) return;
                 const cached = getConversationRecord(instance.user, accountFilter, contactId);
@@ -9789,7 +9788,7 @@
                     instance.list.page = previousGroup === nextGroup ? 0 : instance.draftPages[nextGroup];
                     syncChipButtons();
                     syncSearchChrome();
-                    loadList();
+                    loadList({ showLoading: true });
                 });
                 return;
             }
