@@ -1,9 +1,14 @@
 # Fast-P Human Review Handoff
 
-- Outcome: RUNNING
+- Outcome: READY_FOR_HUMAN_REVIEW
 - Master base: a224623c8dc17bdad1ce80e1c4391637bf7ee5ca
-- Current/final code head: 223b8e4aed8852734552ef662c3b732c90e60e42
+- Current/final code head: 83ec3e3bdf620f80198f73ae496f78aaf75625f4
 - Branch/worktree: fast/manual-reply-delay-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-manual-reply-delay-master
+- Master plan: docs/plans/2026-11-04/manual-reply-delay-master.md (commit 8a51021ca463da1e3ea279bf5a94e998267751bf)
+- Finalization mode: NORMAL
+- Finalization repair parent: N/A
+
+This is an index of recorded child evidence, not a fresh aggregate review. All nine children completed their independent four-gate light verification and dirty/clean artifact checkpoints. The last clean child checkpoint is 2a34e908e9955d0b429b0fd794c2910e67c1df21. Final readiness additionally requires the full nine-child final-mode validator, without --through-child, before and after this ledger/handoff-only commit.
 
 ## Child Status
 | Child | Status | Code boundary | Fix rounds | Evidence commit |
@@ -13,62 +18,43 @@
 | 03-lifecycle | LIGHT_PASS_WITH_NOTES | 72906c0c5e36393429320817ea0de4f7d6f3ff05..9bbb3b050f533a0010d48d545b4756abc8aa7e82 | 2 | 872fb2f4a785ef5d3fb802637f892eb529fcb879 |
 | 04-worker-api | LIGHT_PASS_WITH_NOTES | 9bbb3b050f533a0010d48d545b4756abc8aa7e82..9cebea6d41cc3b749382deb7691ba704471b131e | 0 | 9a04e50c645a18c50a10b6f67e083b5397a66117 |
 | 05-query | LIGHT_PASS | 9cebea6d41cc3b749382deb7691ba704471b131e..223b8e4aed8852734552ef662c3b732c90e60e42 | 0 | 869eeb2be03bc9353fee8defbd538413f7a2069f |
-| 06-frontend | IMPLEMENTING | 223b8e4aed8852734552ef662c3b732c90e60e42..223b8e4aed8852734552ef662c3b732c90e60e42 | 0 | fe9f3646ff4b42496e1444645cae9caa15ae9ae7 |
-| 07-activation | PENDING | N/A | 0 | — |
+| 06-frontend | LIGHT_PASS_WITH_NOTES | 223b8e4aed8852734552ef662c3b732c90e60e42..4e64c1f4da4eb5acdac282731f58f2798ab9ff5d | 1 | f8892fce08a38849aa763bdf868e56d6050e59fc |
+| 07-source-contract | LIGHT_PASS_WITH_NOTES | 4e64c1f4da4eb5acdac282731f58f2798ab9ff5d..a9c09c9abf8cf08707d86514b168318341716126 | 0 | d87d3db22e9059f68086c15c14e0ca551040c2e4 |
+| 07-activation | LIGHT_PASS_WITH_NOTES | a9c09c9abf8cf08707d86514b168318341716126..c1b70bcb9d8e6117363ae2c03d26e22c870eee89 | 0 | f7d42c8cd37fbcc76fb717854fc280f15f754902 |
+| 08-deadline-confirmation | LIGHT_PASS_WITH_NOTES | c1b70bcb9d8e6117363ae2c03d26e22c870eee89..83ec3e3bdf620f80198f73ae496f78aaf75625f4 | 0 | 105097c3bbf671c72c6a74f3af6ccf926c36b1ca |
 
-03 current epoch3 has two repair rounds; prior epoch2 has one repair at ed041935a500aa4517ca9f880644a2e7110063d5. All historical epochs remain in its logs. 04 has no product implementation or repair commit.
+03's current epoch3 contains two repair rounds; an earlier epoch2 repair remains in its append-only fix log. 06's F06-01 is closed by its one repair. Initial07/08 implementation fixture corrections and provider/harness recovery were not independent AUTO_FIX rounds. Every epoch and failed output remains recorded.
 
 ## RECORD_ONLY Index
-| Observation | Child | Evidence | Source report |
+| Observation | Child | Evidence / current disposition | Source report |
 |---|---|---|---|
-| O-1 unused injected RAG repository parameter | 02-preparation | Hygiene only | children/02-preparation/verify-log.md |
-| O-2 positional deliverPrepared parameter naming | 02-preparation | Positional contract unchanged | children/02-preparation/verify-log.md |
-| O-3 no-draft conversation snapshot limitation | 02-preparation | LEGACY requires inboundProcessingId; later supported-entry coverage must resolve without silent reduction | children/02-preparation/verify-log.md |
-| O-4 rehydrate runtime preparation | 02-preparation | Child04 reconstructs runtime source/attachments while preserving frozen content | children/02-preparation/verify-log.md |
-| O-1 existing MailReviewQueryIT failure | 03-lifecycle | Latest independent required MySQL run:99 tests,1 failure at239; lifecycle40/40, RepositoryIT8/8 | children/03-lifecycle/verify-log.md |
-| O-2 existing America/Coyhaique tzdata errors | 03-lifecycle | Historical optional-suite evidence only; latest independent verifier did not run optional suite | children/03-lifecycle/verify-log.md |
+| O-1 unused RAG constructor dependency; O-2 positional parameter spelling | 02-preparation | Historical hygiene/interface-spelling observations; no behavioral mismatch found at02. Not independently re-audited during finalization and not expanded into cleanup work. | children/02-preparation/verify-log.md |
+| O-3 draftless source representation; O-4 runtime rehydration | 02-preparation | Cross-child obligations subsequently addressed by04,07-source-contract and07-activation. Later actual nullable OUTBOUND restore/requeue evidence is attributed to07, not retroactively to02. | children/02-preparation/verify-log.md; children/04-worker-api/verify-log.md; children/07-source-contract/verify-log.md; children/07-activation/verify-log.md |
+| O-1 / O07E2-01 known MailReviewQueryIT size100 failure | 03-lifecycle;07-activation | Historically independently reproduced at base/head.07's exact required command explicitly excludes that method; no new baseline reproduction or silent skip. | children/03-lifecycle/verify-log.md; children/07-activation/verify-log.md |
+| O-2 historical America/Coyhaique tzdata errors | 03-lifecycle;04-worker-api | Optional whole-suite failures retained; optional suite not rerun. Required Maven uses Zulu11.0.15; actual isolated07/08 runtime uses installed newer JDK11 as disclosed. No timezone product repair. | children/03-lifecycle/verify-log.md; children/04-worker-api/verify-log.md; children/07-activation/verify-log.md |
+| O-1 component-only proof; O06-01 public activation/restart; O07SC-01 synchronous cancelled-source guard | 04-worker-api;06-frontend;07-source-contract | Original limits and negative response remain preserved.07 later supplies actual session/controller/worker/SMTP/final-fact and recovery evidence with explicit fresh-versus-attributed provenance. | children/04-worker-api/verify-log.md; children/06-frontend/verify-log.md; children/07-source-contract/verify-log.md; children/07-activation/verify-log.md |
+| O07E2-02 existing subject assertion | 07-activation | Required Maven355 executed354 passes/1 failure/0 errors/skips: expected Subject, actual Re: Inbound. Independently classified PRE_EXISTING_ADJACENT from unchanged-base causal source, NOT dynamically reproduced on base. Included, not edited/excluded/waived; command exit1 remains visible. | children/07-activation/verify-log.md |
+| O07E2-03 original nativeA5 obstruction | 07-activation | A31/A32 explicitly transferred only frontend/native closure to08.08 independently observed native ordinary/REVIEW/delegated late409→GET/SENT and exactly one MIME each.07 negative and completed06 authority stay historical, not rewritten. | children/07-activation/verify-log.md; children/08-deadline-confirmation/verify-log.md |
+| O08-01 mistyped prose index hash | 08-deadline-confirmation | Actual source/archive/browser bytes independently match. Correct SHA256 appended to execution.md closure; original typo retained. Metadata only, no product repair. | children/08-deadline-confirmation/verify-log.md; children/08-deadline-confirmation/execution.md |
+
+## Recorded Verification and Acceptance
+
+-07 fresh required compiler/newE2E29 passed; the full required355-class-set result is preserved above, not relabeled successful. Fresh uninterrupted61.327-second real queue→worker→SMTP→final-fact proof and flagfalse durable-job recovery were observed. Broader A1–A4/A6–A12 browser/IMAP/ES/MIME evidence is explicitly attributed to writers and archive/source-validated by the independent verifier, not claimed as a fresh verifier replay. A6 current-context confirmation used authenticated HTTP as disclosed in its execution checklist.
+-08 fresh focused238/238 and fullJS2103/2103, zero skips, syntax0. Fresh ordinary/REVIEW/delegated native confirmation opened at due−964/−976/−967ms and submitted at due+1133/+1124/+1132ms. Each returned the fixed deadline409 then authoritative GET/SENT, with no duplicate delivery. Real READ/revocation, expiry dismissal,1440/390/keyboard and FAILED/UNKNOWN footer protections were exercised. Original60000ms remained unchanged.
+- Current acceptance export: [manual-reply-delay-master-acceptance.md](manual-reply-delay-master-acceptance.md). All original twelve items have their assigned machine-operated execution evidence. Human acceptance remains unchecked; neither API-only evidence nor historical failures were promoted into native success.
+-07 independent archive: local://verify07-activation-epoch2attempt1fix0-evidence.tar.gz; SHA25603a7d61560a67172a35fe6b178471ded5c6db9adf90ed5ae6b918efaef5306ee.
+-08 independent archive: local://verify08-deadline-confirmation-epoch1attempt1fix0-evidence.tar.gz; SHA256c8ce6017fe1edaf0ce44758caec551e76232f739fb57d5a12c4545a8517a0e53.
+- Owned isolated runtime/browser/container resources were cleaned according to the recorded receipts. No production recipients, deployment or production enablement. MANUAL_REPLY_DELAY_ENABLED still defaults false.
 
 ## Pause/Resume
-- Current reason: child04 implementer found original LEGACY input restoration impossible within authorized files. Original assembly request structure and MeetingInput were not retained in the closed snapshot model. UTC event/ICS cannot reconstruct the original zone/local-time input; verified assembly results cannot reconstruct original frame/selection request.
-- Exact evidence and minimal amendment: children/04-worker-api/execution.md:20-44. Authorize DelayedManualReplyModels.kt in04, capture original inputs in already-authorized Pending, persist a bounded restore-only whitelist distinct from delivery evidence, and explicitly preserve old snapshot delivery compatibility while refusing fabricated restoration of absent data. Required child04 tests must cover round-trip and compatibility.
-- No04 production/test file changed; no04 compilation/tests/runtime commands performed. No independent verification verdict is claimed.
-- User's existing blanket approval covers later child execution and evidence-backed existing-test compatibility only, not this added production file or snapshot compatibility decision.
-- Resume after exact authority: commit amended plan alone, record master/child amendment identity rows, start04 epoch2 with fix_round0 at the retained product head. Do not replay01–03. Their completed-prefix clean checkpoint validated at82ba0687a37d6cf26e908053763c2227cebe2476 before04 dispatch.
-- Historical03 pause is resolved by A2–A6 and Reverify03Round2 COMPLETE_CHILD. F-1–F-12 and P-1 closed. Required latest exits0/0/1/0, sole recorded baseline failure; terminal evidence and actual repair SHAs remain in03 logs.
-- Historical workflow deviation:03's original implementer created/removed temporary baseline worktrees despite the single-worktree contract; recorded, not repeated.
-- Later05–07 briefs exist but are not implementation evidence and have not been dispatched.
 
-No whole-system verification was performed. review-fast-p was not invoked.
+- Reason: N/A
+- Resume from: N/A
+- Approved A1–A32 lineage and exact plan identities are in ledger.md. All previous scope pauses were resolved before their respective implementation continuations; no decision is reopened here.
+- A31/A32 records the user's explicit choice「按总 A-5 补齐」over retaining06 expiry-close behavior. The resulting five-file08 successor preserves all original acceptance requirements;07/08 remain one release unit.
+- Historical03 workflow deviation: its original implementer created/removed temporary baseline worktrees despite the single-worktree contract. It was recorded and not repeated; retain the designated worktree/branch.
+- A23's interim post-amendment prefix-validator limit was resolved at the subsequent source-contract checkpoint; no validator or earlier evidence/history was rewritten. Later full nine-child checkpoints passed.
+- Provider DNS interruptions and initial fixture/harness failures were retained and recovered with the recorded role/boundary; they did not fabricate verdicts or consume/reset independent repair rounds.
+- Next authorized boundary is human review. The user explicitly prohibited automatic review-fast-p; it has not been invoked. No push, merge or production release is performed by this handoff.
 
-## Current resume — A7/A8
-
-The preceding pause is historical. User selected 「补齐原输入并继续」. Master/04 amendment d57b856427a83a6ccf23c60e58df9d92db9f266d authorizes Models and the explicit original-input/old-snapshot policy. Ledger is RUNNING,04 epoch2; fresh implementation and verification remain required. This is not a terminal review handoff.
-
-
-## Current pause — 05 attachment verification reuse
-
-- The04 pause/resume above is historical and resolved by A7–A10.04 Verify04Epoch2 returned LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD; compile/unit43/MySQL40/JS2038 passed, component loopbackSMTP observed. FullE2E/restart still belongs07. Clean04 full-manifest checkpoint passed at3c681a44f6911e28c637451e3ee7610c9b9fea9d before05 dispatch.
-- Current05 blocker: `OutboundAttachmentService.readVerifiedFile(OutboundMailAttachment): OutboundMailFile` is private. Its public alternatives fetch metadata with per-file SQL; aggregating page attachments misapplies per-mail limits. Smallest requested authority is that file solely to expose the same method as internal, unchanged security body/ownership/public APIs. Server-loaded page metadata and per-job ownership/limits remain05 service responsibilities.
-- Exact audit and proposed coverage: children/05-query/execution.md:33-85. READ skips private metadata/disk/actions; FULL/admin may verify disk. This interpretation is resolved and no metadata-only capability weakening is authorized.
-- No05 product/test changes or required commands; no independent verdict. Evidence commit1fb2914e2038ccb6a139b45f9013bc82bdce92a4. Resume05 under approved amendment/new epoch0repairs, not replay01–04.
-- Existing A5 blanket approval is for necessary existing-test compatibility only, not this new production path. Exact authority remains pending. No review-fast-p invoked.
-
-
-## Current resume — A11/A12
-
-The05 pause above is resolved by user selection 「授权本次及同类内部接口修订」 and plan-only commit2485d075409fe94098f788e5baf442c7151bedb6. Ledger RUNNING,05 epoch2 counter0; prior product base unchanged, fresh implementer/verification required. Future internal-interface amendments remain limited by A11 and must be recorded before use. Not a terminal review handoff; no review-fast-p.
-
-
-## Current pause — 06 refreshed LEGACY source identity
-
--05 scope pause is historical/resolved; Verify05Epoch2 LIGHT_PASS / COMPLETE_CHILD, requiredcompile/Query8/Repository41/other56 passed with0skips andruntimeAPIsmoke (SMTPstubbed). Clean05 full-manifest checkpoint passed atea8b6400982c6fdb2c24a47800987623602bfe30 before06 dispatch.
--06 prerequisite:04 restore unwraps originalInput but discards persisted LEGACY inboundProcessingId; originId is null and request/body/publicjob projection cannot identify original editor afterreload. No body/Message-ID/job-ID inference permitted.
-- Minimal authority requested: DelayedManualReplyController.kt restore-only inboundProcessingId plus current source/contact/account/snapshot validation; corresponding DelayedManualReplyControllerTest.kt assertions. No public READ projection field or new send authority.06 authorization9→11 needs explicit exception; A11 internal visibility/batch-read approval does not cover public restore contract addition.
-- Exact source/plan evidence in children/06-frontend/execution.md:17-35. No06product/test edits, requiredcommands/browser/runtime orindependentverifier result. Pause evidencefe9f3646ff4b42496e1444645cae9caa15ae9ae7; prior01–05logs unchanged.
-- Resume06 after exact plan/ledger amendment in newepoch counter0 at223b8e4aed8852734552ef662c3b732c90e60e42. Neverreview-fast-p.
-
-
-## Current resume — A15/A16
-
-User selected 「授权本次及同类契约补齐」; master/06 planc4bea7830eacbaafdd933de5461c05de53066997 authorizes exact restore-only source contract/controller regression,06 count11, and narrowly bounded future evidenced contract completions.06epoch2 begins at unchangedproductbase with0repairs. Prior06pause resolved; freshimplementation/browser/verification remain. No completedchild replay orreview-fast-p.
-
+No whole-system verification was performed. No overall PASS or release approval is asserted.
