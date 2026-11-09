@@ -7184,3 +7184,31 @@ it("pagination shows loading, blocks repeat clicks, and clears on success or fai
     assert.notEqual(ctx.host.querySelector('.mc-expert-list').inert, true);
     ctx.api.unmount();
 });
+
+it("silent refresh cannot lock pagination and a superseded response cannot overwrite the page", async () => {
+    let hold = false;
+    const pending = [];
+    const ctx = await bootChat({
+        conversations: { items: [expertA()], total: 42 },
+        route(url, method, body, entry, fallback) {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?')
+                && new URL(url, 'http://test').searchParams.get('size') !== '1') {
+                return new Promise(resolve => pending.push(resolve));
+            }
+            return fallback(url, method, body);
+        }
+    });
+    hold = true;
+    const refresh = ctx.api.refresh(); await flush();
+    assert.equal(ctx.host.querySelector('[data-action="mc-page-next"]').disabled, false);
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    assert.equal(pending.length, 2);
+    pending[1]({ items: [expertB()], total: 42 }); await flush();
+    pending[0]({ items: [expertA()], total: 42 }); await refresh; await flush();
+    assert.match(ctx.host.querySelector('.mc-pager').textContent, /第 2\/3 页/);
+    assert.equal(ctx.host.querySelector('[data-action="mc-page-next"]').disabled, false);
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    pending[2](null); await flush();
+    assert.equal(ctx.host.querySelector('[data-action="mc-page-next"]').disabled, false);
+    ctx.api.unmount();
+});

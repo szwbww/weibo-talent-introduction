@@ -845,6 +845,7 @@
             options: options || {},
             seq: 0,
             listSeq: 0,
+            paginationBusy: false,
             msgSeq: 0,
             convEpoch: 0,
             expertNote: { contactId: null, readSeq: 0, loaded: false, loading: false, error: "", data: null, saving: false, dialog: null },
@@ -2817,8 +2818,8 @@
             const unit = isUnmatchedChip() ? "封" : instance.chip === CHIP_DRAFTS ? "份" : "位";
             root.innerHTML = `
                 <span>第 ${page + 1}/${maxPage + 1} 页 · 共 ${total} ${unit}</span>
-                <button class="button" type="button" data-action="mc-page-prev"${instance.list.loading || page <= 0 ? " disabled" : ""}>上一页</button>
-                <button class="button" type="button" data-action="mc-page-next"${instance.list.loading || page >= maxPage ? " disabled" : ""}>下一页</button>
+                <button class="button" type="button" data-action="mc-page-prev"${instance.paginationBusy || page <= 0 ? " disabled" : ""}>上一页</button>
+                <button class="button" type="button" data-action="mc-page-next"${instance.paginationBusy || page >= maxPage ? " disabled" : ""}>下一页</button>
             `;
         }
 
@@ -10424,18 +10425,16 @@
                 retryContactTiming();
                 return;
             }
-            if (action === "mc-page-prev") {
-                if (instance.list.loading) return;
-                if (instance.list.page > 0) {
-                    instance.list.page -= 1;
-                    fetchList({ page: instance.list.page, showLoading: true });
-                }
-                return;
-            }
-            if (action === "mc-page-next") {
-                if (instance.list.loading || (instance.list.page + 1) * PAGE_SIZE >= instance.list.total) return;
-                instance.list.page += 1;
-                fetchList({ page: instance.list.page, showLoading: true });
+            if (action === "mc-page-prev" || action === "mc-page-next") {
+                if (instance.paginationBusy) return;
+                const page = instance.list.page + (action === "mc-page-prev" ? -1 : 1);
+                if (page < 0 || page > Math.max(0, Math.ceil(instance.list.total / PAGE_SIZE) - 1)) return;
+                instance.paginationBusy = true;
+                renderPager();
+                fetchList({ page, showLoading: true }).finally(() => {
+                    instance.paginationBusy = false;
+                    if (!instance.disposed) renderPager();
+                });
                 return;
             }
             if (action === "mc-retry-list") {
