@@ -2722,6 +2722,7 @@
             const seq = ++instance.listSeq;
             const user = instance.user;
             instance.list.loading = true;
+            renderPager();
             instance.list.error = "";
             return hostApi()(`/api/mail/mailbox/drafts?${draftListParams(page).toString()}`).then((data) => {
                 if (instance.disposed || seq !== instance.listSeq || user !== instance.user || user !== draftSessionUser) return null;
@@ -2816,8 +2817,8 @@
             const unit = isUnmatchedChip() ? "封" : instance.chip === CHIP_DRAFTS ? "份" : "位";
             root.innerHTML = `
                 <span>第 ${page + 1}/${maxPage + 1} 页 · 共 ${total} ${unit}</span>
-                <button class="button" type="button" data-action="mc-page-prev"${page <= 0 ? " disabled" : ""}>上一页</button>
-                <button class="button" type="button" data-action="mc-page-next"${page >= maxPage ? " disabled" : ""}>下一页</button>
+                <button class="button" type="button" data-action="mc-page-prev"${instance.list.loading || page <= 0 ? " disabled" : ""}>上一页</button>
+                <button class="button" type="button" data-action="mc-page-next"${instance.list.loading || page >= maxPage ? " disabled" : ""}>下一页</button>
             `;
         }
 
@@ -2835,6 +2836,7 @@
             const mySeq = instance.listSeq;
             const recoveringList = Boolean(instance.list.error);
             instance.list.loading = true;
+            renderPager();
             instance.list.error = "";
             // 请求模式在发出时固化；晚到的另一模式响应由 listSeq 拒绝（I-3）。
             const unmatched = isUnmatchedChip();
@@ -10423,15 +10425,17 @@
                 return;
             }
             if (action === "mc-page-prev") {
+                if (instance.list.loading) return;
                 if (instance.list.page > 0) {
                     instance.list.page -= 1;
-                    fetchList({ page: instance.list.page });
+                    fetchList({ page: instance.list.page, showLoading: true });
                 }
                 return;
             }
             if (action === "mc-page-next") {
+                if (instance.list.loading || (instance.list.page + 1) * PAGE_SIZE >= instance.list.total) return;
                 instance.list.page += 1;
-                fetchList({ page: instance.list.page });
+                fetchList({ page: instance.list.page, showLoading: true });
                 return;
             }
             if (action === "mc-retry-list") {

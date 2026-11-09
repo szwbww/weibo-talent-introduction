@@ -7152,3 +7152,35 @@ it("conversation selection keeps the list and refreshes silently outside tab cha
     assert.equal(starts.length, 1, 'tab change shows loading');
     ctx.api.unmount();
 });
+
+it("pagination shows loading, blocks repeat clicks, and clears on success or failure", async () => {
+    let hold = false;
+    const pending = [];
+    const ctx = await bootChat({
+        conversations: { items: [expertA()], total: 60 },
+        route(url, method, body, entry, fallback) {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?')
+                && new URL(url, 'http://test').searchParams.get('size') !== '1') {
+                return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+            }
+            return fallback(url, method, body);
+        }
+    });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'console-shell.js'), 'utf8'), ctx.sandbox);
+    const viewport = ctx.host.querySelector('.mc-list-viewport');
+    hold = true;
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    assert.equal(viewport.getAttribute('aria-busy'), 'true');
+    assert.equal(ctx.host.querySelector('[data-action="mc-page-next"]').disabled, true);
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    assert.equal(pending.length, 1);
+    pending[0].resolve({ items: [expertB()], total: 60 }); await flush();
+    assert.equal(viewport.getAttribute('aria-busy'), null);
+    assert.equal(ctx.host.querySelector('[data-action="mc-page-prev"]').disabled, false);
+    click(ctx.host.querySelector('[data-action="mc-page-prev"]')); await flush();
+    assert.equal(viewport.getAttribute('aria-busy'), 'true');
+    pending[1].reject(new Error('offline')); await flush();
+    assert.equal(viewport.getAttribute('aria-busy'), null);
+    assert.notEqual(ctx.host.querySelector('.mc-expert-list').inert, true);
+    ctx.api.unmount();
+});
