@@ -711,6 +711,22 @@ class ExpertIndexWriterService(
         return response?.path("result")?.asText() in setOf("updated", "noop")
     }
 
+    /** Country enrichment only: CAS, no upsert, no identity/qualification/operations writes. */
+    fun writeDiscoveryCountryIfVersionMatches(level: ExpertIndexLevel, docId: String,
+        snapshot: DiscoverySnapshot, country: String, institutionEvidence: String?): Boolean {
+        require((snapshot.source["country"] as? String).isNullOrBlank())
+        require(country.matches(Regex("[A-Z]{2}")))
+        val patch = linkedMapOf<String, Any?>("country" to country)
+        if (institutionEvidence != null) patch["institutionEvidence"] = institutionEvidence
+        val index = expertIndexService.indexName(level)
+        return try {
+            val response = DiscoveryEsRetry.execute("COUNTRY_CAS") { restTemplate.exchange(
+                "${properties.baseUrl}/$index/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
+                HttpMethod.POST, HttpEntity(mapOf("doc" to patch), headers()), JsonNode::class.java) }.body
+            response?.path("result")?.asText() == "updated"
+        } catch (_: Exception) { false }
+    }
+
     /** Unlike readRawDocument, a transport failure is never mistaken for missing RAW. */
     fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
         val index = expertIndexService.indexName(level)

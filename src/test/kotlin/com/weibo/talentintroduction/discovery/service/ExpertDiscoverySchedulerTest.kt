@@ -540,7 +540,7 @@ class ExpertDiscoverySchedulerTest {
         val scanCaptor = ArgumentCaptor.forClass(Boolean::class.java)
         Mockito.verify(discoveryService).discover(captor.capture() ?: PaperSearchCriteria(), Mockito.eq("SCHEDULED") ?: "SCHEDULED", Mockito.any<Long>(), scanCaptor.capture() ?: false)
         val criteria = captor.value
-        assertEquals(listOf("CN"), criteria.excludeCountries, "定时发现仍排除中国")
+        assertEquals(listOf("CN", "IN"), criteria.excludeCountries, "定时发现默认排除中国、印度机构所在地")
         assertEquals(true, criteria.openAccessOnly)
         assertEquals(
             com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog.RND_TARGET,

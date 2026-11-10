@@ -208,7 +208,9 @@ class DiscoveryVerificationCommitService(
             if (raw == null) { mark(VerificationProjection.ERROR, "SOURCE_MISSING"); return }
             val profile = writer.discoveryProfile(item.expertDocId, raw.source)
             val snapshot = DiscoveryVerificationAdmissionGate.snapshot(item.expertDocId, profile, policy.evaluate(item.expertDocId, profile).configSnapshot)
-            if (snapshot.identityHash != item.identityHash || snapshot.factFingerprint != item.factFingerprint || !current()) {
+            if (snapshot.identityHash != item.identityHash ||
+                (snapshot.factFingerprint != item.factFingerprint && DiscoveryVerificationAdmissionGate.countryCompatibleSnapshot(
+                    item, profile, policy.evaluate(item.expertDocId, profile).configSnapshot) == null) || !current()) {
                 mark(VerificationProjection.ERROR, "SUPERSEDED_BY_REVIEW"); return
             }
             val sync = review.projectApprovedCandidate(item.expertDocId, raw.source, "AUTO_PASSED")

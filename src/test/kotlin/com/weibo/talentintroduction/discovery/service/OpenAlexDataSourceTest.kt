@@ -272,8 +272,7 @@ class OpenAlexDataSourceTest {
         val criteria = PaperSearchCriteria(
             publicationYearFrom = 2022,
             publicationYearTo = 2025,
-            openAccessOnly = true,
-            excludeCountries = listOf("CN")
+            openAccessOnly = true
         )
         dataSource.searchPapers(criteria)
 
@@ -281,6 +280,7 @@ class OpenAlexDataSourceTest {
         assertTrue(url.contains("is_oa:true"), "Filter should contain is_oa:true")
         assertTrue(url.contains("publication_year:2022-2025"), "Filter should contain year range")
         assertTrue(url.contains("authorships.institutions.country_code:!CN"), "Filter should exclude CN")
+        assertTrue(url.contains("authorships.institutions.country_code:!IN"), "Default filter should exclude IN")
     }
 
     @Test

@@ -187,7 +187,7 @@ class ExpertDiscoveryController(
     ): ResponseEntity<Any> {
         val criteria = normalizeDiscoveryCriteria(PaperSearchCriteria(
             keywords = keywords, publicationYearFrom = yearFrom, publicationYearTo = yearTo,
-            excludeCountries = listOf("CN"), openAccessOnly = true,
+            openAccessOnly = true,
             sources = sources ?: emptyList(), apolloAssist = apolloAssist
         ))
         // I-1（c3）：与 /run 完全相同的规范化与同一份已保存配置（关键词只是条件的一部分）。
@@ -395,7 +395,7 @@ class ExpertDiscoveryController(
      * 清空临时游标。来源由 02 按同一套「已启用 + 未被学科范围排除」规则解析，因此两个 POST 的有效条件相同。
      */
     private fun normalizeDiscoveryCriteria(criteria: PaperSearchCriteria?): PaperSearchCriteria {
-        val normalized = (criteria ?: PaperSearchCriteria(excludeCountries = listOf("CN"), openAccessOnly = true))
+        val normalized = (criteria ?: PaperSearchCriteria(openAccessOnly = true))
             .copy(subjectScope = SubjectScopeCatalog.RND_TARGET, cursor = null)
         return verificationRegistration?.resolveOptions(normalized) ?: normalized.copy(apolloAssist = false).also {
             if (normalized.apolloAssist == true) throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Apollo verification is not ready")

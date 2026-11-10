@@ -131,12 +131,13 @@ class DiscoveryCountrySupplementService private constructor(
      * Returns the profile that registration must freeze. The profile differs from [profile] only in
      * `country` and the re-signed `institutionEvidence`, or is returned unchanged with an audit receipt.
      */
-    fun supplement(executionId: Long?, docId: String, profile: ExpertProfile, paper: PaperMetadata?): CountrySupplementResult {
+    fun supplement(executionId: Long?, docId: String, profile: ExpertProfile, paper: PaperMetadata?,
+                   retained: OrcidEvidenceDocument? = null, allowHttp: Boolean = true): CountrySupplementResult {
         if (!properties.countrySupplementEnabled) return CountrySupplementResult(profile, null, 0)
         val started = System.nanoTime()
         var requests = 0
         val outcome = try {
-            select(profile, paper).also { requests = it.requests }
+            select(profile, paper, retained, allowHttp).also { requests = it.requests }
         } catch (e: CancellationException) {
             throw e
         } catch (e: InterruptedException) {
@@ -158,9 +159,9 @@ class DiscoveryCountrySupplementService private constructor(
         val supplementSource = effective.source
         // I-2: the final token keeps the original evidence source (JATS/OPENALEX/ORCID); only its country changes.
         val tokenSource = profile.institutionEvidence?.substringBefore(':')
-        if (effective.country != null && supplementSource != null && tokenSource != null) {
-            val signed = DiscoveryIdentity.institutionEvidence(profile.copy(country = effective.country), tokenSource)
-            if (signed == null) {
+        if (effective.country != null && supplementSource != null) {
+            val signed = tokenSource?.let { DiscoveryIdentity.institutionEvidence(profile.copy(country = effective.country), it) }
+            if (!profile.institution.isNullOrBlank() && signed == null) {
                 effective = Outcome(null, null, REASON_IDENTITY_UNRESOLVED, effective.observations)
             } else {
                 finalProfile = profile.copy(country = effective.country, institutionEvidence = signed)
@@ -200,9 +201,9 @@ class DiscoveryCountrySupplementService private constructor(
         val requests: Int = 0
     )
 
-    private fun select(profile: ExpertProfile, paper: PaperMetadata?): Outcome {
+    private fun select(profile: ExpertProfile, paper: PaperMetadata?, retained: OrcidEvidenceDocument?, allowHttp: Boolean): Outcome {
         if (profile.country?.isNotBlank() == true) return Outcome(null, null, REASON_EXISTING_VALUE, emptyList())
-        if (profile.institution.isNullOrBlank()) return Outcome(null, null, REASON_NO_EVIDENCE, emptyList())
+        if (profile.institution.isNullOrBlank()) return orcid(profile, retained, allowHttp)
         val source = profile.institutionEvidence?.substringBefore(':')
             ?.takeIf { it in setOf(DiscoveryIdentity.EVIDENCE_SOURCE_JATS, DiscoveryIdentity.EVIDENCE_SOURCE_OPENALEX, DiscoveryIdentity.EVIDENCE_SOURCE_ORCID) }
             ?: return Outcome(null, null, REASON_IDENTITY_UNRESOLVED, emptyList())
@@ -211,7 +212,7 @@ class DiscoveryCountrySupplementService private constructor(
         }
         val openAlex = openAlex(profile, paper)
         if (openAlex != null && (openAlex.country != null || openAlex.reason != REASON_NO_EVIDENCE)) return openAlex
-        val fallback = orcid(profile)
+        val fallback = orcid(profile, retained, allowHttp)
         return if (openAlex == null) fallback
         else fallback.copy(observations = openAlex.observations + fallback.observations)
     }
@@ -269,12 +270,20 @@ class DiscoveryCountrySupplementService private constructor(
     }
 
     /** At most one bounded public employments read; no person/education/detail and no retry. */
-    private fun orcid(profile: ExpertProfile): Outcome {
+    private fun orcid(profile: ExpertProfile, retained: OrcidEvidenceDocument?, allowHttp: Boolean): Outcome {
         val orcid = boundOrcid(profile) ?: return Outcome(null, null, REASON_NO_EVIDENCE, emptyList())
+        if (retained != null && retained.endpoint == "employments") {
+            val path = retained.body.path("path").asText("")
+            if (path.isNotEmpty() && path != "/$orcid/employments")
+                return Outcome(null, null, REASON_IDENTITY_UNRESOLVED, emptyList())
+            return selectOrcidEmployment(profile, retained, orcid).copy(requests = 0)
+        }
+        if (!allowHttp) return Outcome(null, null, REASON_NO_EVIDENCE, emptyList())
         val permit = tryAcquirePermit()
         if (permit != CountryPermit.ACQUIRED) {
             return when (permit) {
                 CountryPermit.PAUSED -> Outcome(null, null, REASON_RATE_LIMITED, emptyList())
+                CountryPermit.BUSY -> Outcome(null, null, REASON_CHANNEL_BUSY, emptyList())
                 else -> Outcome(null, null, REASON_BUDGET_EXHAUSTED, emptyList())
             }
         }
@@ -320,16 +329,15 @@ class DiscoveryCountrySupplementService private constructor(
                 fact.assertionSource in setOf(com.weibo.talentintroduction.discovery.domain.AssertionSource.ORGANIZATION,
                     com.weibo.talentintroduction.discovery.domain.AssertionSource.SELF) &&
                 fact.conflicts.isEmpty() && institutionOf(fact.value)?.let {
-                    completeName(it) == completeName(profile.institution!!) && resolvedInstitution(it, InstitutionSource.ORCID_EMPLOYMENT) &&
-                        resolvedInstitution(profile.institution!!, InstitutionSource.PROFILE)
+                    // ORCID already supplies a structured organization. Do not parse it as free-text affiliation.
+                    profile.institution.isNullOrBlank() || completeName(it) == completeName(profile.institution)
                 } == true
         }
         if (matched.isEmpty()) return Outcome(null, null, REASON_NO_EVIDENCE, emptyList(), 1)
         val observations = matched.map { fact ->
             val pointer = fact.jsonPointer.orEmpty()
             val summary = if (pointer.isBlank()) null else runCatching { document.body.at(pointer) }.getOrNull()
-            val country = summary?.path("organization")?.path("address")?.path("country")?.path("value")?.asText(null)
-                ?.trim()?.uppercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }
+            val country = countryOf(summary)
             val putCode = summary?.path("put-code")?.takeIf { it.isIntegralNumber && it.canConvertToLong() }?.longValue()
             val start = summary?.path("start-date")?.takeIf { !it.isMissingNode && !it.isNull }?.let { dateText(it) }
             val end = summary?.path("end-date")?.takeIf { !it.isMissingNode && !it.isNull }?.let { dateText(it) }
@@ -356,7 +364,17 @@ class DiscoveryCountrySupplementService private constructor(
         val countries = observations.mapNotNull { validCountry(it.country) }.distinct()
         if (countries.size > 1) return Outcome(null, null, REASON_MULTIPLE_COUNTRIES, observations, 1)
         if (countries.isEmpty()) return Outcome(null, null, REASON_NO_EVIDENCE, observations, 1)
+        // A different country on an undated employment must not be silently treated as historical.
+        if (facts.any { it.field == "employment" && it.temporalScope == com.weibo.talentintroduction.discovery.domain.TemporalScope.UNKNOWN &&
+                countryOf(document.body.at(it.jsonPointer.orEmpty()))?.let { other -> other != countries.single() } == true })
+            return Outcome(null, null, REASON_MULTIPLE_COUNTRIES, observations, 1)
         return Outcome(countries.single(), SOURCE_ORCID, REASON_MATCHED_BOUND_INSTITUTION, observations, 1)
+    }
+
+    private fun countryOf(summary: JsonNode?): String? {
+        val node = summary?.path("organization")?.path("address")?.path("country") ?: return null
+        return (if (node.isTextual) node.textValue() else node.path("value").takeIf { it.isTextual }?.textValue())
+            ?.trim()?.uppercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }
     }
 
     // ------------------------------------------------------------------
@@ -416,7 +434,7 @@ class DiscoveryCountrySupplementService private constructor(
         REASON_EXISTING_VALUE -> STATUS_UNCHANGED
         REASON_MULTIPLE_COUNTRIES, REASON_INVALID_COUNTRY, REASON_INSTITUTION_MISMATCH -> STATUS_CONFLICT
         REASON_HTTP_ERROR, REASON_INVALID_RESPONSE -> STATUS_ERROR
-        REASON_RATE_LIMITED, REASON_BUDGET_EXHAUSTED, REASON_EVIDENCE_TOO_LARGE -> STATUS_SKIPPED
+        REASON_RATE_LIMITED, REASON_CHANNEL_BUSY, REASON_BUDGET_EXHAUSTED, REASON_EVIDENCE_TOO_LARGE -> STATUS_SKIPPED
         REASON_IDENTITY_UNRESOLVED, REASON_NO_EVIDENCE -> STATUS_UNRESOLVED
         else -> STATUS_UNRESOLVED
     }
@@ -504,7 +522,8 @@ class DiscoveryCountrySupplementService private constructor(
     }
 
     companion object {
-        const val VERSION = "COUNTRY_V1"
+        const val VERSION = "COUNTRY_V2"
+        const val REASON_CHANNEL_BUSY = "CHANNEL_BUSY"
         const val MAX_OBSERVATIONS = 20
         const val MAX_INSTITUTION_LENGTH = 2000
         const val MAX_BODY_BYTES = 2 * 1024 * 1024

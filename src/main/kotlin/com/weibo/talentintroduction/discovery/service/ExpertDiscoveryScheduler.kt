@@ -394,7 +394,6 @@ class ExpertDiscoveryScheduler(
         var executionId: Long? = null
         try {
             val requested = PaperSearchCriteria(
-                excludeCountries = listOf("CN"),
                 openAccessOnly = true,
                 subjectScope = SubjectScopeCatalog.RND_TARGET
             )

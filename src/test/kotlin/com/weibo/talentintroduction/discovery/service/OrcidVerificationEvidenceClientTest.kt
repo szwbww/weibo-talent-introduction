@@ -12,6 +12,26 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers.*
 import org.springframework.test.web.client.response.MockRestResponseCreators.*
 
 class OrcidVerificationEvidenceClientTest {
+    @Test fun `retains institution country for enrichment but drops city street and postal data`() {
+        val props = DiscoveryVerificationProperties()
+        val http = verificationRestTemplate(props)
+        val server = MockRestServiceServer.bindTo(http).build()
+        server.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/person"))
+            .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON))
+        server.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/employments"))
+            .andRespond(withSuccess("""{"affiliation-group":[{"summaries":[{"employment-summary":{
+              "put-code":1,"source":{},"start-date":null,
+              "organization":{"name":"Example University","address":{"country":"GB","city":"Private city","street":"Private street","postal-code":"secret"}}
+            }}]}]}""", MediaType.APPLICATION_JSON))
+        server.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/educations"))
+            .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON))
+        val result = OrcidVerificationEvidenceClient(props, http).read(ruleSnapshot()) { RequestPermit(1, VerificationProvider.ORCID) }
+        val json = result.documents.single { it.endpoint == "employments" }.body
+        assertEquals("GB", json.at("/affiliation-group/0/summaries/0/employment-summary/organization/address/country").asText())
+        assertFalse(json.toString().contains("Private"))
+        assertFalse(json.toString().contains("secret"))
+        server.verify()
+    }
     @Test fun `cancellation after reservation stops the ORCID wire request and later endpoints`() {
         val props = DiscoveryVerificationProperties()
         val http = verificationRestTemplate(props)

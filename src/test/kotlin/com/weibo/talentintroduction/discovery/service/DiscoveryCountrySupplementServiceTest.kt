@@ -29,6 +29,61 @@ import java.time.ZoneOffset
 class DiscoveryCountrySupplementServiceTest {
     private val mapper = jacksonObjectMapper()
 
+    private fun realShape(country: String = "GB", institution: String = "Example University", start: Boolean = true): JsonNode = mapper.readTree(
+        """{"put-code":1,"visibility":"public","organization":{"name":"$institution","address":{"country":"$country"}},
+          "source":{"source-orcid":{"path":"0000-0002-1825-0097"}},
+          "start-date":${if (start) """{"year":{"value":"2020"}}""" else "null"}}""")
+
+    private fun retained(vararg summaries: JsonNode): OrcidEvidenceDocument {
+        val body = mapper.createObjectNode().put("path", "/0000-0002-1825-0097/employments")
+        val wrappers = body.putArray("affiliation-group").addObject().putArray("summaries")
+        summaries.forEach { wrappers.addObject().set<JsonNode>("employment-summary", it) }
+        return OrcidEvidenceDocument("employments", body, "a".repeat(64), MutableClock().instant())
+    }
+
+    @Test fun `real string country is read for non-English and comma structured institutions`() {
+        val original = fixture().cases.single { it.id == "ORCID_MATCH" }
+        for (institution in listOf("Example University", "Universitas Katolik Darma Cendika", "National Institute of Technology, Ibaraki College")) {
+            val base = profile(original.copy(institution = institution))
+            val result = DiscoveryCountrySupplementService(properties(), MutableClock()).supplement(1, "doc", base, null,
+                retained(realShape(institution = institution)), allowHttp = false)
+            assertEquals("GB", result.profile.country)
+            assertTrue(DiscoveryIdentity.validInstitutionEvidence(result.profile))
+            assertEquals(0, result.httpRequests)
+        }
+    }
+
+    @Test fun `bound ORCID supplies country with no profile institution without inventing an institution`() {
+        val base = profile(fixture().cases.single { it.id == "ORCID_MATCH" }.copy(institution = null))
+        val service = DiscoveryCountrySupplementService(properties(), MutableClock())
+        val result = service.supplement(1, "doc", base, null,
+            retained(realShape(), realShape(institution = "Another University")), allowHttp = false)
+        assertEquals("GB", result.profile.country)
+        assertNull(result.profile.institution)
+        assertNull(result.profile.institutionEvidence)
+        assertEquals(base, result.profile.copy(country = null))
+        val conflict = service.supplement(1, "doc", base, null,
+            retained(realShape(), realShape("US", "Another University")), allowHttp = false)
+        assertNull(conflict.profile.country)
+        assertEquals("MULTIPLE_COUNTRIES", conflict.receipt!!.reason)
+        val undated = service.supplement(1, "doc", base, null,
+            retained(realShape(), realShape("US", "Another University", false)), allowHttp = false)
+        assertNull(undated.profile.country)
+        assertEquals("MULTIPLE_COUNTRIES", undated.receipt!!.reason)
+    }
+
+    @Test fun `reuse does not call external services and busy differs from exhausted budget`() {
+        val base = profile(fixture().cases.single { it.id == "ORCID_MATCH" })
+        val http = countrySupplementRestTemplate()
+        val server = MockRestServiceServer.bindTo(http).build()
+        server.expect(ExpectedCount.never(), anything())
+        val service = DiscoveryCountrySupplementService(properties(), MutableClock(), http)
+        assertEquals(0, service.supplement(1, "doc", base, null, allowHttp = false).httpRequests)
+        assertEquals(CountryPermit.ACQUIRED, service.tryAcquirePermit())
+        assertEquals("CHANNEL_BUSY", service.supplement(1, "doc", base, null).receipt!!.reason)
+        server.verify()
+    }
+
     private class MutableClock(var now: Instant = Instant.parse("2026-10-19T00:00:00Z")) : Clock() {
         override fun instant(): Instant = now
         override fun getZone(): ZoneId = ZoneOffset.UTC

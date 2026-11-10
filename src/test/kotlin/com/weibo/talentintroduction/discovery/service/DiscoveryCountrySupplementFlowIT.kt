@@ -54,7 +54,8 @@ class DiscoveryCountrySupplementFlowIT {
             check(DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required; skipping is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
+            // The current worker claim query also checks the V173 paper-parent ownership tables.
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("173").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
@@ -322,7 +323,7 @@ class DiscoveryCountrySupplementFlowIT {
             assertEquals("US", f.raws.getValue("EMAIL-oa-doc")["country"])
             assertEquals(frozen.institutionEvidence, f.raws.getValue("EMAIL-oa-doc")["institutionEvidence"])
             val receipt = f.receipt(registration.item!!)
-            assertEquals("COUNTRY_V1", receipt.path("version").asText())
+            assertEquals("COUNTRY_V2", receipt.path("version").asText())
             assertEquals("FILLED", receipt.path("status").asText())
             assertEquals("OPENALEX", receipt.path("selectedSource").asText())
             assertEquals("US", receipt.path("afterCountry").asText())

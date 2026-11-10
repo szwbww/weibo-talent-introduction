@@ -179,6 +179,9 @@ talent-introduction:
     mx-lookup-timeout-ms: ${EMAIL_MX_LOOKUP_TIMEOUT_MS:5000}
   mail-attachment-storage:
     base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
+    transfer-total-timeout-seconds: ${MAIL_ATTACHMENT_TRANSFER_TOTAL_TIMEOUT_SECONDS:3600}
+    transfer-buffer-bytes: ${MAIL_ATTACHMENT_TRANSFER_BUFFER_BYTES:262144}
+    transfer-read-timeout-ms: ${MAIL_ATTACHMENT_TRANSFER_READ_TIMEOUT_MS:60000}
   expert-discovery:
     enabled: ${EXPERT_DISCOVERY_ENABLED:true}
     # I-6: 两小时一次（北京时间 00:00、02:00…22:00）；@Scheduled 注解显式 zone=Asia/Shanghai，

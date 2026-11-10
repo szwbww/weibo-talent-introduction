@@ -61,14 +61,16 @@ class DiscoveryVerificationAdmissionGate(
         val snapshot = snapshot(context.docId, context.profile, baseAutomatic.configSnapshot)
         val item = context.items.filter { it.policyVersion == VerificationMode.ENFORCE.policyVersion && it.identityHash == snapshot.identityHash }
             .maxByOrNull { it.id } ?: return result(listOf("IDENTITY_CHANGED"))
-        if (item.factFingerprint != snapshot.factFingerprint) return result(listOf("FACT_CHANGED"))
+        val effectiveSnapshot = if (item.factFingerprint == snapshot.factFingerprint) snapshot
+            else countryCompatibleSnapshot(item, context.profile, baseAutomatic.configSnapshot)
+                ?: return result(listOf("FACT_CHANGED"))
         if (item.state != VerificationState.COMPLETED) return result(listOf("VERIFICATION_PENDING"))
         val decision = try {
             val frozen = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
             require(frozen.identityHash == item.identityHash && frozen.factFingerprint == item.factFingerprint)
             require(snapshot(context.docId, frozen.profile, baseAutomatic.configSnapshot).factFingerprint == item.factFingerprint)
             val payload = mapper.readValue<VerificationAdmissionEvidence>(requireNotNull(item.evidenceJson))
-            rules.evaluate(snapshot, payload.evidence, payload.search,
+            rules.evaluate(effectiveSnapshot, payload.evidence, payload.search,
                 institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion,
                 evaluatedAt = payload.executionContext?.evaluationAt).also {
                 require(it.outcome == item.outcome && it.qualification == item.qualification && it.route == item.route)
@@ -87,6 +89,25 @@ class DiscoveryVerificationAdmissionGate(
         private val mapper = jacksonObjectMapper().findAndRegisterModules()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+
+        /** A verified empty-country fill must not invalidate unchanged identity/qualification evidence.
+         * Both institution tokens must validate; any other fingerprinted change remains FACT_CHANGED.
+         * Historical snapshots and provider facts are never rewritten.
+         */
+        internal fun countryCompatibleSnapshot(item: VerificationItem, profile: ExpertProfile,
+                                               config: AdmissionConfigSnapshot): VerificationSnapshot? = runCatching {
+            val frozen = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+            val identity = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+            if (!frozen.profile.country.isNullOrBlank() || profile.country.isNullOrBlank() ||
+                !identity.validInstitutionEvidence(frozen.profile) || !identity.validInstitutionEvidence(profile) ||
+                frozen.profile.institutionEvidence?.substringBefore(':') != profile.institutionEvidence?.substringBefore(':')) return null
+            val restored = profile.copy(country = frozen.profile.country, institutionEvidence = frozen.profile.institutionEvidence)
+            val old = snapshot(item.expertDocId, restored, config)
+            if (old.identityHash != item.identityHash || old.factFingerprint != item.factFingerprint ||
+                frozen.factFingerprint != item.factFingerprint ||
+                snapshot(item.expertDocId, frozen.profile, config).factFingerprint != item.factFingerprint) return null
+            old.copy(profile = profile)
+        }.getOrNull()
 
         /** Shared with registration/commit: acquired provider facts never enter this RAW fingerprint. */
         fun snapshot(docId: String, profile: ExpertProfile, config: AdmissionConfigSnapshot): VerificationSnapshot {

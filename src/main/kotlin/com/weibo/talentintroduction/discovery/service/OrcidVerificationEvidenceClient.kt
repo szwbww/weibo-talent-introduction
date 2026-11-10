@@ -128,13 +128,20 @@ class OrcidVerificationEvidenceClient(private val properties: DiscoveryVerificat
         "affiliation-group", "summaries", "employment-summary", "education-summary", "put-code", "source",
         "source-client-id", "source-orcid", "path", "visibility", "last-modified-date", "start-date", "end-date",
         "year", "month", "day", "organization", "role-title", "disambiguated-organization",
-        "disambiguated-organization-identifier", "disambiguation-source")
+        "disambiguated-organization-identifier", "disambiguation-source", "address", "country")
 
     /** Retain parser inputs and detail cursor only, not biographies, emails, URLs or raw provider records. */
     private fun selectedFields(node: JsonNode): JsonNode {
         return when {
             node.isObject -> com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().also { result ->
-                node.fields().forEachRemaining { (key, value) -> if (key in retainedFields) result.set<JsonNode>(key, selectedFields(value)) }
+                node.fields().forEachRemaining { (key, value) -> if (key in retainedFields) {
+                    // Only institution country; never retain city, street or postal addresses.
+                    if (key == "address") {
+                        if (value.isObject && value.has("country")) result.set<JsonNode>(key,
+                            com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
+                                .set<JsonNode>("country", selectedFields(value.path("country"))))
+                    } else result.set<JsonNode>(key, selectedFields(value))
+                } }
             }
             node.isArray -> com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode().also { result -> node.forEach { result.add(selectedFields(it)) } }
             node.isTextual -> com.fasterxml.jackson.databind.node.TextNode(node.asText().take(500))

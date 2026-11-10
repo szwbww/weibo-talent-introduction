@@ -57,7 +57,8 @@ class DiscoveryVerificationWorker(
     private val traces: com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository? = null,
     private val papers: PaperVerificationEvidenceService? = null,
     private val academic: DiscoveryRecheckAcademicEvidenceService? = null,
-    private val retainedIdentity: RetainedPaperIdentityService? = null
+    private val retainedIdentity: RetainedPaperIdentityService? = null,
+    private val countryRefresh: DiscoveryCountryRefreshService? = null
 ) {
     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val running = AtomicBoolean()
@@ -290,7 +291,10 @@ class DiscoveryVerificationWorker(
             else if (traces?.read(lease.id)?.steps?.lastOrNull { it.stepNo == 6 }?.state == VerificationStepState.NOT_STARTED)
                 skipStep(6, if (decision.outcome == VerificationOutcome.DIRECT_CLEAR) "DIRECT_SUFFICIENT" else "PERSONAL_QUERY_NOT_REQUIRED")
             val committed = commits.commit(lease, proposed, commits.prepare(lease))
-            if (committed != null) commits.project(committed)
+            if (committed != null) {
+                commits.project(committed)
+                countryRefresh?.refresh(committed, payload)
+            }
         }
         fun fail(code: String, transientAttempts: Int = lease.transientAttempts) {
             if (code == "CONFIG_AUTH") authBlocked.set(true)

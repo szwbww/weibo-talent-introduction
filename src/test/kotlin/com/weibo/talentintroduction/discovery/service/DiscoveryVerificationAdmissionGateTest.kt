@@ -60,6 +60,25 @@ class AdmissionGateFixture {
 }
 
 class DiscoveryVerificationAdmissionGateTest {
+    @Test fun `country-only resigning preserves admission but changed institution or degree does not`() {
+        val f = AdmissionGateFixture()
+        val identity = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+        val p = f.profile.copy(externalIds = """{"orcid":"0000-0002-1825-0097"}""")
+        val before = p.copy(institutionEvidence = identity.institutionEvidence(p, "ORCID"))
+        assertTrue(identity.validInstitutionEvidence(before))
+        val item = f.item(before)
+        val next = before.copy(country = "GB").let { it.copy(institutionEvidence = identity.institutionEvidence(it, "ORCID")) }
+        assertNotEquals(item.factFingerprint, DiscoveryVerificationAdmissionGate.snapshot(f.docId, next, f.config).factFingerprint)
+        val compatible = DiscoveryVerificationAdmissionGate.countryCompatibleSnapshot(item, next, f.config)
+        assertNotNull(compatible)
+        assertEquals(item.factFingerprint, compatible!!.factFingerprint)
+        val base = f.basePolicy.evaluate(next)
+        val evaluated = f.gate.evaluateManaged(base, VerificationAdmissionContext(f.docId, next, listOf(item)))
+        assertFalse(evaluated.blockingReasons.any { it.code in setOf("FACT_CHANGED", "VERIFICATION_EVIDENCE_INVALID") })
+        assertNull(DiscoveryVerificationAdmissionGate.countryCompatibleSnapshot(item, next.copy(degree = "changed"), f.config))
+        assertNull(DiscoveryVerificationAdmissionGate.countryCompatibleSnapshot(item, next.copy(institution = "Other University"), f.config))
+        assertNull(DiscoveryVerificationAdmissionGate.countryCompatibleSnapshot(item, next.copy(institutionEvidence = before.institutionEvidence), f.config))
+    }
     @Test fun `rule three gate uses frozen birthday instant and old missing context retains historical semantics`() {
         val f = AdmissionGateFixture()
         val before = java.time.Instant.parse("2026-10-18T00:00:00Z")

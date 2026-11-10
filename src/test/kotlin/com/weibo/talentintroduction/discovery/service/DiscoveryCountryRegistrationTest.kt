@@ -375,7 +375,7 @@ class DiscoveryCountryRegistrationTest {
         val registration = service().reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)
         val input = requireNotNull(capturedValue)
         val root = mapper.readTree(input.snapshotJson)
-        assertEquals("COUNTRY_V1", root.path("countrySupplement").path("version").asText())
+        assertEquals("COUNTRY_V2", root.path("countrySupplement").path("version").asText())
         assertEquals("FILLED", root.path("countrySupplement").path("status").asText())
         assertEquals("GB", root.path("profile").path("country").asText())
         assertEquals("GB", registration.preparedProfile!!.country)

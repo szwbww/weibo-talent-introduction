@@ -68,6 +68,22 @@ class ExpertIndexWriterServiceTest {
     }
 
     @Test
+    fun `country CAS retries same version and stops at conflict without overwriting`() {
+        val time = RetryTime()
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.FORBIDDEN))
+            .thenThrow(HttpClientErrorException(HttpStatus.CONFLICT))
+        assertFalse(com.weibo.talentintroduction.discovery.service.DiscoveryEsRetry.withContext(time, { false }) {
+            service.writeDiscoveryCountryIfVersionMatches(ExpertIndexLevel.RAW, "doc",
+                ExpertIndexWriterService.DiscoverySnapshot(mapOf("country" to null), 7L, 2L), "GB", null)
+        })
+        Mockito.verify(restTemplate, Mockito.times(2)).exchange(
+            eq("https://es.example.com:9200/orcid_info/_update/doc?if_seq_no=7&if_primary_term=2"),
+            eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+        assertEquals(2_000L, time.elapsed)
+    }
+
+    @Test
     fun `cancelled discovery write wait issues no additional create`() {
         val time = RetryTime()
         Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
