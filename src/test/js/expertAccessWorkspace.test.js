@@ -589,3 +589,56 @@ for (const outcome of ["deadline", "READ", "NONE", "401", "403", "unmount"]) {
         h.handle.unmount();
     });
 }
+
+test("user1 template and attachment buttons preserve the real workspace through its request whitelist", async () => {
+    const h = await workspace({ route(url, method) {
+        if (url === '/api/mail/conversations/1/reply-templates') return [{ id: 9, templateName: 'Example', enabled: true, subject: 'Hello', blocks: [] }];
+        if (url === '/api/mail/conversations/1/reply-templates/preview') return { subject: 'Hello', body: 'Template reply', blocks: [], fallbackKeys: [], variables: [], toEmail: 'a@example.edu' };
+        if (url === '/api/mail/conversations/1/builtin-attachments') return [{ id: 'qiming-program-information-v1', filename: 'Qiming.pdf', contentType: 'application/pdf', byteLength: 100 }];
+        if (url.endsWith('/builtin-attachments/qiming-program-information-v1') && method === 'POST') return {
+            id: 'builtin-copy-1', filename: 'Qiming.pdf', byteLength: 100, contentType: 'application/pdf', sha256: 'test-sha',
+            downloadUrl: '/api/mail/conversations/1/outbound-attachments/builtin-copy-1/download'
+        };
+    }});
+    await h.choose(1);
+    const editor = writable(h);
+    editor.innerText = 'Keep my draft'; tools.inputEvent(editor);
+    const detailReads = () => h.calls.api.filter(c => /conversations\/1\/messages/.test(c.url)).length;
+    const before = detailReads();
+    tools.click(h.host.querySelector('[data-action="mc-open-template-reference"]')); await tools.flush();
+    const apply = h.doc.body.querySelector('[data-action="mc-apply-template-reference"]');
+    assert.ok(apply && !apply.disabled, 'scoped list and preview complete');
+    assert.equal(writable(h), editor);
+    assert.equal(editor.innerText, 'Keep my draft');
+    tools.click(h.doc.body.querySelector('[data-action="mc-close-template-reference"]')); await tools.flush();
+    tools.click(h.host.querySelector('[data-action="mc-upload-attachment"]')); await tools.flush();
+    const picker = h.doc.body.querySelector('.outbound-picker');
+    const checkbox = picker.querySelector('[data-builtin-id="qiming-program-information-v1"]');
+    assert.ok(checkbox, 'builtin catalog loaded');
+    checkbox.checked = true; tools.changeEvent(checkbox);
+    tools.click(picker.querySelector('[data-role="attachment-add"]')); await tools.flush();
+    await h.handle.flushDrafts(); await tools.flush();
+    assert.ok(h.calls.api.some(c => c.method === 'POST' && c.url.endsWith('/builtin-attachments/qiming-program-information-v1')));
+    assert.equal(writable(h), editor, 'editor is never unmounted');
+    assert.equal(editor.innerText, 'Keep my draft');
+    assert.equal(detailReads(), before, 'buttons must not reload the selected conversation');
+    assert.deepEqual(h.rejected, []);
+    h.handle.unmount();
+});
+
+test("template and builtin whitelist permits only exact scoped method/path pairs", () => {
+    const ctx = {}; vm.createContext(ctx);
+    vm.runInContext(tools.extractFn('isMailReadOnlyRequestAllowed', appSource), ctx);
+    for (const [method, suffix] of [['GET', 'reply-templates'], ['POST', 'reply-templates/preview'],
+        ['GET', 'builtin-attachments'], ['POST', 'builtin-attachments/qiming-program-information-v1']]) {
+        const url = '/api/mail/conversations/123/' + suffix;
+        assert.equal(ctx.isMailReadOnlyRequestAllowed(url, { method }), true);
+        for (const wrong of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].filter(v => v !== method)) {
+            assert.equal(ctx.isMailReadOnlyRequestAllowed(url, { method: wrong }), false);
+        }
+        for (const invalid of [url.replace('/123/', '/0123/'), url + '/extra', url + '/', url.replace('/123/', '/0/')]) {
+            assert.equal(ctx.isMailReadOnlyRequestAllowed(invalid, { method }), false);
+        }
+    }
+    assert.equal(ctx.isMailReadOnlyRequestAllowed('/api/compose-templates', { method: 'GET' }), false);
+});

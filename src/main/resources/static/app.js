@@ -21348,6 +21348,10 @@ function isMailReadOnlyRequestAllowed(path, options) {
     if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(messages|access)$/.test(normalized)) return true;
     if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/delayed-replies(\/[1-9][0-9]*)?$/.test(normalized)) return true;
     const scopedRoutes = [
+        ["GET", /^\/api\/mail\/conversations\/[1-9][0-9]*\/reply-templates$/],
+        ["POST", /^\/api\/mail\/conversations\/[1-9][0-9]*\/reply-templates\/preview$/],
+        ["GET", /^\/api\/mail\/conversations\/[1-9][0-9]*\/builtin-attachments$/],
+        ["POST", /^\/api\/mail\/conversations\/[1-9][0-9]*\/builtin-attachments\/[A-Za-z0-9-]+$/],
         ["GET", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/delayed-replies\/[1-9][0-9]*\/restore$/],
         ["POST", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/delayed-replies\/[1-9][0-9]*\/(cancel|retry)$/],
         ["POST", /^\/api\/mail\/reply-identity\/inspect$/],
