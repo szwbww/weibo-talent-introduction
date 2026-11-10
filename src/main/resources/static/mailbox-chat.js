@@ -2727,6 +2727,8 @@
             instance.list.error = "";
             return hostApi()(`/api/mail/mailbox/drafts?${draftListParams(page).toString()}`).then((data) => {
                 if (instance.disposed || seq !== instance.listSeq || user !== instance.user || user !== draftSessionUser) return null;
+                const lastPage = Math.max(0, Math.ceil((Number(data.total) || 0) / PAGE_SIZE) - 1);
+                if (page > lastPage) return fetchDraftList(lastPage);
                 instance.list = { page, total: Number(data.total) || 0, items: data.items || [], loading: false, error: "" };
                 instance.draftPages.drafts = page;
                 updateDraftTotal(data.total);
@@ -2823,16 +2825,46 @@
             `;
         }
 
+        // Foreground navigation owns the overlay until its final page is rendered.
+        // Polling may not supersede it; mutation refreshes wait, then read the committed page.
+        let activeListRequest = null;
         function fetchList(extra) {
+            const options = extra || {};
+            const context = listContextToken(false);
+            const active = activeListRequest;
+            if (active && options.background) return Promise.resolve(null);
+            if (active && active.foreground && !options.showLoading && active.context === context) {
+                return active.promise.then(() => {
+                    if (instance.disposed || context !== listContextToken(false) || (activeListRequest && activeListRequest !== active)) return null;
+                    return fetchList(Object.assign({}, options, { page: instance.list.page }));
+                });
+            }
+            const foreground = Boolean(options.showLoading || !instance.initialized || (active && active.foreground));
+            const finish = global.ConsoleMotion && foreground
+                ? global.ConsoleMotion.begin(host.querySelector(".mc-list-viewport"), expertsRoot(), "正在加载会话…") : () => {};
+            const request = { foreground, context, promise: null };
+            activeListRequest = request;
+            instance.paginationBusy = foreground;
+            renderPager();
+            request.promise = performListFetch(options).finally(() => {
+                finish();
+                if (activeListRequest !== request) return;
+                activeListRequest = null;
+                instance.list.loading = false;
+                instance.paginationBusy = false;
+                if (!instance.disposed) renderPager();
+            });
+            return request.promise;
+        }
+
+        function performListFetch(extra) {
             if (delegated) {
                 if (!instance.disposed && instance.options.onChanged) instance.options.onChanged();
                 return Promise.resolve(null);
             }
             const options = extra || {};
-            const finishLoading = global.ConsoleMotion && (options.showLoading || !instance.initialized)
-                ? global.ConsoleMotion.begin(host.querySelector(".mc-list-viewport"), expertsRoot(), "正在加载会话…") : () => {};
             const page = options.page != null ? options.page : instance.list.page;
-            if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page).finally(finishLoading);
+            if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page);
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
             const recoveringList = Boolean(instance.list.error);
@@ -2846,6 +2878,14 @@
                 : `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
             return hostApi()(url).then((data) => {
                 if (instance.disposed || mySeq !== instance.listSeq || data == null) return null;
+                const total = Number(unmatched ? data.totalCount : data.total) || 0;
+                const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+                if (page > lastPage) return performListFetch(Object.assign({}, options, { page: lastPage }));
+                const responseItems = unmatched ? data.records : data.items;
+                if (options.reconcile && page > 0 && (!responseItems || responseItems.length === 0)) {
+                    return performListFetch(Object.assign({}, options, { page: page - 1 }));
+                }
+                const selectedWasVisible = instance.list.items.some(item => String(item.contactId) === String(instance.selectedContactId));
                 const previousItems = JSON.stringify(instance.list.items);
                 if (!unmatched) {
                     instance.filterCounts = data.filterCounts || null;
@@ -2873,7 +2913,7 @@
                         syncChipButtons();
                         instance.list.page = 0;
                         loadChipCounts();
-                        return fetchList({ page: 0 });
+                        return performListFetch({ page: 0 });
                     }
                 }
                 if (unmatched) resolveUnmatchedSelection();
@@ -2887,6 +2927,7 @@
                     // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
                     loadMeetingSummaries();
                 }
+                if (options.background && !unmatched && selectedWasVisible) resolveFocusAndSelection();
                 loadDraftSummaries();
                 loadChipCounts();
                 return data;
@@ -2912,13 +2953,13 @@
                     renderUnmatchedEmpty();
                 }
                 return null;
-            }).finally(finishLoading);
+            });
         }
 
         function loadList(options) {
             if (delegated) return Promise.resolve();
             return fetchList(Object.assign({ page: instance.list.page }, options)).then((data) => {
-                if (instance.disposed) return data;
+                if (instance.disposed || data == null) return data;
                 if (instance.chip === CHIP_DRAFTS) return data;
                 if (isUnmatchedChip()) resolveUnmatchedSelection();
                 else resolveFocusAndSelection();
@@ -3642,18 +3683,8 @@
         // 02（T-2）：首查与回退 fetch 后先检查 disposed/data==null 并短路——过期/失败的 null
         // 回包不得触发旧页回退或选中项协调。
         function refreshListWithFallback() {
-            const page = instance.list.page;
-            return fetchList({ page }).then((data) => {
+            return fetchList({ page: instance.list.page, reconcile: true }).then((data) => {
                 if (instance.disposed || data == null) return data;
-                const items = instance.list.items || [];
-                const total = Number(instance.list.total) || 0;
-                if (items.length === 0 && page > 0 && total > 0) {
-                    return fetchList({ page: page - 1 }).then((retryData) => {
-                        if (instance.disposed || retryData == null) return retryData;
-                        resolveFocusAndSelection();
-                        return retryData;
-                    });
-                }
                 resolveFocusAndSelection();
                 return data;
             });
@@ -6774,10 +6805,10 @@
         // --------------------------------------------------------------
 
         // 当前列表请求上下文指纹：仅当刷新期间上下文未变才把 list.error 归因本次动作。
-        function listContextToken() {
+        function listContextToken(includePage = true) {
             const filters = instance.filters || {};
             const keys = Object.keys(filters).sort();
-            return [instance.user, instance.chip, instance.searchText.trim(), instance.list.page,
+            return [instance.user, instance.chip, instance.searchText.trim(), includePage ? instance.list.page : "",
                 keys.map((key) => `${key}=${filters[key]}`).join("&")].join("|");
         }
 
@@ -10429,12 +10460,7 @@
                 if (instance.paginationBusy) return;
                 const page = instance.list.page + (action === "mc-page-prev" ? -1 : 1);
                 if (page < 0 || page > Math.max(0, Math.ceil(instance.list.total / PAGE_SIZE) - 1)) return;
-                instance.paginationBusy = true;
-                renderPager();
-                fetchList({ page, showLoading: true }).finally(() => {
-                    instance.paginationBusy = false;
-                    if (!instance.disposed) renderPager();
-                });
+                fetchList({ page, showLoading: true });
                 return;
             }
             if (action === "mc-retry-list") {

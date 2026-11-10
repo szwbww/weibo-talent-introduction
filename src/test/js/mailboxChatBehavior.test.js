@@ -7212,3 +7212,108 @@ it("silent refresh cannot lock pagination and a superseded response cannot overw
     assert.equal(ctx.host.querySelector('[data-action="mc-page-next"]').disabled, false);
     ctx.api.unmount();
 });
+
+it("polling cannot supersede navigation or dismiss its overlay", async () => {
+    let now = 0, hold = false;
+    const pending = [];
+    const ctx = await bootChat({
+        performance: { now: () => now },
+        conversations: { items: [expertA()], total: 42 },
+        route(url, method, body, entry, next) {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('size') !== '1') {
+                return new Promise(resolve => pending.push({ url, resolve }));
+            }
+            return next(url, method, body);
+        }
+    });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'console-shell.js'), 'utf8'), ctx.sandbox);
+    hold = true;
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    now = 6000; ctx.runTimers(); await flush();
+    assert.equal(pending.length, 1, 'polling must not start an old-page request');
+    assert.equal(queryOf(pending[0].url).get('page'), '1');
+    assert.equal(ctx.host.querySelector('.mc-list-viewport').getAttribute('aria-busy'), 'true');
+    pending[0].resolve({ items: [expertB()], total: 42 }); await flush();
+    assert.equal(ctx.host.querySelector('.mc-list-viewport').getAttribute('aria-busy'), null);
+    assert.match(ctx.host.querySelector('.mc-pager').textContent, /第 2\/3 页/);
+    assert.ok(ctx.host.querySelector('.mc-person[data-contact-id="2"]'));
+    ctx.api.unmount();
+});
+
+it("polling clamps a shrunken list and reconciles a removed selected expert", async () => {
+    let now = 0, empty = false;
+    const ctx = await bootChat({
+        performance: { now: () => now },
+        conversations: { items: [expertA()], total: 42 },
+        messages: messagesA(), contact: contactA(),
+        route(url, method, body, entry, next) {
+            if (empty && url.startsWith('/api/mail/mailbox/conversations?')) return Promise.resolve({ items: [], total: 0 });
+            return next(url, method, body);
+        }
+    });
+    click(chipButton(ctx, 'pending')); await flush();
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    click(personButtons(ctx.host)[0]); await flush();
+    assert.ok(ctx.host.querySelector('.mc-conversation h2'));
+    empty = true; now = 6000; ctx.runTimers(); await flush();
+    assert.match(ctx.host.querySelector('.mc-pager').textContent, /第 1\/1 页/);
+    assert.equal(personButtons(ctx.host).length, 0);
+    assert.equal(ctx.host.querySelector('.mc-conversation h2'), null);
+    assert.match(ctx.host.textContent, /请选择左侧专家/);
+    ctx.api.unmount();
+});
+
+it("navigation keeps overlay through a multi-page clamp before committing results", async () => {
+    let hold = false;
+    const pending = [];
+    const ctx = await bootChat({
+        conversations: { items: [expertA()], total: 62 },
+        route(url, method, body, entry, next) {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('size') !== '1') {
+                return new Promise(resolve => pending.push({ url, resolve }));
+            }
+            return next(url, method, body);
+        }
+    });
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'console-shell.js'), 'utf8'), ctx.sandbox);
+    hold = true;
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    pending[0].resolve({ items: [], total: 1 }); await flush();
+    assert.equal(queryOf(pending[1].url).get('page'), '0');
+    assert.equal(ctx.host.querySelector('.mc-list-viewport').getAttribute('aria-busy'), 'true');
+    pending[1].resolve({ items: [expertB()], total: 1 }); await flush();
+    assert.equal(ctx.host.querySelector('.mc-list-viewport').getAttribute('aria-busy'), null);
+    assert.match(ctx.host.querySelector('.mc-pager').textContent, /第 1\/1 页/);
+    assert.ok(ctx.host.querySelector('.mc-person[data-contact-id="2"]'));
+    ctx.api.unmount();
+});
+
+it("mark-resolved during navigation refreshes the committed page without cancelling navigation", async () => {
+    let hold = false;
+    const pending = [];
+    const ctx = await bootChat({
+        conversations: { items: [expertA()], total: 42 }, messages: messagesA(), contact: contactA(),
+        route(url, method, body, entry, next) {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('size') !== '1') {
+                return new Promise(resolve => pending.push({ url, resolve }));
+            }
+            return next(url, method, body);
+        }
+    });
+    click(personButtons(ctx.host)[0]); await flush();
+    hold = true;
+    click(ctx.host.querySelector('[data-action="mc-page-next"]')); await flush();
+    click(ctx.host.querySelector('[data-action="mc-mark-resolved"]')); await flush();
+    click(ctx.host.querySelector('[data-action="mc-process-confirm"]')); await flush();
+    assert.equal(pending.length, 1, 'mutation refresh waits for foreground navigation');
+    pending[0].resolve({ items: [expertB()], total: 42 }); await flush();
+    assert.equal(pending.length, 2);
+    assert.equal(queryOf(pending[1].url).get('page'), '1', 'refresh uses committed page, not the old page');
+    pending[1].resolve({ items: [expertB()], total: 21 }); await flush();
+    assert.match(ctx.host.querySelector('.mc-pager').textContent, /第 2\/2 页/);
+    assert.equal(ctx.host.querySelector('.mc-conversation h2'), null);
+    ctx.api.unmount();
+});
