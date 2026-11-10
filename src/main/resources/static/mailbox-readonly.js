@@ -981,6 +981,50 @@
             }
         }
 
+        // Same attachment card classes as the writable mailbox, without actions or links.
+        function appendReadAttachments(article, message) {
+            var calendar = message.calendarAttachment;
+            if (calendar) {
+                var meeting = makeNode(doc, "div", "meeting-file");
+                var icon = makeNode(doc, "span", "meeting-file-icon");
+                icon.setAttribute("aria-hidden", "true"); setText(icon, "ICS");
+                var main = makeNode(doc, "div", "meeting-file-main");
+                var title = makeNode(doc, "strong");
+                var name = makeNode(doc, "span"); setText(name, calendar.filename || "");
+                var badge = makeNode(doc, "span", "meeting-badge");
+                badge.dataset.state = "sent"; setText(badge, "已发送日历");
+                title.appendChild(name); title.appendChild(badge); main.appendChild(title);
+                var meta = makeNode(doc, "small");
+                setText(meta, "日历事件 · " + ((Number(calendar.byteLength) || 0) / 1024).toFixed(1) + " KB");
+                main.appendChild(meta); meeting.appendChild(icon); meeting.appendChild(main); article.appendChild(meeting);
+            }
+            var files = Array.isArray(message.outboundAttachments) ? message.outboundAttachments : [];
+            if (files.length) {
+                var group = makeNode(doc, "div", "outbound-files");
+                group.dataset.role = "outbound-sent-files"; group.dataset.state = "sent";
+                files.forEach(function (file) {
+                    var card = makeNode(doc, "div", "outbound-file"); card.dataset.state = "sent";
+                    var icon = makeNode(doc, "span", "outbound-file-icon");
+                    icon.setAttribute("aria-hidden", "true"); setText(icon, "↧");
+                    var main = makeNode(doc, "div", "outbound-file-main");
+                    var name = makeNode(doc, "strong", "outbound-file-name"); setText(name, file.filename || "");
+                    var meta = makeNode(doc, "small", "outbound-file-meta");
+                    setText(meta, ((Number(file.byteLength) || 0) / 1024).toFixed(1) + " KB · 已发送");
+                    main.appendChild(name); main.appendChild(meta); card.appendChild(icon); card.appendChild(main); group.appendChild(card);
+                });
+                article.appendChild(group);
+            }
+            if (Number(message.attachmentCount) > 0) {
+                var details = makeNode(doc, "details", "mc-mail-extras");
+                var summary = makeNode(doc, "summary"); setText(summary, "附件 " + Number(message.attachmentCount) + " 份 · 仅文件信息");
+                var names = makeNode(doc, "div", "mc-attachment-names");
+                (Array.isArray(message.firstAttachmentNames) ? message.firstAttachmentNames : []).slice(0, 3).forEach(function (name) {
+                    var item = makeNode(doc, "div"); setText(item, name); item.setAttribute("title", String(name)); names.appendChild(item);
+                });
+                details.appendChild(summary); details.appendChild(names); article.appendChild(details);
+            }
+        }
+
         function renderConversation() {
             renderReview();
             messages.replaceChildren();
@@ -1039,12 +1083,8 @@
                 article.appendChild(head);
                 article.appendChild(subject);
                 article.appendChild(body);
+                appendReadAttachments(article, message);
                 appendMailTags(doc, article, message);
-                if (message.hasAttachments === true) {
-                    var attachmentNotice = makeNode(doc, "span", "mc-badge");
-                    setText(attachmentNotice, "含附件（仅提示，不可下载）");
-                    article.appendChild(attachmentNotice);
-                }
                 if (job) {
                     var footer = makeNode(doc, "footer", "mc-delay-footer");
                     var actions = makeNode(doc, "span", "mc-delay-actions");

@@ -443,7 +443,7 @@ describe("02 · 三态标记 S-2 样式与结构契约", () => {
 // 1) 保留 S-2 原文与 body[data-mail-read-only="true"] 作用域，不约束其历史 EOF 位置。
 // 2) index.html 统一 ?v= 并保持脚本顺序：mailbox-readonly.js 紧接在 app.js 之前，
 //    world-clock.js 保持其后；版本键仍从 styles.css 派生（不写死字面量）。
-// 3) 模块只使用 S-1 声明的既有 class，无 inline style / innerHTML / 附件与外部链接。
+// 3) 模块只使用 S-1 声明的既有 class，无 inline style / innerHTML / 附件下载与外部链接。
 // 4) 真实 index.html 的 reader 壳节点存在，app.js 只做 S-3 声明的最小改写。
 // ---------------------------------------------------------------------------
 describe("03 · user1 只读邮件视图（S-1/S-2/S-3）", () => {
@@ -514,11 +514,11 @@ describe("03 · user1 只读邮件视图（S-1/S-2/S-3）", () => {
         });
     });
 
-    it("S-1 模块无 inline style、无附件/远程资源、无正文持久化", () => {
+    it("S-1 模块无 inline style、无附件下载/远程资源、无正文持久化", () => {
         assert.ok(!/style\s*=/.test(moduleSource), "不得使用 inline style");
         assert.ok(!/\.style\b/.test(moduleSource), "不得写 style 属性");
-        assert.ok(!/<img|<a\s|href=|downloadUrl|attachmentCount|outboundAttachments/.test(moduleSource),
-            "不得渲染附件/下载链接/远程图片");
+        assert.ok(!/<img|<a\s|href=|downloadUrl/.test(moduleSource),
+            "不得渲染下载链接/远程图片");
         assert.ok(!/(localStorage|sessionStorage)\s*[.[]/.test(moduleSource), "不得持久化正文");
     });
 

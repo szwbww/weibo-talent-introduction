@@ -298,7 +298,7 @@ class MailboxConversationService(
                 MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权查看该专家的邮件"
             )
         }
-        val hideAttachments = reader && accessLevel != ExpertMailAccessLevel.FULL
+        val displayOnlyAttachments = reader && accessLevel != ExpertMailAccessLevel.FULL
         expertContactRepository.findById(contactId)
             .orElseThrow { NoSuchElementException("Expert contact not found: $contactId") }
         val activeCodes = activeAccountCodes()
@@ -313,7 +313,7 @@ class MailboxConversationService(
         val scopedCodes = accountCode?.let { listOf(it) } ?: activeCodes
         val nowMs = delayedRepository?.currentTimeMs() ?: System.currentTimeMillis()
         val delayed = delayedPage(contactId, scopedCodes, activeCodes, delayedIds,
-            username ?: MailReadOnlyPolicy.ADMIN_USERNAME, hideAttachments, nowMs)
+            username ?: MailReadOnlyPolicy.ADMIN_USERNAME, displayOnlyAttachments, nowMs)
 
         // I-3：只把当前窗口的真实 INBOUND_PROCESSING id 交出去批量读一次标签；窗口内
         // 无来信（纯 OUTBOUND / 更早页）不发请求。绝不用 source_inbound_id / 数值巧合
@@ -330,7 +330,7 @@ class MailboxConversationService(
         // 03 (I-3/I-4)：只对当前窗口的 MAIL_RECORD+OUTBOUND+SENT 行按 id 集合批量读一次
         // 存档快照（findAllById 恰好一次；窗口无此类行不发请求）。INBOUND 行即使与
         // outbound 数值 id 相同也绝不读 outbound 快照（避免 source 碰撞串附件）。
-        // READ may see presence only; use the same validated snapshots as FULL.
+        // READ sees display metadata only; use the same validated snapshots as FULL.
         val outboundSentRows = page.rows.filter {
             it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD &&
                 it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
@@ -356,7 +356,7 @@ class MailboxConversationService(
             val attachmentRow = job?.view?.sentMailRecordId?.let {
                 row.copy(source = MailboxConversationRepository.SOURCE_MAIL_RECORD, id = it)
             } ?: row
-            // Only READ suppresses attachment projection; source/snapshot validation stays shared.
+            // Source/snapshot validation stays shared; READ strips download capability below.
             val attachments = if (row.source == MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY) {
                 emptyList()
             } else {
@@ -379,8 +379,8 @@ class MailboxConversationService(
                 eventAt = row.eventAt.format(ISO),
                 sendStatus = row.sendStatus,
                 processStatus = row.processStatus,
-                attachmentCount = if (hideAttachments) 0 else attachments.size,
-                firstAttachmentNames = if (hideAttachments) emptyList() else attachments.take(FIRST_ATTACHMENT_NAME_LIMIT).mapNotNull { it.fileName },
+                attachmentCount = attachments.size,
+                firstAttachmentNames = attachments.take(FIRST_ATTACHMENT_NAME_LIMIT).mapNotNull { it.fileName },
                 messageId = row.messageId,
                 inReplyTo = row.inReplyTo,
                 tags = if (row.source == MailboxConversationRepository.SOURCE_INBOUND_PROCESSING) {
@@ -388,9 +388,9 @@ class MailboxConversationService(
                 } else {
                     emptyList()
                 },
-                calendarAttachment = if (hideAttachments) null else calendarAttachment,
+                calendarAttachment = if (displayOnlyAttachments) calendarAttachment?.copy(downloadUrl = "") else calendarAttachment,
                 // 06 (I-3)：同一批 findAllById 结果投影通用附件快照（零额外查询、不读磁盘）。
-                outboundAttachments = if (hideAttachments) emptyList() else outboundAttachments,
+                outboundAttachments = if (displayOnlyAttachments) outboundAttachments.map { it.copy(id = "", downloadUrl = "") } else outboundAttachments,
                 delayedReply = job?.view,
                 hasAttachments = attachments.isNotEmpty() || calendarAttachment != null || outboundAttachments.isNotEmpty()
             )

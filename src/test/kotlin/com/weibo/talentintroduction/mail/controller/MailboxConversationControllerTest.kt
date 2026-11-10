@@ -1116,7 +1116,7 @@ class MailboxConversationControllerTest {
     }
 
     @Test
-    fun `reader detail denies ungranted and missing experts yet keeps body without attachments`() {
+    fun `reader detail denies ungranted and missing experts yet shows attachment metadata without download`() {
         insertProcessing(1, "PROCESSED", "2026-09-02 09:00:00", "reader-detail-in")
         val processingId = processingIdOf("reader-detail-in")
         Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", processingId))
@@ -1135,13 +1135,13 @@ class MailboxConversationControllerTest {
             get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("user1"))
         ).andExpect(status().isOk).andReturn().response.contentAsString
         val readerItem = objectMapper.readTree(readerBody)["items"][0]
-        assertEquals(0, readerItem["attachmentCount"].asInt(), "reader attachmentCount 固定 0")
-        assertEquals(0, readerItem["firstAttachmentNames"].size(), "reader firstAttachmentNames 固定 []")
+        assertEquals(1, readerItem["attachmentCount"].asInt())
+        assertEquals("cv.pdf", readerItem["firstAttachmentNames"][0].asText())
         assertTrue(readerItem["calendarAttachment"].isNull, "reader calendarAttachment 固定 null")
         assertEquals(0, readerItem["outboundAttachments"].size(), "reader outboundAttachments 固定 []")
         assertEquals("body", readerItem["body"].asText(), "正文允许（只关附件能力）")
         assertTrue(readerItem["hasAttachments"].asBoolean())
-        assertFalse(readerBody.contains("cv.pdf"))
+        assertTrue(readerBody.contains("cv.pdf"))
         assertFalse(readerBody.contains("downloadUrl"))
 
         // 未授权专家 → 403 MAIL_READ_FORBIDDEN
@@ -1176,7 +1176,7 @@ class MailboxConversationControllerTest {
     }
 
     @Test
-    fun `reader detail exposes only presence from outbound attachment snapshots`() {
+    fun `reader detail exposes display metadata from outbound attachment snapshots`() {
         val bytes = "会议资料".toByteArray(StandardCharsets.UTF_8)
         val json = OutboundAttachmentSnapshotCodec.serialize(
             listOf(outboundAttachmentSnapshot(OUTBOUND_ATTACHMENT_ID, bytes))
@@ -1191,7 +1191,8 @@ class MailboxConversationControllerTest {
         ).andExpect(status().isOk).andReturn().response.contentAsString
         val readerItem = objectMapper.readTree(readerBody)["items"].single()
         assertTrue(readerItem["calendarAttachment"].isNull)
-        assertEquals(0, readerItem["outboundAttachments"].size())
+        assertEquals(1, readerItem["outboundAttachments"].size())
+        assertFalse(readerItem["outboundAttachments"][0].has("id"))
         assertTrue(readerItem["hasAttachments"].asBoolean())
         assertFalse(readerBody.contains("downloadUrl"))
         assertFalse(readerBody.contains(OUTBOUND_ATTACHMENT_ID.toString()))

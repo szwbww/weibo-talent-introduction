@@ -1072,22 +1072,35 @@ it("READ information stays in the header without a profile toggle or extra privi
     h.handle.unmount();
 });
 
-it("READ shows attachment presence as text only and performs no attachment request", async () => {
+it("READ preserves original attachment card metadata and classes without download actions", async () => {
     const harness = createHarness();
+    const filename = 'Qiming_Program_Information.pdf';
     harness.responder = async (requestPath) => {
         if (requestPath.startsWith(LIST_PATH + '?')) return listResponse([EXPERT_A]);
         return detailResponse([
-            { source: 'MAIL_RECORD', id: 12, direction: 'OUTBOUND', body: 'With PDF', hasAttachments: true },
-            { source: 'INBOUND_PROCESSING', id: 13, direction: 'INBOUND', body: 'No file', hasAttachments: false }
+            { source: 'MAIL_RECORD', id: 12, direction: 'OUTBOUND', body: 'With PDF',
+                outboundAttachments: [{ filename, byteLength: 7956 }],
+                calendarAttachment: { filename: 'meeting.ics', byteLength: 1024 } },
+            { source: 'INBOUND_PROCESSING', id: 13, direction: 'INBOUND', body: 'With CV',
+                attachmentCount: 1, firstAttachmentNames: ['<script>cv.pdf</script>'] },
+            { source: 'MAIL_RECORD', id: 14, direction: 'OUTBOUND', body: 'No attachments' }
         ]);
     };
     harness.mount(); await flush();
     clickAction(harness, 'select-expert'); await flush();
     const messages = findAll(harness.root, 'mc-message');
-    const notice = findOne(messages[0], 'mc-badge');
-    assert.strictEqual(notice.tagName, 'SPAN');
-    assert.strictEqual(notice.textContent, '含附件（仅提示，不可下载）');
-    assert.ok(!messages[1].textContent.includes('含附件'));
-    assert.ok(!messages[0].children.some(node => node.tagName === 'A' || node.tagName === 'BUTTON'));
+    const card = findOne(messages[0], 'outbound-file');
+    assert.strictEqual(card.dataset.state, 'sent');
+    assert.strictEqual(findOne(card, 'outbound-file-icon').textContent, '↧');
+    assert.strictEqual(findOne(card, 'outbound-file-name').textContent, filename);
+    assert.strictEqual(findOne(card, 'outbound-file-meta').textContent, '7.8 KB · 已发送');
+    assert.strictEqual(findOne(messages[0], 'meeting-file-icon').textContent, 'ICS');
+    assert.ok(findOne(messages[0], 'meeting-file').textContent.includes('日历事件 · 1.0 KB'));
+    assert.ok(findOne(messages[1], 'mc-mail-extras').textContent.includes('附件 1 份'));
+    assert.strictEqual(findOne(messages[1], 'mc-attachment-names').textContent, '<script>cv.pdf</script>');
+    assert.strictEqual(findOne(messages[2], 'outbound-files'), null);
+    const nodes = messages.flatMap(allNodes);
+    assert.ok(!nodes.some(node => ['A', 'BUTTON', 'SCRIPT'].includes(node.tagName)));
+    assert.ok(!nodes.some(node => node.getAttribute('href') || node.getAttribute('download')));
     assert.ok(!harness.calls.some(call => /attachments|download/.test(call.path)));
 });

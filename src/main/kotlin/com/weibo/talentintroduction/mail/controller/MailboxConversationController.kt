@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.controller
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
@@ -196,7 +197,7 @@ data class ConversationMessageItemResponse(
      */
     val outboundAttachments: List<ConversationOutboundAttachment> = emptyList(),
     val delayedReply: com.weibo.talentintroduction.mail.service.DelayedManualReplyView? = null,
-    /** Presence only; READ never receives attachment names, identifiers or download URLs. */
+    /** Attachment presence; READ receives display metadata but no identifiers or download URLs. */
     val hasAttachments: Boolean = false
 )
 
@@ -211,11 +212,12 @@ data class ConversationMessageListResponse(
 /**
  * 03 (I-4)：单独日历附件元数据（独立于专家材料的 attachmentCount/firstAttachmentNames）。
  * 只可能出现在 MAIL_RECORD+OUTBOUND+SENT 行；downloadUrl 指向 GET calendar-attachment
- * （原件字节与预览/SMTP 相同，child 04 不重新渲染）。旧行/非 SENT/损坏快照恒为 null。
+ * （原件字节与预览/SMTP 相同，child 04 不重新渲染）。READ 省略 downloadUrl；旧行/非 SENT/损坏快照恒为 null。
  */
 data class ConversationCalendarAttachment(
     val filename: String,
     val byteLength: Int,
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
     val downloadUrl: String
 )
 
@@ -224,13 +226,15 @@ data class ConversationCalendarAttachment(
  *
  * 只可能出现在 `MAIL_RECORD + OUTBOUND + MANUAL_RICH_REPLY + SENT` 行；downloadUrl 由
  * 服务端按固定路径构建（消息归属下载端点），客户端不得自行拼接、也不得拿任意上传 id
- * 当已发附件下载。列表顺序 = 当时发送的选择顺序。
+ * 当已发附件下载。READ 省略 id 和 downloadUrl，保留展示字段。列表顺序 = 当时发送的选择顺序。
  */
 data class ConversationOutboundAttachment(
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
     val id: String,
     val filename: String,
     val contentType: String,
     val byteLength: Long,
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
     val downloadUrl: String
 )
 

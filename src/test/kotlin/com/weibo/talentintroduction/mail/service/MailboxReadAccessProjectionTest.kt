@@ -44,8 +44,7 @@ import java.util.Optional
  * - I-2：reader 的 `hasReadAccess` 先于联系人存在检查/正文/timeline/标签/附件查询；
  *   grant 缺失与专家不存在统一 403 `MAIL_READ_FORBIDDEN`（不泄露存在性）；每次调用
  *   都重新读 grant（撤销后新请求必拒），游标仍绑定 contact/account。
- * - I-3：reader 响应固定 `attachmentCount=0` / `firstAttachmentNames=[]` /
- *   `calendarAttachment=null` / `outboundAttachments=[]`，仅允许附件存在标记；正文/标签照常返回。
+ * - I-3：READ 保留附件展示元数据，序列化响应不得包含附件 id 或 downloadUrl。
  * - I-4：非 reader（admin 及默认 null 身份）保留原附件解析与快照读取。
  *
  * SQL 层的成员过滤（count/page/explain 的 grant EXISTS）由
@@ -181,7 +180,7 @@ class MailboxReadAccessProjectionTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `reader gets attachment presence without names identifiers or download metadata`() {
+    fun `reader gets attachment display metadata without identifiers or download URLs`() {
         Mockito.`when`(readAccessService.accessLevel(CONTACT_ID))
             .thenReturn(ExpertMailAccessLevel.READ)
         val inbound = inboundRow(id = 31L, messageId = "in-31")
@@ -200,8 +199,6 @@ class MailboxReadAccessProjectionTest {
         assertEquals(ExpertMailAccessLevel.READ, response.accessLevel)
         assertEquals(2, response.items.size)
         for (item in response.items) {
-            assertEquals(0, item.attachmentCount, "reader attachmentCount 固定 0")
-            assertTrue(item.firstAttachmentNames.isEmpty(), "reader firstAttachmentNames 固定 []")
             assertNull(item.calendarAttachment, "reader calendarAttachment 固定 null")
             assertTrue(item.outboundAttachments.isEmpty(), "reader outboundAttachments 固定 []")
         }
@@ -213,6 +210,8 @@ class MailboxReadAccessProjectionTest {
         val outboundItem = response.items.first { it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD }
         assertEquals("outbound body", outboundItem.body)
 
+        assertEquals(1, inboundItem.attachmentCount)
+        assertEquals(listOf("private.pdf"), inboundItem.firstAttachmentNames)
         assertTrue(inboundItem.hasAttachments)
         assertFalse(outboundItem.hasAttachments)
         verify(mailRecordRepository).findAllById(listOf(77L))
@@ -276,7 +275,7 @@ class MailboxReadAccessProjectionTest {
 
 
     @Test
-    fun `READ presence uses validated outbound and calendar snapshots without exposing them`() {
+    fun `READ exposes validated snapshot display metadata without download capability`() {
         Mockito.`when`(readAccessService.accessLevel(CONTACT_ID)).thenReturn(ExpertMailAccessLevel.READ)
         Mockito.`when`(repository.timelineMessages(anyLong(), anyFilter(), Mockito.any(), anyInt()))
             .thenReturn(TimelinePage(listOf(outboundSentRow(id = 77L, subject = "Me: intro")), false))
@@ -311,8 +310,22 @@ class MailboxReadAccessProjectionTest {
             assertEquals(expected, item.hasAttachments)
             assertEquals(0, item.attachmentCount)
             assertTrue(item.firstAttachmentNames.isEmpty())
-            assertNull(item.calendarAttachment)
-            assertTrue(item.outboundAttachments.isEmpty())
+            val json = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(item)
+            assertFalse(json.contains("downloadUrl"))
+            com.fasterxml.jackson.databind.ObjectMapper().readTree(json)["outboundAttachments"].forEach {
+                assertFalse(it.has("id"))
+            }
+            item.calendarAttachment?.let { assertEquals("meeting-2026-10-27-meeting.ics", it.filename) }
+            item.outboundAttachments.forEach {
+                assertEquals("会议资料.txt", it.filename)
+                assertTrue(it.byteLength > 0)
+                assertEquals("", it.id)
+                assertEquals("", it.downloadUrl)
+            }
+            if (snapshot == record) {
+                assertNotNull(item.calendarAttachment)
+                assertEquals(1, item.outboundAttachments.size)
+            }
         }
     }
 
