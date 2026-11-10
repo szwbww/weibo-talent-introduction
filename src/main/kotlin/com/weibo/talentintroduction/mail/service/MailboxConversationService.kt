@@ -330,18 +330,13 @@ class MailboxConversationService(
         // 03 (I-3/I-4)：只对当前窗口的 MAIL_RECORD+OUTBOUND+SENT 行按 id 集合批量读一次
         // 存档快照（findAllById 恰好一次；窗口无此类行不发请求）。INBOUND 行即使与
         // outbound 数值 id 相同也绝不读 outbound 快照（避免 source 碰撞串附件）。
-        // READ skips every attachment-only lookup; FULL uses the original source checks.
-        val outboundSentRows = if (hideAttachments) {
-            emptyList()
-        } else {
-            page.rows.filter {
-                it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD &&
-                    it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
-                    it.sendStatus == SEND_STATUS_SENT
-            }
+        // READ may see presence only; use the same validated snapshots as FULL.
+        val outboundSentRows = page.rows.filter {
+            it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD &&
+                it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
+                it.sendStatus == SEND_STATUS_SENT
         }
-        val sentIds = outboundSentRows.map { it.id } +
-            if (hideAttachments) emptyList() else delayed.values.mapNotNull { it.view.sentMailRecordId }
+        val sentIds = outboundSentRows.map { it.id } + delayed.values.mapNotNull { it.view.sentMailRecordId }
         val mailRecordRowsById = if (sentIds.isEmpty()) {
             emptyMap()
         } else {
@@ -362,11 +357,14 @@ class MailboxConversationService(
                 row.copy(source = MailboxConversationRepository.SOURCE_MAIL_RECORD, id = it)
             } ?: row
             // Only READ suppresses attachment projection; source/snapshot validation stays shared.
-            val attachments = if (hideAttachments || row.source == MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY) {
+            val attachments = if (row.source == MailboxConversationRepository.SOURCE_DELAYED_MANUAL_REPLY) {
                 emptyList()
             } else {
                 expertMaterialService.resolveMessageAttachments(row.source, row.id)
             }
+            val calendarAttachment = calendarAttachmentOf(attachmentRow, mailRecordRowsById[attachmentRow.id])
+            val outboundAttachments = if (job != null && job.view.status != DelayedManualReplyStatus.SENT) job.attachments
+                else outboundAttachmentsOf(attachmentRow, mailRecordRowsById[attachmentRow.id])
             ConversationMessageItemResponse(
                 source = row.source,
                 id = row.id,
@@ -381,8 +379,8 @@ class MailboxConversationService(
                 eventAt = row.eventAt.format(ISO),
                 sendStatus = row.sendStatus,
                 processStatus = row.processStatus,
-                attachmentCount = attachments.size,
-                firstAttachmentNames = attachments.take(FIRST_ATTACHMENT_NAME_LIMIT).mapNotNull { it.fileName },
+                attachmentCount = if (hideAttachments) 0 else attachments.size,
+                firstAttachmentNames = if (hideAttachments) emptyList() else attachments.take(FIRST_ATTACHMENT_NAME_LIMIT).mapNotNull { it.fileName },
                 messageId = row.messageId,
                 inReplyTo = row.inReplyTo,
                 tags = if (row.source == MailboxConversationRepository.SOURCE_INBOUND_PROCESSING) {
@@ -390,15 +388,11 @@ class MailboxConversationService(
                 } else {
                     emptyList()
                 },
-                calendarAttachment = if (hideAttachments) null else calendarAttachmentOf(attachmentRow, mailRecordRowsById[attachmentRow.id]),
+                calendarAttachment = if (hideAttachments) null else calendarAttachment,
                 // 06 (I-3)：同一批 findAllById 结果投影通用附件快照（零额外查询、不读磁盘）。
-                outboundAttachments = if (hideAttachments) {
-                    emptyList()
-                } else {
-                    if (job != null && job.view.status != DelayedManualReplyStatus.SENT) job.attachments
-                    else outboundAttachmentsOf(attachmentRow, mailRecordRowsById[attachmentRow.id])
-                },
-                delayedReply = job?.view
+                outboundAttachments = if (hideAttachments) emptyList() else outboundAttachments,
+                delayedReply = job?.view,
+                hasAttachments = attachments.isNotEmpty() || calendarAttachment != null || outboundAttachments.isNotEmpty()
             )
         }
         val nextBefore = if (page.hasMore) {

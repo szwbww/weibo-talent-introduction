@@ -195,7 +195,9 @@ data class ConversationMessageItemResponse(
      * 三者互相独立，绝不混用。
      */
     val outboundAttachments: List<ConversationOutboundAttachment> = emptyList(),
-    val delayedReply: com.weibo.talentintroduction.mail.service.DelayedManualReplyView? = null
+    val delayedReply: com.weibo.talentintroduction.mail.service.DelayedManualReplyView? = null,
+    /** Presence only; READ never receives attachment names, identifiers or download URLs. */
+    val hasAttachments: Boolean = false
 )
 
 data class ConversationMessageListResponse(

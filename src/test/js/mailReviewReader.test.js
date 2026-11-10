@@ -79,7 +79,7 @@ test("S-1 persistent exact DOM and empty state, no extra classes/capabilities/st
     assert.equal(role(h, "review-discussion").hidden, true);
     assert.equal(nodes(h).filter(n => n.dataset.role === "review-editor").length, 1);
     assert.ok(!/(localStorage|sessionStorage)\s*[.[]/.test(moduleSource));
-    assert.ok(!/sender-accounts|\/translate|\/approve|\/send|attachment/i.test(moduleSource.replace(/\/\*[\s\S]*?\*\//g, "")));
+    assert.ok(!/sender-accounts|\/translate|\/approve|\/send|downloadUrl|\/(?:attachments|outbound-attachments|builtin-attachments)/i.test(moduleSource.replace(/\/\*[\s\S]*?\*\//g, "")));
     const allowed = new Set(["mail-review-controls", "mail-review-panel", "mail-review-entry", "mail-review-input", "mail-review-footer", "mail-review-actions", "mail-review-select"]);
     for (const n of nodes(h)) {
         assert.equal(n.getAttribute("style"), null);

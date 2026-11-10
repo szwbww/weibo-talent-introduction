@@ -1140,7 +1140,9 @@ class MailboxConversationControllerTest {
         assertTrue(readerItem["calendarAttachment"].isNull, "reader calendarAttachment 固定 null")
         assertEquals(0, readerItem["outboundAttachments"].size(), "reader outboundAttachments 固定 []")
         assertEquals("body", readerItem["body"].asText(), "正文允许（只关附件能力）")
-        verify(expertMaterialService, never()).resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong())
+        assertTrue(readerItem["hasAttachments"].asBoolean())
+        assertFalse(readerBody.contains("cv.pdf"))
+        assertFalse(readerBody.contains("downloadUrl"))
 
         // 未授权专家 → 403 MAIL_READ_FORBIDDEN
         mockMvc.perform(
@@ -1174,7 +1176,7 @@ class MailboxConversationControllerTest {
     }
 
     @Test
-    fun `reader detail never reads calendar or outbound attachment snapshots`() {
+    fun `reader detail exposes only presence from outbound attachment snapshots`() {
         val bytes = "会议资料".toByteArray(StandardCharsets.UTF_8)
         val json = OutboundAttachmentSnapshotCodec.serialize(
             listOf(outboundAttachmentSnapshot(OUTBOUND_ATTACHMENT_ID, bytes))
@@ -1190,7 +1192,10 @@ class MailboxConversationControllerTest {
         val readerItem = objectMapper.readTree(readerBody)["items"].single()
         assertTrue(readerItem["calendarAttachment"].isNull)
         assertEquals(0, readerItem["outboundAttachments"].size())
-        verify(mailRecordRepository, never()).findAllById(anyCollection())
+        assertTrue(readerItem["hasAttachments"].asBoolean())
+        assertFalse(readerBody.contains("downloadUrl"))
+        assertFalse(readerBody.contains(OUTBOUND_ATTACHMENT_ID.toString()))
+        verify(mailRecordRepository).findAllById(anyCollection())
 
         val adminBody = mockMvc.perform(
             get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))

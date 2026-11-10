@@ -1071,3 +1071,23 @@ it("READ information stays in the header without a profile toggle or extra privi
     assert.ok(h.calls.every(c=>c.options.method==='GET'));
     h.handle.unmount();
 });
+
+it("READ shows attachment presence as text only and performs no attachment request", async () => {
+    const harness = createHarness();
+    harness.responder = async (requestPath) => {
+        if (requestPath.startsWith(LIST_PATH + '?')) return listResponse([EXPERT_A]);
+        return detailResponse([
+            { source: 'MAIL_RECORD', id: 12, direction: 'OUTBOUND', body: 'With PDF', hasAttachments: true },
+            { source: 'INBOUND_PROCESSING', id: 13, direction: 'INBOUND', body: 'No file', hasAttachments: false }
+        ]);
+    };
+    harness.mount(); await flush();
+    clickAction(harness, 'select-expert'); await flush();
+    const messages = findAll(harness.root, 'mc-message');
+    const notice = findOne(messages[0], 'mc-badge');
+    assert.strictEqual(notice.tagName, 'SPAN');
+    assert.strictEqual(notice.textContent, '含附件（仅提示，不可下载）');
+    assert.ok(!messages[1].textContent.includes('含附件'));
+    assert.ok(!messages[0].children.some(node => node.tagName === 'A' || node.tagName === 'BUTTON'));
+    assert.ok(!harness.calls.some(call => /attachments|download/.test(call.path)));
+});

@@ -1040,6 +1040,11 @@
                 article.appendChild(subject);
                 article.appendChild(body);
                 appendMailTags(doc, article, message);
+                if (message.hasAttachments === true) {
+                    var attachmentNotice = makeNode(doc, "span", "mc-badge");
+                    setText(attachmentNotice, "含附件（仅提示，不可下载）");
+                    article.appendChild(attachmentNotice);
+                }
                 if (job) {
                     var footer = makeNode(doc, "footer", "mc-delay-footer");
                     var actions = makeNode(doc, "span", "mc-delay-actions");

@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.mail.repository.MailboxConversationRepositor
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationFilter
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationMessageSqlRow
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.TimelinePage
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -44,8 +45,7 @@ import java.util.Optional
  *   grant 缺失与专家不存在统一 403 `MAIL_READ_FORBIDDEN`（不泄露存在性）；每次调用
  *   都重新读 grant（撤销后新请求必拒），游标仍绑定 contact/account。
  * - I-3：reader 响应固定 `attachmentCount=0` / `firstAttachmentNames=[]` /
- *   `calendarAttachment=null` / `outboundAttachments=[]`，且附件解析与 mail_record
- *   快照读取零交互；正文/标签照常返回。
+ *   `calendarAttachment=null` / `outboundAttachments=[]`，仅允许附件存在标记；正文/标签照常返回。
  * - I-4：非 reader（admin 及默认 null 身份）保留原附件解析与快照读取。
  *
  * SQL 层的成员过滤（count/page/explain 的 grant EXISTS）由
@@ -181,7 +181,7 @@ class MailboxReadAccessProjectionTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `reader gets body and tags but fixed empty attachments with zero attachment interaction`() {
+    fun `reader gets attachment presence without names identifiers or download metadata`() {
         Mockito.`when`(readAccessService.accessLevel(CONTACT_ID))
             .thenReturn(ExpertMailAccessLevel.READ)
         val inbound = inboundRow(id = 31L, messageId = "in-31")
@@ -192,6 +192,9 @@ class MailboxReadAccessProjectionTest {
         Mockito.`when`(inboundMailTagService.listTagsBatch(listOf(31L)))
             .thenReturn(mapOf(31L to listOf(TagView(tagId = 5L, tagType = "TOPIC", qaRuleId = null, label = "会议安排", source = "MANUAL", active = true))))
 
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 31L))
+            .thenReturn(listOf(MailAttachment(id = 11L, mailRecordId = null, inboundProcessingId = 31L,
+                fileName = "private.pdf", contentType = "application/pdf", fileSize = 10L, storagePath = null)))
         val response = service.listMessages(CONTACT_ID, null, null, 50, MailReadOnlyPolicy.READER_USERNAME)
 
         assertEquals(ExpertMailAccessLevel.READ, response.accessLevel)
@@ -210,9 +213,9 @@ class MailboxReadAccessProjectionTest {
         val outboundItem = response.items.first { it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD }
         assertEquals("outbound body", outboundItem.body)
 
-        // 附件解析与仅用于附件的发件快照读取零交互。
-        verifyNoInteractions(expertMaterialService)
-        verify(mailRecordRepository, never()).findAllById(anyCollection())
+        assertTrue(inboundItem.hasAttachments)
+        assertFalse(outboundItem.hasAttachments)
+        verify(mailRecordRepository).findAllById(listOf(77L))
     }
 
     @Test
@@ -269,6 +272,48 @@ class MailboxReadAccessProjectionTest {
         verify(mailRecordRepository, times(3)).findAllById(listOf(77L))
         // Existence-only lookup is no longer the projection/admission source.
         verify(repository, never()).hasReadAccess(anyString(), anyLong())
+    }
+
+
+    @Test
+    fun `READ presence uses validated outbound and calendar snapshots without exposing them`() {
+        Mockito.`when`(readAccessService.accessLevel(CONTACT_ID)).thenReturn(ExpertMailAccessLevel.READ)
+        Mockito.`when`(repository.timelineMessages(anyLong(), anyFilter(), Mockito.any(), anyInt()))
+            .thenReturn(TimelinePage(listOf(outboundSentRow(id = 77L, subject = "Me: intro")), false))
+        val record = MailRecord(
+            id = 77L,
+            expertContactId = CONTACT_ID,
+            direction = MailboxConversationRepository.DIRECTION_OUTBOUND,
+            mailType = MailboxConversationService.MANUAL_RICH_REPLY_MAIL_TYPE,
+            senderAccountCode = ACCOUNT_CODE,
+            messageId = "out-77",
+            inReplyTo = null,
+            subject = "Me: intro",
+            body = "outbound body",
+            matchedQaRuleId = null,
+            sendStatus = MailboxConversationService.SEND_STATUS_SENT,
+            receivedAt = null,
+            sentAt = LocalDateTime.now(),
+            calendarAttachmentJson = calendarSnapshotJson(),
+            outboundAttachmentsJson = outboundSnapshotJson()
+        )
+        for ((snapshot, expected) in listOf(
+            record to true,
+            record.copy(calendarAttachmentJson = null) to true,
+            record.copy(outboundAttachmentsJson = null) to true,
+            record.copy(calendarAttachmentJson = null, outboundAttachmentsJson = null) to false,
+            record.copy(calendarAttachmentJson = "broken", outboundAttachmentsJson = "broken") to false,
+            record.copy(expertContactId = OTHER_CONTACT_ID) to false,
+            record.copy(senderAccountCode = OTHER_ACCOUNT_CODE) to false
+        )) {
+            Mockito.`when`(mailRecordRepository.findAllById(listOf(77L))).thenReturn(listOf(snapshot))
+            val item = service.listMessages(CONTACT_ID, null, null, 50, "user1").items.single()
+            assertEquals(expected, item.hasAttachments)
+            assertEquals(0, item.attachmentCount)
+            assertTrue(item.firstAttachmentNames.isEmpty())
+            assertNull(item.calendarAttachment)
+            assertTrue(item.outboundAttachments.isEmpty())
+        }
     }
 
     @Test
