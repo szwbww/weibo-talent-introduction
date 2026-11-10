@@ -69,3 +69,10 @@
 - 覆盖：需求、I-1～I-3、X9-1。
 
 人工验收时再从本节导出同名 `-acceptance.md`；本次不生成通过记录。测试与离线验收输出不得访问生产或发送邮件。
+
+## 发布回归记录（2026-11-10）
+
+- `9f2bb4317a1c` 将 `PaperSearchCriteria.excludeCountries` 的默认值从 `["CN"]` 改为 `["CN","IN"]`。这是查询条件变化，应产生不同的检查点 key，不应复用旧查询的游标。
+- 历史 key 兼容性用例必须显式固定历史查询参数，不能依赖可变的请求默认值。本次保留 `8211c89415df49eb8fe489d5` 的原始兼容性断言，并补充排除国家变化的 key 隔离断言；不修改生产默认值、编码算法、envelope 或历史数据。
+- 定向验证：`JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn test -Dtest=DiscoveryCheckpointCodecTest,OrcidDataSourceTest,ExpertDiscoveryServiceTest`，232 个 JVM 测试通过，Maven 绑定的前端测试和语法检查通过。
+- 运行时验证：JShell 直接调用已编译的 codec，验证历史非 ORCID key 保持不变、ORCID 编码隔离仍有效、`CN` 与 `CN,IN` 不共用 key，以及国家排序/重复/空白和临时 cursor 不改变同一查询的 key，输出 `CHECKPOINT_RUNTIME_SMOKE_PASS`。

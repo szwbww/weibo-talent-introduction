@@ -10,10 +10,17 @@ import org.junit.jupiter.api.Test
 
 class DiscoveryCheckpointCodecTest {
 
+    // Persisted-key compatibility uses the historical query, not mutable request defaults.
     private val criteria = PaperSearchCriteria(
         keywords = listOf("cancer"),
+        affiliationKeywords = emptyList(),
+        excludeCountries = listOf("CN"),
         publicationYearFrom = 2020,
-        publicationYearTo = 2026
+        publicationYearTo = 2026,
+        openAccessOnly = true,
+        pageSize = 100,
+        sources = emptyList(),
+        subjectScope = null
     )
 
     @Test
@@ -48,10 +55,11 @@ class DiscoveryCheckpointCodecTest {
     }
 
     @Test
-    fun `key covers criteria years scope page size sources and version`() {
+    fun `key covers criteria countries years scope page size sources and version`() {
         val base = DiscoveryCheckpointCodec.sourceKey("OPENALEX", criteria)
 
         assertNotEquals(base, DiscoveryCheckpointCodec.sourceKey("OPENALEX", criteria.copy(keywords = listOf("diabetes"))))
+        assertNotEquals(base, DiscoveryCheckpointCodec.sourceKey("OPENALEX", criteria.copy(excludeCountries = listOf("CN", "IN"))))
         assertNotEquals(base, DiscoveryCheckpointCodec.sourceKey("OPENALEX", criteria.copy(publicationYearFrom = 2019)))
         assertNotEquals(base, DiscoveryCheckpointCodec.sourceKey("OPENALEX", criteria.copy(publicationYearTo = 2027)))
         assertNotEquals(base, DiscoveryCheckpointCodec.sourceKey("OPENALEX", criteria.copy(subjectScope = "RND_TARGET")))
