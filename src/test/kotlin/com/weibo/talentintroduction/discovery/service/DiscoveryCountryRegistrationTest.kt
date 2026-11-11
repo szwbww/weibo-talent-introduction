@@ -384,6 +384,75 @@ class DiscoveryCountryRegistrationTest {
         assertEquals(input.factFingerprint, registration.item!!.factFingerprint)
     }
 
+    @Test fun `country only ORCID fill registers and resumes the same persisted reservation`() {
+        val base = profile().copy(institution = null, institutionEvidence = null)
+        var persisted: VerificationItem? = null
+        Mockito.doAnswer { invocation ->
+            item(invocation.getArgument(0)).also { persisted = it }
+        }.`when`(repository).reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc", "0".repeat(64),
+            VerificationMode.ENFORCE.policyVersion, "ORCID", orcid, "{}", "0".repeat(64))), anyValue(now))
+        server.expect(ExpectedCount.once(), anything()).andRespond(withSuccess(orcidGbBody(), MediaType.APPLICATION_JSON))
+        val registration = service().reserve(context(), "EMAIL-doc", base, "ORCID", orcid)
+        assertEquals("GB", registration.preparedProfile!!.country)
+        assertNull(registration.preparedProfile!!.institutionEvidence)
+        assertNull(registration.preparedProfile!!.institution)
+        assertFalse(registration.protected)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(persisted!!))
+        val resumed = service().reserve(context(), "EMAIL-doc", base, "ORCID", orcid)
+        assertEquals(persisted!!.snapshotJson, resumed.item!!.snapshotJson)
+        assertEquals(registration.preparedProfile, resumed.preparedProfile)
+        server.verify() // Resume must not issue another provider request.
+    }
+
+    private fun resumeReceipt(base: ExpertProfile, filled: ExpertProfile, receipt: CountrySupplementReceipt): DiscoveryRegistration {
+        val json = snapshot(filled, receipt)
+        val root = mapper.readTree(json)
+        val saved = item(VerificationReservation(7, "EMAIL-doc", root.path("identityHash").asText(),
+            VerificationMode.ENFORCE.policyVersion, "ORCID", orcid, json, root.path("factFingerprint").asText()))
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(saved))
+        return service().reserve(context(), "EMAIL-doc", base, "ORCID", orcid)
+    }
+
+    private fun filledReceipt(base: ExpertProfile) = CountrySupplementReceipt(
+        status = DiscoveryCountrySupplementService.STATUS_FILLED,
+        reason = DiscoveryCountrySupplementService.REASON_MATCHED_BOUND_INSTITUTION,
+        beforeCountry = null, afterCountry = "GB", originalInstitutionEvidence = base.institutionEvidence,
+        institution = base.institution, selectedSource = "ORCID", constructedAt = now.toString())
+
+    @Test fun `previously persisted country only receipt resumes after registration failure`() {
+        val base = profile().copy(institution = null, institutionEvidence = null)
+        val result = resumeReceipt(base, base.copy(country = "GB"), filledReceipt(base))
+        assertEquals("GB", result.preparedProfile!!.country)
+        assertFalse(result.protected)
+        server.verify()
+    }
+
+    @Test fun `COUNTRY V1 signed receipt remains resumable after V2 deployment`() {
+        val base = profile()
+        val result = resumeReceipt(base, profileWithCountry("GB"), filledReceipt(base).copy(version = "COUNTRY_V1"))
+        assertEquals("GB", result.preparedProfile!!.country)
+        assertTrue(DiscoveryIdentity.validInstitutionEvidence(result.preparedProfile!!))
+        server.verify()
+    }
+
+    @Test fun `country only exception does not accept an institution without a token`() {
+        val base = profile().copy(institutionEvidence = null)
+        assertThrows(DiscoveryRegistrationException::class.java) {
+            resumeReceipt(base, base.copy(country = "GB"), filledReceipt(base))
+        }
+    }
+
+    @Test fun `country only exception rejects non ORCID and legacy or unknown receipts`() {
+        val base = profile().copy(institution = null, institutionEvidence = null)
+        listOf(filledReceipt(base).copy(selectedSource = "OPENALEX"),
+            filledReceipt(base).copy(version = "COUNTRY_V1"),
+            filledReceipt(base).copy(version = "COUNTRY_V999")).forEach { receipt ->
+            assertThrows(DiscoveryRegistrationException::class.java) {
+                resumeReceipt(base, base.copy(country = "GB"), receipt)
+            }
+        }
+    }
+
     @Test fun `switch off and a missing supplement service freeze the legacy snapshot`() {
         var capturedValue: VerificationReservation? = null
         Mockito.doAnswer { invocation ->

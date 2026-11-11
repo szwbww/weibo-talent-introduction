@@ -337,12 +337,12 @@ class DiscoveryVerificationRegistrationService(
     private fun factsWithoutCountry(profile: ExpertProfile) =
         profile.copy(country = null, institutionEvidence = null, emailRouting = null)
 
-    /** Absent member keeps the pre-supplement semantics; present member must be a complete COUNTRY_V1 receipt. */
+    /** Preserve V1 signed receipts; V2 additionally supports country-only ORCID enrichment. */
     private fun validateReceipt(snapshotJson: String, frozen: ExpertProfile) {
         val node = mapper.readTree(snapshotJson).get("countrySupplement") ?: return
         require(node.isObject) { "Country supplement receipt must be an object" }
         val receipt = mapper.treeToValue(node, CountrySupplementReceipt::class.java)
-        require(receipt.version == DiscoveryCountrySupplementService.VERSION) { "Unknown country supplement version" }
+        require(receipt.version in setOf("COUNTRY_V1", DiscoveryCountrySupplementService.VERSION)) { "Unknown country supplement version" }
         require(receipt.status in DiscoveryCountrySupplementService.STATUSES) { "Unknown country supplement status" }
         require(receipt.reason in DiscoveryCountrySupplementService.REASONS) { "Unknown country supplement reason" }
         require(receipt.observations.size <= DiscoveryCountrySupplementService.MAX_OBSERVATIONS)
@@ -353,10 +353,21 @@ class DiscoveryVerificationRegistrationService(
                 require(receipt.beforeCountry.isNullOrBlank() && receipt.afterCountry == frozen.country && !frozen.country.isNullOrBlank())
                 require(receipt.selectedSource in setOf(DiscoveryCountrySupplementService.SOURCE_OPENALEX,
                     DiscoveryCountrySupplementService.SOURCE_ORCID))
-                val original = requireNotNull(receipt.originalInstitutionEvidence)
-                val current = requireNotNull(frozen.institutionEvidence)
-                require(original.substringBefore(':') == current.substringBefore(':')) { "Institution evidence source changed" }
-                require(DiscoveryIdentity.validInstitutionEvidence(frozen)) { "Frozen institution evidence is invalid" }
+                val countryOnly = receipt.version == "COUNTRY_V2" && frozen.institution.isNullOrBlank() &&
+                    receipt.originalInstitutionEvidence == null && frozen.institutionEvidence == null
+                if (countryOnly) {
+                    // V2 permits a bound ORCID employment country without inventing an institution token.
+                    require(receipt.selectedSource == DiscoveryCountrySupplementService.SOURCE_ORCID &&
+                        receipt.reason == DiscoveryCountrySupplementService.REASON_MATCHED_BOUND_INSTITUTION &&
+                        DiscoveryIdentity.allowed(frozen) && !frozen.identityVerification?.orcid.isNullOrBlank()) {
+                        "Country-only receipt requires verified ORCID evidence"
+                    }
+                } else {
+                    val original = requireNotNull(receipt.originalInstitutionEvidence)
+                    val current = requireNotNull(frozen.institutionEvidence)
+                    require(original.substringBefore(':') == current.substringBefore(':')) { "Institution evidence source changed" }
+                    require(DiscoveryIdentity.validInstitutionEvidence(frozen)) { "Frozen institution evidence is invalid" }
+                }
             }
             DiscoveryCountrySupplementService.STATUS_UNCHANGED -> {
                 require(!frozen.country.isNullOrBlank() && receipt.beforeCountry == frozen.country && receipt.afterCountry == frozen.country)
