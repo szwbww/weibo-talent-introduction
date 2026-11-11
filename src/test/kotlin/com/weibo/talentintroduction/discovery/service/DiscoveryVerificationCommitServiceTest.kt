@@ -43,7 +43,7 @@ class DiscoveryVerificationCommitServiceTest {
         val current = row(lease, revision = 0)
         Mockito.`when`(admissions.findAdmission(lease.expertDocId)).thenReturn(current)
         Mockito.`when`(fixture.repository.saveEvidenceAndOutcome(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
-            Mockito.any(VerificationResult::class.java) ?: proposed(), Mockito.any(java.time.Instant::class.java) ?: ruleClock.instant())).thenReturn(true)
+            Mockito.any(VerificationResult::class.java) ?: proposed(), Mockito.any(java.time.Instant::class.java) ?: ruleClock.instant(), Mockito.eq(true))).thenReturn(true)
         service.commit(lease, proposed(), VerificationCommitInput(snapshot, current, null))
         val saved = Mockito.mockingDetails(fixture.repository).invocations.single { it.method.name == "saveEvidenceAndOutcome" }.arguments[3] as VerificationResult
         assertEquals(VerificationOutcome.PENDING, saved.outcome); assertTrue(saved.reasonsJson.contains("ADMISSION_CHANGED"))
@@ -70,7 +70,7 @@ class DiscoveryVerificationCommitServiceTest {
         Mockito.`when`(fixture.repository.lockForCommit(lease.id)).thenReturn(lease)
         Mockito.`when`(admissions.findAdmission(lease.expertDocId)).thenReturn(row(lease, "HOLD", 2))
         Mockito.`when`(fixture.repository.saveEvidenceAndOutcome(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
-            Mockito.any(VerificationResult::class.java) ?: proposed(), Mockito.any(java.time.Instant::class.java) ?: ruleClock.instant())).thenReturn(true)
+            Mockito.any(VerificationResult::class.java) ?: proposed(), Mockito.any(java.time.Instant::class.java) ?: ruleClock.instant(), Mockito.eq(true))).thenReturn(true)
         val snapshot = DiscoveryVerificationAdmissionGate.snapshot(lease.expertDocId, fixture.profile, fixture.config)
         service.commit(lease, proposed(), VerificationCommitInput(snapshot, null, null))
         val saved = Mockito.mockingDetails(fixture.repository).invocations.single { it.method.name == "saveEvidenceAndOutcome" }.arguments[3] as VerificationResult

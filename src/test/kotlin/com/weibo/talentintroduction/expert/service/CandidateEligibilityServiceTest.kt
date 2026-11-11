@@ -85,7 +85,7 @@ class CandidateEligibilityServiceTest {
     }
 
     @Test
-    fun `discovery profiles judge nationality only from the explicit nationality field (I-2)`() {
+    fun `discovery profiles do not exclude nationality while legacy rules remain unchanged`() {
         val svc = service()
         // fixture：机构所在地 country=China，本人 nationality 留空（未知）。
         val missingNationality = expert(nationality = "China").copy(
@@ -99,8 +99,8 @@ class CandidateEligibilityServiceTest {
         assertFalse(allowed.rejectReasons.contains("CHINESE_NATIONALITY"))
         assertTrue(allowed.eligible, "机构在中国但本人国籍未知 ≠ 中国籍：${allowed.rejectReasons}")
 
-        // 明确中国国籍仍然被拒。
-        assertTrue(
+        // 新发现仅按所在地规则判断，不按国籍排除。
+        assertFalse(
             svc.evaluateEligibility(discovery.copy(nationality = "China")).rejectReasons.contains("CHINESE_NATIONALITY")
         )
 

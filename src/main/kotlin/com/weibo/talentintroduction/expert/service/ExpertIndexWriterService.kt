@@ -706,7 +706,10 @@ class ExpertIndexWriterService(
         val index = expertIndexService.indexName(level)
         val response = restTemplate.exchange(
             "${properties.baseUrl}/$index/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}&refresh=wait_for",
-            HttpMethod.POST, HttpEntity(mapOf("doc" to mapOf("emailRouting" to routing)), headers()), JsonNode::class.java
+            HttpMethod.POST, HttpEntity(mapOf("doc" to mapOf(
+                "emailRouting" to routing,
+                "tags" to routing.withRoutingTag((snapshot.source["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty())
+            )), headers()), JsonNode::class.java
         ).body
         return response?.path("result")?.asText() in setOf("updated", "noop")
     }
@@ -849,7 +852,8 @@ class ExpertIndexWriterService(
             "${properties.baseUrl}/$rawIndex/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
             HttpMethod.POST, HttpEntity(mapOf("doc" to qualification), headers()), JsonNode::class.java
         ).body ?: return false
-        if (update.path("result").asText() == "noop") return false
+        // A previous attempt may have patched RAW before candidate deletion failed.
+        if (update.path("result").asText() !in setOf("updated", "noop")) return false
         val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
         if (stableRaw.seqNo != update.path("_seq_no").asLong(-1) ||
             stableRaw.primaryTerm != update.path("_primary_term").asLong(-1) ||

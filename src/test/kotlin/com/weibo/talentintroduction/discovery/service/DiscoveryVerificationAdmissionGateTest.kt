@@ -60,6 +60,18 @@ class AdmissionGateFixture {
 }
 
 class DiscoveryVerificationAdmissionGateTest {
+    @Test fun `qualification approval cannot bypass location exclusions`() {
+        val f = AdmissionGateFixture()
+        for (country in listOf("CN", "IN")) {
+            val p = f.profile.copy(country = country, institution = null, institutionEvidence = null)
+            val item = f.item(p)
+            f.load(item)
+            val result = f.policy.evaluate(f.docId, p)
+            assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status)
+            assertTrue(result.blockingReasons.any { it.code == "LOCATION_EXCLUDED" })
+        }
+    }
+
     @Test fun `country-only resigning preserves admission but changed institution or degree does not`() {
         val f = AdmissionGateFixture()
         val identity = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity

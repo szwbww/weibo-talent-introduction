@@ -2747,7 +2747,10 @@ class ExpertDiscoveryService(
         // 02（I-1）：无证据就不写这个键 —— 绝不写 null / false / UNVERIFIED。
         profile.institutionEvidence?.let { doc["institutionEvidence"] = it }
         // Routing is independent enrichment, after the admission snapshot has been frozen.
-        emailValidationService.identifyRouting(profile.email)?.let { doc["emailRouting"] = it }
+        emailValidationService.identifyRouting(profile.email)?.let {
+            doc["emailRouting"] = it
+            doc["tags"] = it.withRoutingTag(listOf("discovered"))
+        }
         return doc
     }
 

@@ -11,7 +11,12 @@ data class EmailRouting(
     val mxRecords: List<String>,
     val checkedAt: String
 ) {
+    /** Managed tag follows current routing evidence; unrelated user tags stay intact. */
+    fun withRoutingTag(tags: List<String>): List<String> =
+        (tags.filterNot { it == MICROSOFT_TAG } + if (status == "MICROSOFT") listOf(MICROSOFT_TAG) else emptyList()).distinct()
+
     companion object {
+        const val MICROSOFT_TAG = "微软系邮箱"
         val FILTERS = setOf("MICROSOFT", "UNKNOWN", "UNCHECKED")
         fun normalizeFilter(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() && it != "ALL" }?.also {
             require(it in FILTERS) { "Invalid emailRouting filter" }

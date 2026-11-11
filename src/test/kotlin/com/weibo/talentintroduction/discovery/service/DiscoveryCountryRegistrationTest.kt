@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.config.*
 import com.weibo.talentintroduction.discovery.domain.*
+import com.weibo.talentintroduction.discovery.archive.PaperArchiveLookup
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
@@ -87,7 +88,8 @@ class DiscoveryCountryRegistrationTest {
         DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE,
             apolloApiKey = "fixture-key", countrySupplementEnabled = enabled)
 
-    private fun service(props: DiscoveryVerificationProperties = properties(), supplement: Boolean = true): DiscoveryVerificationRegistrationService {
+    private fun service(props: DiscoveryVerificationProperties = properties(), supplement: Boolean = true,
+                        papers: PaperVerificationEvidenceService? = null): DiscoveryVerificationRegistrationService {
         val supplementService = if (supplement) DiscoveryCountrySupplementService(props, clock, http) else null
         val transactions = Mockito.mock(TransactionTemplate::class.java)
         Mockito.doAnswer { invocation ->
@@ -95,7 +97,7 @@ class DiscoveryCountryRegistrationTest {
                 .doInTransaction(Mockito.mock(org.springframework.transaction.TransactionStatus::class.java))
         }.`when`(transactions).execute<Any?>(Mockito.any())
         return DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions, jdbc,
-            transactions, apolloSettings, clock, supplementService)
+            transactions, apolloSettings, clock, supplementService, papers = papers)
     }
 
     @Test fun `new run reads settings once at freeze and preserves null options until begin`() {
@@ -382,6 +384,75 @@ class DiscoveryCountryRegistrationTest {
         assertTrue(DiscoveryIdentity.validInstitutionEvidence(registration.preparedProfile!!))
         assertNotEquals(profile().institutionEvidence, registration.preparedProfile!!.institutionEvidence)
         assertEquals(input.factFingerprint, registration.item!!.factFingerprint)
+    }
+
+    @Test fun `busy country channel registers unchanged facts and resumes the persisted receipt`() {
+        var persisted: VerificationItem? = null
+        Mockito.doAnswer { invocation ->
+            item(invocation.getArgument(0)).also { persisted = it }
+        }.`when`(repository).reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc", "0".repeat(64),
+            VerificationMode.ENFORCE.policyVersion, "ORCID", orcid, "{}", "0".repeat(64))), anyValue(now))
+        val registrationService = service()
+        val supplement = ReflectionTestUtils.getField(registrationService, "countrySupplement") as DiscoveryCountrySupplementService
+        assertEquals(CountryPermit.ACQUIRED, supplement.tryAcquirePermit())
+        server.expect(ExpectedCount.never(), anything())
+        val base = profile()
+        val registered = registrationService.reserve(context(), "EMAIL-doc", base, "ORCID", orcid)
+        val receipt = mapper.readTree(registered.item!!.snapshotJson).path("countrySupplement")
+        assertEquals("SKIPPED", receipt.path("status").asText())
+        assertEquals("CHANNEL_BUSY", receipt.path("reason").asText())
+        assertNull(registered.preparedProfile!!.country)
+        assertEquals(base.institutionEvidence, registered.preparedProfile!!.institutionEvidence)
+        assertFalse(registered.protected)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(persisted!!))
+        val resumed = service().reserve(context(), "EMAIL-doc", base, "ORCID", orcid)
+        assertEquals(persisted!!.snapshotJson, resumed.item!!.snapshotJson)
+        assertEquals(registered.preparedProfile, resumed.preparedProfile)
+        server.verify()
+    }
+
+    @Test fun `unknown skipped country reason still fails registration`() {
+        val base = profile()
+        assertThrows(DiscoveryRegistrationException::class.java) {
+            resumeReceipt(base, base, CountrySupplementReceipt(status = "SKIPPED", reason = "UNKNOWN_REASON",
+                institution = base.institution, originalInstitutionEvidence = base.institutionEvidence,
+                constructedAt = now.toString()))
+        }
+    }
+
+    @Test fun `arxiv pseudo DOI registers with retained source key and archive reference`() {
+        assertPaperRegistration("arXiv:2611.01234v1", null, "ARXIV", "arXiv:2611.01234v1")
+    }
+
+    @Test fun `standard DOI URL remains a normalized archive constraint`() {
+        assertPaperRegistration("https://doi.org/10.1234/Example", "10.1234/example", "OPENALEX", "W123")
+    }
+
+    private fun assertPaperRegistration(doi: String, expectedDoi: String?, source: String, key: String) {
+        val papers = Mockito.mock(PaperVerificationEvidenceService::class.java)
+        val ref = PaperSourceRef(11, 12, "a".repeat(64), 7, source, key)
+        Mockito.doAnswer { invocation ->
+            val request = invocation.getArgument<List<PaperArchiveLookup>>(0).single()
+            assertEquals(7L, request.executionId)
+            assertEquals(source, request.sourceName)
+            assertEquals(key, request.sourceItemKey)
+            assertEquals(expectedDoi, request.doi)
+            mapOf(request to listOf(ref))
+        }.`when`(papers).locate(anyValue(emptyList()))
+        Mockito.doAnswer { invocation -> item(invocation.getArgument(0)) }
+            .`when`(repository).reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc", "0".repeat(64),
+                VerificationMode.ENFORCE.policyVersion, source, key, "{}", "0".repeat(64))), anyValue(now))
+        val paper = openAlexPaper("Example University").copy(doi = doi, source = source)
+        val result = service(supplement = false, papers = papers)
+            .reserve(context(), "EMAIL-doc", profile(), source, key, paper)
+        assertFalse(result.protected)
+        assertEquals(source, result.item!!.sourceName)
+        assertEquals(key, result.item!!.sourceItemKey)
+        val refs = mapper.readTree(result.item!!.snapshotJson).path("executionContext").path("paperSourceRefs")
+        assertEquals(1, refs.size())
+        assertEquals(11L, refs[0].path("archiveRecordId").asLong())
+        assertEquals(12L, refs[0].path("attemptId").asLong())
+        assertEquals(key, refs[0].path("sourceItemKey").asText())
     }
 
     @Test fun `country only ORCID fill registers and resumes the same persisted reservation`() {

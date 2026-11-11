@@ -178,6 +178,8 @@ class DiscoveryAdmissionPolicy(
 
     /** 国家非空且可映射到 [CountryContinentMapping] 的大区；`Other` 表示未映射，不等于通过。 */
     private fun countryReasons(profile: ExpertProfile): List<AdmissionReason> = when {
+        excludedLocation(profile.country) -> listOf(AdmissionReason("LOCATION_EXCLUDED",
+            "所在地在排除范围", "country", profile.country, "所在地不在中国或印度", "profile.country"))
         profile.country.isNullOrBlank() -> listOf(AdmissionReason(AdmissionReasonCodes.COUNTRY_MISSING,
             "国家缺失", "country", profile.country, "非空国家", "profile.country"))
         CountryContinentMapping.toRegion(profile.country) == CountryContinentMapping.REGION_OTHER ->
@@ -214,7 +216,13 @@ class DiscoveryAdmissionPolicy(
 
     companion object {
         /** 解释器版本：判定规则或原因词表变化时递增；持久化结论必须带此版本。 */
-        const val POLICY_VERSION = "2026-10-13.1"
+        const val POLICY_VERSION = "2026-11-11.1"
+
+        /** Explicit location only. Nationality, names and unknown countries are not location evidence. */
+        internal fun excludedLocation(country: String?): Boolean =
+            country?.trim()?.lowercase(java.util.Locale.ROOT) in setOf(
+                "cn", "chn", "china", "中国", "中华人民共和国", "people's republic of china", "prc",
+                "in", "ind", "india", "印度")
 
         private const val RND_TYPES = "PRODUCTION_RND / ACADEMIC_RND / HYBRID_RND"
 

@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
+import com.weibo.talentintroduction.discovery.archive.PaperArchiveLookup
 import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
@@ -258,8 +259,9 @@ class DiscoveryVerificationRegistrationService(
             }
             val evaluatedAt = archived?.evaluationAt ?: clock.instant()
             val refs = archived?.let { listOf(it.source) } ?: papers?.locate(listOf(
-                com.weibo.talentintroduction.discovery.archive.PaperArchiveLookup(
-                    run.executionId, sourceName, sourceItemKey, paper?.doi, paper?.pmid, paper?.pmcId)))?.values?.flatten().orEmpty()
+                // arXiv metadata uses doi for its source ID; retain that key, but constrain DOI matches only with a real DOI.
+                PaperArchiveLookup(run.executionId, sourceName, sourceItemKey,
+                    PaperArchiveLookup.doi(paper?.doi), paper?.pmid, paper?.pmcId)))?.values?.flatten().orEmpty()
             savedMap["executionContext"] = VerificationExecutionContext(evaluatedAt, refs)
             receipt?.let { savedMap["countrySupplement"] = it }
             val saved = mapper.writeValueAsString(savedMap)

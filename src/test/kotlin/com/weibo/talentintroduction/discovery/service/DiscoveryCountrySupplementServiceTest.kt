@@ -435,4 +435,33 @@ class DiscoveryCountrySupplementServiceTest {
         assertNull(result.profile.country)
         assertTrue(result.receipt!!.observations.size <= DiscoveryCountrySupplementService.MAX_OBSERVATIONS)
     }
+    @Test fun `durable retry honors minute hour and retry after windows`() {
+        val clock = MutableClock()
+        val service = DiscoveryCountrySupplementService(properties(), clock)
+        val start = clock.instant()
+        repeat(10) { minute ->
+            repeat(DiscoveryCountrySupplementService.PER_MINUTE) {
+                assertEquals(CountryPermit.ACQUIRED, service.tryAcquirePermit())
+                service.releasePermit()
+            }
+            assertEquals(CountryPermit.BUDGET, service.tryAcquirePermit())
+            assertEquals(if (minute == 9) start.plusSeconds(3600) else clock.instant().plusSeconds(60),
+                service.nextRetryAt("BUDGET_EXHAUSTED"))
+            clock.now = clock.now.plusSeconds(60)
+        }
+        assertEquals(start.plusSeconds(3600), service.nextRetryAt("BUDGET_EXHAUSTED"))
+        clock.now = start.plusSeconds(3600)
+        assertEquals(CountryPermit.ACQUIRED, service.tryAcquirePermit())
+        service.releasePermit()
+        val http = countrySupplementRestTemplate()
+        val server = MockRestServiceServer.createServer(http)
+        server.expect(anything()).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+            .headers(org.springframework.http.HttpHeaders().apply { set("Retry-After", "7200") }))
+        val paused = DiscoveryCountrySupplementService(properties(), clock, http)
+        val case = fixture().cases.single { it.id == "ORCID_MATCH" }
+        assertEquals("RATE_LIMITED", paused.supplement(1, "doc", profile(case), null).receipt!!.reason)
+        assertEquals(clock.instant().plusSeconds(7200), paused.nextRetryAt("RATE_LIMITED"))
+        server.verify()
+    }
+
 }

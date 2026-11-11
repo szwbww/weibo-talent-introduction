@@ -30,16 +30,46 @@ class EmailRoutingPersistenceTest {
     private val routing = EmailRouting("uni.edu", "MICROSOFT", "MICROSOFT_MX",
         listOf("0 uni.mail.protection.outlook.com"), "2026-11-06T01:00:00Z")
 
-    @Test fun `CAS writes only routing without upsert identity or admission changes`() {
+    @Test fun `CAS writes routing and Microsoft tag preserving unrelated tags without upsert`() {
         val server = MockRestServiceServer.createServer(http)
         server.expect(requestTo("http://es/raw/_update/EMAIL-test?if_seq_no=9&if_primary_term=2&refresh=wait_for"))
             .andExpect(method(HttpMethod.POST)).andExpect { req ->
                 val body = mapper.readTree((req as MockClientHttpRequest).bodyAsString)
-                assertEquals(mapper.valueToTree<JsonNode>(mapOf("doc" to mapOf("emailRouting" to routing))), body)
+                assertEquals(mapper.valueToTree<JsonNode>(mapOf("doc" to mapOf("emailRouting" to routing, "tags" to listOf("discovered", "人工标签", "微软系邮箱")))), body)
             }.andRespond(withSuccess("{\"result\":\"updated\"}", MediaType.APPLICATION_JSON))
         assertTrue(writer.writeEmailRoutingIfVersionMatches(ExpertIndexLevel.RAW, "EMAIL-test",
-            ExpertIndexWriterService.DiscoverySnapshot(mapOf("email" to "p@uni.edu"), 9, 2), routing))
+            ExpertIndexWriterService.DiscoverySnapshot(mapOf("email" to "p@uni.edu", "tags" to listOf("discovered", "人工标签")), 9, 2), routing))
         server.verify()
+    }
+
+    @Test fun `refresh removes stale Microsoft tag on inconclusive routing without removing other tags`() {
+        val unknown = routing.copy(status = "UNKNOWN", reason = "OTHER_MX")
+        val server = MockRestServiceServer.createServer(http)
+        server.expect(anything()).andExpect { req ->
+            val doc = mapper.readTree((req as MockClientHttpRequest).bodyAsString).path("doc")
+            assertEquals(listOf("discovered", "人工标签"), doc.path("tags").map { it.asText() })
+            assertEquals("UNKNOWN", doc.path("emailRouting").path("status").asText())
+        }.andRespond(withSuccess("{\"result\":\"updated\"}", MediaType.APPLICATION_JSON))
+        assertTrue(writer.writeEmailRoutingIfVersionMatches(ExpertIndexLevel.CANDIDATE, "EMAIL-test",
+            ExpertIndexWriterService.DiscoverySnapshot(mapOf("email" to "p@uni.edu",
+                "tags" to listOf("discovered", "微软系邮箱", "人工标签")), 9, 2), unknown))
+        server.verify()
+    }
+
+    @Test fun `first discovery document carries both routing evidence and Microsoft tag`() {
+        val discovery = mock(ExpertDiscoveryService::class.java, CALLS_REAL_METHODS)
+        val validation = mock(EmailValidationService::class.java)
+        `when`(validation.identifyRouting("p@uni.edu")).thenReturn(routing)
+        ReflectionTestUtils.setField(discovery, "dateFormatter", java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        ReflectionTestUtils.setField(discovery, "emailValidationService", validation)
+        ReflectionTestUtils.setField(discovery, "expertIndexWriterService", writer)
+        ReflectionTestUtils.setField(discovery, "expertClassificationService", ExpertClassificationService())
+        val profile = ExpertProfile(orcidId = "doc", email = "p@uni.edu", givenNames = "Person", familyNames = "One",
+            country = null, keyword = null, employment = null)
+        val source = ReflectionTestUtils.invokeMethod<Map<String, Any?>>(discovery, "toIndexMap", profile, null,
+            "doc", "PASSED", emptyList<String>())!!
+        assertEquals(routing, source["emailRouting"])
+        assertEquals(listOf("discovered", "微软系邮箱"), source["tags"])
     }
 
     @Test fun `review profile reader keeps evidence only for current email domain`() {

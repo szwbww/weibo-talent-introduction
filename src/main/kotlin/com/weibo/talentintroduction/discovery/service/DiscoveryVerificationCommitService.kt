@@ -144,7 +144,7 @@ class DiscoveryVerificationCommitService(
         }
         val record = if (traceRecorded) traces.startStep(item.id, lease.leaseToken!!, lease.generation, 8,
             mapper.writeValueAsString(mapOf("mode" to item.policyVersion, "beforeRevision" to current?.revision)), "{}", now) else null
-        check(repository.saveEvidenceAndOutcome(item.id, lease.leaseToken!!, lease.generation, result, now))
+        check(repository.saveEvidenceAndOutcome(item.id, lease.leaseToken!!, lease.generation, result, now, queueCountryRefresh = true))
         if (item.policyVersion == VerificationMode.ENFORCE.policyVersion && result.outcome in ADMITTED) {
             // Evidence is already visible in this transaction. The shared CAS path must confirm a real row.
             val persisted = if (controlledOldAdmission && current?.identityHash != item.identityHash)

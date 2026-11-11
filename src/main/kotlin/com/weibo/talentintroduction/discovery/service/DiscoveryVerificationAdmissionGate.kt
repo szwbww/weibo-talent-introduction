@@ -83,7 +83,7 @@ class DiscoveryVerificationAdmissionGate(
     }
 
     companion object {
-        const val POLICY_VERSION = "APV_20261018_V1"
+        const val POLICY_VERSION = "APV_20261111_V1"
         val REPLACED_CODES = setOf("NO_DOCTORAL_DEGREE", "AGE_EXCEEDED")
         private val ADMITTED_OUTCOMES = setOf(VerificationOutcome.DIRECT_CLEAR, VerificationOutcome.APOLLO_CLEAR, VerificationOutcome.APOLLO_UNCLEAR)
         private val mapper = jacksonObjectMapper().findAndRegisterModules()

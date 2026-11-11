@@ -91,6 +91,29 @@ class DiscoveryAdmissionPolicyTest {
 
     private fun codes(reasons: List<AdmissionReason>): List<String> = reasons.map { it.code }
 
+    @Test fun `discovery excludes explicit China or India location regardless of nationality`() {
+        for (country in listOf("CN", " china ", "中国", "CHN", "IN", "India", "印度")) {
+            val p = complete.copy(country = country, nationality = "Germany").let {
+                it.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(it, DiscoveryIdentity.EVIDENCE_SOURCE_JATS))
+            }
+            val result = policy().evaluate(p)
+            assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status)
+            assertTrue(result.blockingReasons.any { it.code == "LOCATION_EXCLUDED" && it.field == "country" }, country)
+        }
+    }
+
+    @Test fun `discovery does not exclude nationality or guess unknown location`() {
+        for (nationality in listOf("China", "India", null)) {
+            for (country in listOf("DE", "ID", null)) {
+                val p = complete.copy(country = country, nationality = nationality).let {
+                    it.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(it, DiscoveryIdentity.EVIDENCE_SOURCE_JATS))
+                }
+                val result = policy().evaluate(p)
+                assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, result.status, result.blockingReasons.toString())
+            }
+        }
+    }
+
     @Test
     fun `complete synthetic profile auto passes with empty reasons and hints`() {
         val result = policy().evaluate(complete)
@@ -291,8 +314,8 @@ class DiscoveryAdmissionPolicyTest {
 
     @Test
     fun `policy version and the soft reason set are the admission relaxation release`() {
-        assertEquals("2026-10-13.1", DiscoveryAdmissionPolicy.POLICY_VERSION)
-        assertEquals("2026-10-13.1", policy().evaluate(complete).policyVersion)
+        assertEquals("2026-11-11.1", DiscoveryAdmissionPolicy.POLICY_VERSION)
+        assertEquals("2026-11-11.1", policy().evaluate(complete).policyVersion)
         assertEquals(
             setOf(
                 AdmissionReasonCodes.COUNTRY_MISSING,

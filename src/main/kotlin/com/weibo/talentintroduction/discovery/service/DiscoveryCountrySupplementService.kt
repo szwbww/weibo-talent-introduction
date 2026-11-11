@@ -418,6 +418,17 @@ class DiscoveryCountrySupplementService private constructor(
         CountryPermit.ACQUIRED
     }
 
+    /** Persist an actual limiter deadline rather than repeatedly consuming a retry slot while blocked. */
+    internal fun nextRetryAt(reason: String): Instant = synchronized(permitLock) {
+        var next = clock.instant().plusSeconds(60)
+        if (reason == REASON_BUDGET_EXHAUSTED) {
+            if (minuteWindow.size >= PER_MINUTE) next = maxOf(next, minuteWindow.first().plusSeconds(60))
+            if (hourWindow.size >= PER_HOUR) next = maxOf(next, hourWindow.first().plusSeconds(3600))
+        }
+        if (reason == REASON_RATE_LIMITED) pausedUntil?.let { next = maxOf(next, it) }
+        next
+    }
+
     internal fun releasePermit() = synchronized(permitLock) { inFlight = false }
 
     private fun pauseFor(seconds: Long?) {
@@ -560,7 +571,7 @@ class DiscoveryCountrySupplementService private constructor(
         val REASONS = setOf(
             REASON_MATCHED_BOUND_INSTITUTION, REASON_EXISTING_VALUE, REASON_NO_EVIDENCE, REASON_IDENTITY_UNRESOLVED,
             REASON_INSTITUTION_MISMATCH, REASON_MULTIPLE_COUNTRIES, REASON_INVALID_COUNTRY, REASON_HTTP_ERROR,
-            REASON_INVALID_RESPONSE, REASON_RATE_LIMITED, REASON_BUDGET_EXHAUSTED, REASON_EVIDENCE_TOO_LARGE
+            REASON_INVALID_RESPONSE, REASON_RATE_LIMITED, REASON_CHANNEL_BUSY, REASON_BUDGET_EXHAUSTED, REASON_EVIDENCE_TOO_LARGE
         )
     }
 }

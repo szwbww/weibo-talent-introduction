@@ -145,7 +145,7 @@ class DiscoveryCountrySupplementFlowIT {
         private val http = countrySupplementRestTemplate()
         private val server = MockRestServiceServer.bindTo(http).build()
         val supplementRequests = mutableListOf<String>()
-        private val supplement = DiscoveryCountrySupplementService(props, flow.clock, http)
+        val supplement = DiscoveryCountrySupplementService(props, flow.clock, http)
         val registration = DiscoveryVerificationRegistrationService(props, flow.repository, flow.writer, flow.policy,
             flow.admissions, jdbc, TransactionTemplate(manager), flow.apolloSettings, flow.clock, supplement)
         val raws get() = flow.raws
@@ -285,6 +285,122 @@ class DiscoveryCountrySupplementFlowIT {
             externalIds = mapper.writeValueAsString(mapOf("pmcId" to "PMC123456", "orcid" to ORCID)),
             identityVerification = proof)
         return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "JATS"))
+    }
+
+
+    @Test fun `country outbox survives completion restart and cannot be claimed by qualification worker`() {
+        Fixture().use { f ->
+            f.task(2001)
+            val context = f.begin()
+            assertEquals(CountryPermit.ACQUIRED, f.supplement.tryAcquirePermit())
+            val reserved = try {
+                f.registration.reserve(context, "EMAIL-country-retry", orcidProfile(), "ORCID", ORCID)
+            } finally { f.supplement.releasePermit() }
+            val profile = requireNotNull(reserved.preparedProfile)
+            assertNull(profile.country)
+            f.raw("EMAIL-country-retry", profile)
+            f.registration.activate(reserved)
+            val lease = f.flow.claim()
+            val payload = f.flow.mapper.writeValueAsString(VerificationWorkerEvidence())
+            val result = VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING,
+                VerificationQualification.UNKNOWN, VerificationRoute.NONE, payload, "[]")
+            assertTrue(f.flow.repository.saveEvidenceAndOutcome(lease.id, lease.leaseToken!!, lease.generation,
+                result, f.flow.clock.instant(), queueCountryRefresh = true))
+            val done = f.flow.item(lease.id)
+            assertNotNull(done.nextAttemptAt, "Completion must atomically leave a durable country continuation")
+            assertNull(f.flow.repository.claimDue(f.flow.clock.instant().plusSeconds(600), 120), "No Apollo/qualification replay")
+            // Simulate a process ending immediately after commit, before inline enrichment.
+            val writer = org.mockito.Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
+            val raw = com.weibo.talentintroduction.expert.service.ExpertIndexWriterService.DiscoverySnapshot(f.raws.getValue(done.expertDocId), 2, 1)
+            org.mockito.Mockito.`when`(writer.readDiscoveryDocument(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW, done.expertDocId)).thenReturn(raw)
+            org.mockito.Mockito.`when`(writer.discoveryProfile(done.expertDocId, raw.source)).thenReturn(profile)
+            val token = DiscoveryIdentity.institutionEvidence(profile.copy(country = "GB"), "ORCID")
+            org.mockito.Mockito.`when`(writer.writeDiscoveryCountryIfVersionMatches(
+                com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW, done.expertDocId, raw, "GB", token)).thenReturn(true)
+            f.expectEmployments("GB")
+            val restarted = DiscoveryCountryRefreshService(f.supplement, writer, f.flow.repository, jdbc, clock = f.flow.clock)
+            restarted.retryPending()
+            assertEquals(0, f.supplementRequests.size)
+            f.flow.clock.now = done.nextAttemptAt!!.plusSeconds(1).plusNanos(123456789)
+            restarted.retryPending()
+            restarted.retryPending()
+            assertEquals(1, f.supplementRequests.size)
+            f.verifyHttp()
+            val after = f.flow.item(done.id)
+            assertEquals(done.snapshotJson, after.snapshotJson)
+            assertEquals(done.outcome, after.outcome)
+            assertEquals(done.qualification, after.qualification)
+            assertEquals(done.generation, after.generation)
+            assertEquals(0, after.requestCount)
+            assertTrue(f.flow.repository.findAttempts(done.id).isEmpty())
+            assertNull(after.nextAttemptAt)
+            assertEquals("GB", f.flow.mapper.readTree(after.evidenceJson).path("countrySupplement").path("receipt").path("afterCountry").asText())
+            assertEquals("DONE", f.flow.mapper.readTree(after.evidenceJson).path("countrySupplement").path("retry").path("state").asText())
+            assertTrue(f.flow.apolloRequests.isEmpty())
+            assertTrue(f.flow.orcidRequests.isEmpty())
+        }
+    }
+
+    @Test fun `cancelled country continuation clears queue without ES or provider access`() {
+        Fixture().use { f ->
+            f.task(2001)
+            val context = f.begin()
+            f.supplement.tryAcquirePermit()
+            val reserved = try { f.registration.reserve(context, "EMAIL-country-cancel", orcidProfile(), "ORCID", ORCID) }
+                finally { f.supplement.releasePermit() }
+            f.raw("EMAIL-country-cancel", requireNotNull(reserved.preparedProfile))
+            f.registration.activate(reserved)
+            val lease = f.flow.claim()
+            assertTrue(f.flow.repository.saveEvidenceAndOutcome(lease.id, lease.leaseToken!!, lease.generation,
+                VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING,
+                    VerificationQualification.UNKNOWN, VerificationRoute.NONE, "{}", "[]"), f.flow.clock.instant(), queueCountryRefresh = true))
+            jdbc.update("UPDATE task_execution SET status='CANCELLED' WHERE id=2001")
+            f.flow.clock.now = f.flow.clock.now.plusSeconds(301)
+            val writer = org.mockito.Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
+            DiscoveryCountryRefreshService(f.supplement, writer, f.flow.repository, jdbc, clock = f.flow.clock).retryPending()
+            assertNull(f.flow.item(lease.id).nextAttemptAt)
+            assertEquals("OWNER_STOPPED", f.flow.mapper.readTree(f.flow.item(lease.id).evidenceJson).path("countrySupplement").path("status").asText())
+            org.mockito.Mockito.verifyNoInteractions(writer)
+            assertTrue(f.supplementRequests.isEmpty())
+        }
+    }
+
+    @Test fun `country HTTP failures exhaust after three attempts and remain separately auditable`() {
+        Fixture().use { f ->
+            f.task(2001)
+            val context = f.begin()
+            f.supplement.tryAcquirePermit()
+            val reserved = try { f.registration.reserve(context, "EMAIL-country-error", orcidProfile(), "ORCID", ORCID) }
+                finally { f.supplement.releasePermit() }
+            val profile = requireNotNull(reserved.preparedProfile)
+            f.raw("EMAIL-country-error", profile)
+            f.registration.activate(reserved)
+            val lease = f.flow.claim()
+            assertTrue(f.flow.repository.saveEvidenceAndOutcome(lease.id, lease.leaseToken!!, lease.generation,
+                VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING,
+                    VerificationQualification.UNKNOWN, VerificationRoute.NONE, "{}", "[]"), f.flow.clock.instant(), queueCountryRefresh = true))
+            val writer = org.mockito.Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
+            val raw = com.weibo.talentintroduction.expert.service.ExpertIndexWriterService.DiscoverySnapshot(f.raws.getValue(lease.expertDocId), 2, 1)
+            org.mockito.Mockito.`when`(writer.readDiscoveryDocument(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW, lease.expertDocId)).thenReturn(raw)
+            org.mockito.Mockito.`when`(writer.discoveryProfile(lease.expertDocId, raw.source)).thenReturn(profile)
+            repeat(3) { attempt ->
+                val before = f.flow.item(lease.id)
+                f.flow.clock.now = before.nextAttemptAt!!.plusSeconds(1)
+                f.expectEmploymentsStatus(503)
+                DiscoveryCountryRefreshService(f.supplement, writer, f.flow.repository, jdbc, clock = f.flow.clock).retryPending()
+                f.verifyHttp()
+                val after = f.flow.item(lease.id)
+                val retry = f.flow.mapper.readTree(after.evidenceJson).path("countrySupplement").path("retry")
+                assertEquals(attempt + 1, retry.path("failures").asInt())
+                assertEquals("HTTP_ERROR", retry.path("reason").asText())
+                assertEquals(if (attempt == 2) "EXHAUSTED" else "PENDING", retry.path("state").asText())
+                assertEquals(VerificationState.COMPLETED, after.state)
+                assertEquals(0, after.requestCount)
+                assertEquals(before.snapshotJson, after.snapshotJson)
+            }
+            assertNull(f.flow.item(lease.id).nextAttemptAt)
+            assertEquals(3, f.supplementRequests.size)
+        }
     }
 
     @Test fun `JATS original token retains its source in snapshot and RAW after an ORCID fill`() {

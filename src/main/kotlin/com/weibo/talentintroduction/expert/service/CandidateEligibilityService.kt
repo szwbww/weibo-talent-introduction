@@ -38,7 +38,8 @@ class CandidateEligibilityService(
         if (properties.enableAgeFilter && !isUnderMaxAge(expert.age, properties.maxAgeExclusive))
             reasons += "AGE_EXCEEDED"
 
-        if (properties.excludeChineseNationality && !isNotChineseNationality(nationalityOf(expert)))
+        if (!RecipientScope.isDiscoveryOutreach(expert) && properties.excludeChineseNationality &&
+            !isNotChineseNationality(nationalityOf(expert)))
             reasons += "CHINESE_NATIONALITY"
 
         if (academicProperties.enableHIndexFilter && (expert.hIndex ?: 0) < academicProperties.minHIndex)

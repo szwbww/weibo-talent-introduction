@@ -1263,17 +1263,21 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
     @Transactional
-    fun saveEvidenceAndOutcome(itemId: Long, token: String, generation: Long, result: VerificationResult, now: Instant): Boolean {
+    fun saveEvidenceAndOutcome(itemId: Long, token: String, generation: Long, result: VerificationResult, now: Instant,
+        queueCountryRefresh: Boolean = false): Boolean {
         val item = lockItem(itemId)
         if (!owns(item, token, generation, now)) return false
         if (result.admissionRevision != null) require(item.policyVersion == VerificationMode.ENFORCE.policyVersion)
         val changed = jdbc.update("""UPDATE discovery_verification_item SET state=?,outcome=?,qualification=?,route=?,evidence_json=?,reasons_json=?,
             apollo_entered_at=COALESCE(apollo_entered_at,?),search_completed_at=COALESCE(search_completed_at,?),candidate_found_at=COALESCE(candidate_found_at,?),
-            person_matched_at=COALESCE(person_matched_at,?),apollo_person_id=?,admission_revision=?,projection_state=?,completed_at=?,updated_at=?,lease_token=NULL,lease_until=NULL
+            person_matched_at=COALESCE(person_matched_at,?),apollo_person_id=?,admission_revision=?,projection_state=?,completed_at=?,updated_at=?,lease_token=NULL,lease_until=NULL,next_attempt_at=?
             WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'""", result.state.name, result.outcome?.name, result.qualification.name,
             result.route.name, result.evidenceJson, result.reasonsJson, result.apolloEnteredAt?.verificationUtc(), result.searchCompletedAt?.verificationUtc(),
             result.candidateFoundAt?.verificationUtc(), result.personMatchedAt?.verificationUtc(), result.apolloPersonId, result.admissionRevision,
-            result.projectionState.name, now.verificationUtc(), now.verificationUtc(), itemId, token, generation)
+            result.projectionState.name, now.verificationUtc(), now.verificationUtc(),
+            if (queueCountryRefresh && result.state == VerificationState.COMPLETED &&
+                item.policyVersion == VerificationMode.ENFORCE.policyVersion && result.outcome != VerificationOutcome.PROTECTED)
+                now.plusSeconds(300).verificationUtc() else null, itemId, token, generation)
         if (changed == 1) bump(item.ownerExecutionId, now)
         return changed == 1
     }
