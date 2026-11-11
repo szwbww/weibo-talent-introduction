@@ -849,11 +849,11 @@ function createChatSandbox(options) {
     const defaultRoute = function defaultRoute(url, method, body) {
         if (/\/builtin-attachments$/.test(url) && method === "GET") {
             if (opts.builtinError) return Promise.reject(new Error("catalog unavailable"));
-            return Promise.resolve([{ id: "qiming-v1", filename: "Qiming_Program_Information.pdf", contentType: "application/pdf", byteLength: 7956 }]);
+            return Promise.resolve([{ id: "qiming-v1", filename: "Program_Information.pdf", contentType: "application/pdf", byteLength: 7956 }]);
         }
         if (/\/builtin-attachments\/qiming-v1$/.test(url) && method === "POST") {
             if (opts.builtinAddError) return Promise.reject(new Error("内置附件原件缺失"));
-            return Promise.resolve({ id: "builtin-copy-1", filename: "Qiming_Program_Information.pdf",
+            return Promise.resolve({ id: "builtin-copy-1", filename: "Program_Information.pdf",
                 byteLength: 7956, contentType: "application/pdf", sha256: "builtin-sha",
                 downloadUrl: "/api/mail/conversations/1/outbound-attachments/builtin-copy-1/download" });
         }
@@ -1657,7 +1657,7 @@ describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
         const dialog = ctx.doc.body.querySelector(".outbound-picker");
         assert.ok(dialog);
         assert.strictEqual(dialog.querySelector('[role="tab"]'), null);
-        assert.ok(dialog.textContent.includes("Qiming_Program_Information.pdf"));
+        assert.ok(dialog.textContent.includes("Program_Information.pdf"));
         assert.ok(!dialog.textContent.includes("启明计划"));
         const input = dialog.querySelector('[data-role="attachment-local-input"]');
         let openings = 0;
@@ -1701,14 +1701,14 @@ describe("内置附件统一选择器", () => {
         const search = dialog.querySelector('[data-role="builtin-search"]');
         search.value = "unmatched"; inputEvent(search);
         assert.strictEqual(dialog.querySelectorAll('[data-builtin-id]').length, 0);
-        search.value = "qiming"; inputEvent(search);
+        search.value = "program"; inputEvent(search);
         assert.ok(dialog.querySelector('[data-builtin-id]').hasAttribute("checked"));
         const input = dialog.querySelector('[data-role="attachment-local-input"]');
         input.files = [fakeFile("local.txt")]; changeEvent(input);
         assert.strictEqual(dialog.querySelector('[data-role="attachment-count"]').textContent, "已选 2 个文件");
         click(dialog.querySelector('[data-role="attachment-add"]'));
         await flush(); await flush();
-        assert.deepStrictEqual(cardNames(ctx), ["Qiming_Program_Information.pdf", "local.txt"]);
+        assert.deepStrictEqual(cardNames(ctx), ["Program_Information.pdf", "local.txt"]);
         assert.deepStrictEqual(cardStates(ctx), ["ready", "ready"]);
         assert.strictEqual(ctx.calls.uploads.length, 1, "内置件无需浏览器上传");
         assert.ok(ctx.calls.api.some((entry) => entry.url.endsWith("/builtin-attachments/qiming-v1") && entry.method === "POST"));

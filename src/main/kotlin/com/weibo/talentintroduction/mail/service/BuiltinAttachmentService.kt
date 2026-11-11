@@ -18,7 +18,7 @@ class BuiltinAttachmentService(
     private val contacts: ExpertContactRepository
 ) {
     // Version the ID when replacing a file; no client-supplied paths or filenames are opened.
-    private val catalog = mapOf("qiming-program-information-v1" to "Qiming_Program_Information.pdf")
+    private val catalog = mapOf("qiming-program-information-v1" to "Program_Information.pdf")
 
     fun list(contactId: Long): List<BuiltinAttachmentOption> {
         if (!contacts.existsById(contactId)) throw OutboundAttachmentException.notFound("专家不存在")

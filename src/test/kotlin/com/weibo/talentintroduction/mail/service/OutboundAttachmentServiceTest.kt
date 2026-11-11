@@ -653,7 +653,7 @@ class OutboundAttachmentServiceTest {
     fun `builtin catalog is read only and selection copies exact packaged bytes into owned attachments`() {
         val catalog = BuiltinAttachmentService(service, expertContactRepository)
         val entry = catalog.list(CONTACT_ID).single()
-        assertEquals("Qiming_Program_Information.pdf", entry.filename)
+        assertEquals("Program_Information.pdf", entry.filename)
         assertEquals("application/pdf", entry.contentType)
         assertTrue(rows.isEmpty())
         val bytes = org.springframework.core.io.ClassPathResource("mail-attachments/${entry.filename}")
@@ -687,7 +687,7 @@ class OutboundAttachmentServiceTest {
         mockMvc.perform(post("$path/qiming-program-information-v1")).andExpect(status().isUnauthorized)
         mockMvc.perform(get(path).session(sessionOf(OWNER))).andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "private,no-store"))
-            .andExpect(jsonPath("$[0].filename").value("Qiming_Program_Information.pdf"))
+            .andExpect(jsonPath("$[0].filename").value("Program_Information.pdf"))
         mockMvc.perform(post("$path/unknown").session(sessionOf(OWNER))).andExpect(status().isNotFound)
         mockMvc.perform(get("/api/mail/conversations/999/builtin-attachments").session(sessionOf(OWNER)))
             .andExpect(status().isNotFound)
