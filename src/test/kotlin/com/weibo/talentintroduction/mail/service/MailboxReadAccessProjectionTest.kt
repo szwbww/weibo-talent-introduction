@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.mail.controller.ConversationProjection
 import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
@@ -327,6 +328,49 @@ class MailboxReadAccessProjectionTest {
                 assertEquals(1, item.outboundAttachments.size)
             }
         }
+    }
+
+    @Test
+    fun `count projection reads only authorized total without page tags or toolbar queries`() {
+        Mockito.`when`(repository.countConversations(Mockito.eq("user1") ?: "", anyFilter())).thenReturn(17L)
+        val result = service.listConversations("user1", "query", false, false, true, false,
+            null, null, null, null, null, null, null, null, 0, 1,
+            projection = ConversationProjection.COUNT)
+        assertEquals(17L, result.total)
+        assertTrue(result.items.isEmpty())
+        verify(repository).countConversations(Mockito.eq("user1") ?: "", anyFilter())
+        Mockito.verifyNoMoreInteractions(repository)
+        verifyNoInteractions(expertSearchService, expertContactRepository, readAccessService)
+    }
+
+    @Test
+    fun `summary projection excludes slow tags and unrelated toolbar counts`() {
+        Mockito.`when`(repository.countConversations(Mockito.eq("admin") ?: "", anyFilter())).thenReturn(1L)
+        val rows = listOf(MailboxConversationRepository.ConversationSummarySqlRow(
+            CONTACT_ID, "Expert", "expert@example.org", "orcid", 1, 2, 0, 1,
+            LocalDateTime.of(2026, 10, 1, 9, 0), MailboxProgressStatus.NONE))
+        Mockito.`when`(repository.pageConversations(Mockito.eq("admin") ?: "", anyFilter(), Mockito.eq(20), Mockito.eq(0L))).thenReturn(rows)
+        Mockito.`when`(readAccessService.accessLevels(listOf(CONTACT_ID))).thenReturn(mapOf(CONTACT_ID to ExpertMailAccessLevel.FULL))
+        val result = service.listConversations("admin", null, false, false, true, false,
+            null, null, null, null, null, null, null, null, 0, 20,
+            projection = ConversationProjection.SUMMARY)
+        assertEquals(1L, result.total)
+        assertEquals(CONTACT_ID, result.items.single().contactId)
+        assertNull(result.filterCounts)
+        verify(repository, never()).filterCounts(Mockito.anyList())
+        verify(repository, never()).reviewPendingTotal(anyString(), anyFilter())
+        verifyNoInteractions(expertSearchService, expertContactRepository)
+    }
+
+    @Test
+    fun `tags projection uses filtered authorized page without count or message summary reads`() {
+        val result = service.listConversations("user1", null, false, false, true, false,
+            null, null, null, null, null, null, null, null, 0, 20,
+            projection = ConversationProjection.TAGS)
+        assertTrue(result.expertTagsByContact!!.isEmpty())
+        verify(repository).pageConversations(Mockito.eq("user1") ?: "", anyFilter(), Mockito.eq(20), Mockito.eq(0L))
+        Mockito.verifyNoMoreInteractions(repository)
+        verifyNoInteractions(expertSearchService, expertContactRepository, readAccessService)
     }
 
     @Test

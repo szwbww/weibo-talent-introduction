@@ -149,6 +149,8 @@ data class ConversationManualRichReplyRequest(
     val delayExpectedRevision: Long? = null
 )
 
+enum class ConversationProjection { FULL, SUMMARY, COUNT, TAGS, COUNTS }
+
 data class ConversationListResponse(
     val items: List<ConversationItemResponse>,
     val total: Long,
@@ -157,7 +159,9 @@ data class ConversationListResponse(
     val reviewPendingTotal: Long = 0,
     @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     val filterCounts: ConversationFilterCounts? = null,
-    val serverNowMs: Long = System.currentTimeMillis()
+    val serverNowMs: Long = System.currentTimeMillis(),
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val expertTagsByContact: Map<Long, List<String>?>? = null
 )
 
 data class ConversationFilterCounts(
@@ -283,7 +287,8 @@ class MailboxConversationController(
         @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false,
         @RequestParam(defaultValue = "ALL") expertScope: String = "ALL",
         @RequestParam(defaultValue = "ALL") accessLevel: String = "ALL",
-        @RequestParam(defaultValue = "false") draftsOnly: Boolean = false
+        @RequestParam(defaultValue = "false") draftsOnly: Boolean = false,
+        @RequestParam(defaultValue = "FULL") projection: ConversationProjection = ConversationProjection.FULL
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -306,7 +311,8 @@ class MailboxConversationController(
         reviewPendingOnly = reviewPendingOnly,
         expertScope = expertScope,
         accessLevel = accessLevel,
-        draftsOnly = draftsOnly
+        draftsOnly = draftsOnly,
+        projection = projection
     )
 
     @GetMapping("/{contactId}/messages")

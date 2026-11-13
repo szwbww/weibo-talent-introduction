@@ -1201,7 +1201,7 @@ function queryOf(url) {
 
 function conversationsRequests(ctx) {
     return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?")
-        && queryOf(entry.url).get("size") !== "1");
+        && queryOf(entry.url).get("projection") === "SUMMARY");
 }
 
 function countRequests(ctx) {

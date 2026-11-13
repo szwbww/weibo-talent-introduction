@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.mail.controller.ConversationCalendarAttachme
 import com.weibo.talentintroduction.mail.controller.ConversationItemResponse
 import com.weibo.talentintroduction.mail.controller.ConversationLatestInboundItem
 import com.weibo.talentintroduction.mail.controller.ConversationLatestMessageItem
+import com.weibo.talentintroduction.mail.controller.ConversationProjection
 import com.weibo.talentintroduction.mail.controller.ConversationListResponse
 import com.weibo.talentintroduction.mail.controller.ConversationMessageItemResponse
 import com.weibo.talentintroduction.mail.controller.ConversationMessageListResponse
@@ -129,7 +130,8 @@ class MailboxConversationService(
         reviewPendingOnly: Boolean = false,
         expertScope: String = "ALL",
         accessLevel: String = "ALL",
-        draftsOnly: Boolean = false
+        draftsOnly: Boolean = false,
+        projection: ConversationProjection = ConversationProjection.FULL
     ): ConversationListResponse {
         val reader = MailReadOnlyPolicy.isReader(username)
         require(accessLevel in setOf("ALL", "READ", "FULL")) { "非法 accessLevel" }
@@ -153,7 +155,8 @@ class MailboxConversationService(
         validateTextFilter("recipientEmail", recipientEmailFilter)
         validateTextFilter("keyword", keywordFilter)
         val activeCodes = activeAccountCodes()
-        val filterCounts = if (MailReadOnlyPolicy.isAdmin(username)) {
+        val includeCounts = projection == ConversationProjection.FULL || projection == ConversationProjection.COUNTS
+        val filterCounts = if (includeCounts && MailReadOnlyPolicy.isAdmin(username)) {
             val counts = repository.filterCounts(activeCodes)
             com.weibo.talentintroduction.mail.controller.ConversationFilterCounts(counts.first, counts.second)
         } else null
@@ -187,10 +190,19 @@ class MailboxConversationService(
         )
         val sessionUser = username.orEmpty()
         // Toolbar counts ignore mutually exclusive chips, including an empty chip result/page.
-        val reviewPendingTotal = if (reader) 0L else repository.reviewPendingTotal(sessionUser, filter)
-        val total = repository.countConversations(sessionUser, filter)
-        if (total == 0L) {
+        val reviewPendingTotal = if (reader || !includeCounts) 0L else repository.reviewPendingTotal(sessionUser, filter)
+        if (projection == ConversationProjection.COUNTS) {
             return ConversationListResponse(emptyList(), 0, pageIndex, pageSize, reviewPendingTotal, filterCounts)
+        }
+        // TAGS uses the same authorized/filter-scoped page, without unrelated summary projections.
+        if (projection == ConversationProjection.TAGS) {
+            val rows = repository.pageConversations(sessionUser, filter, pageSize, pageIndex.toLong() * pageSize)
+            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize,
+                expertTagsByContact = currentPageExpertTags(rows))
+        }
+        val total = repository.countConversations(sessionUser, filter)
+        if (total == 0L || projection == ConversationProjection.COUNT) {
+            return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal, filterCounts)
         }
         val offset = pageIndex.toLong() * pageSize
         val rows = repository.pageConversations(sessionUser, filter, pageSize, offset)
@@ -204,7 +216,7 @@ class MailboxConversationService(
         val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
         val accountCodesByContact = repository.accountCodesByContacts(contactIds, activeCodes, accountCode)
         val materialCounts = repository.materialCountByContacts(contactIds)
-        val expertTagsByContact = currentPageExpertTags(rows)
+        val expertTagsByContact = if (projection == ConversationProjection.FULL) currentPageExpertTags(rows) else emptyMap()
         // 01 (T3/I-3)：本页挂起摘要一次批量读取；新表无行也拿到真实跨账号 pending。
         val suspensionStates = repository.suspensionStatesByContacts(sessionUser, contactIds)
         val reviewPendingCounts = if (reader) emptyMap() else

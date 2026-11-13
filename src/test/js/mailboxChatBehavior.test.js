@@ -1498,9 +1498,9 @@ function popoverField(ctx, id) {
 }
 
 function conversationsRequests(ctx) {
-    // 02：Tab 计数请求（page=0&size=1）不算列表请求。
+    // Count and auxiliary projections are independent of primary navigation.
     return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?")
-        && queryOf(entry.url).get("size") !== "1");
+        && queryOf(entry.url).get("projection") === "SUMMARY");
 }
 
 function unmatchedRequests(ctx) {
@@ -7109,7 +7109,7 @@ it("tab loading follows real request settlement, latest request wins, and unmoun
         conversations: { items: [expertA()], total: 1 },
         route(url, method, body, entry, fallback) {
             if (hold && url.startsWith('/api/mail/mailbox/conversations?')
-                && new URL(url, 'http://test').searchParams.get('size') !== '1') {
+                && new URL(url, 'http://test').searchParams.get('projection') === 'SUMMARY') {
                 return new Promise((resolve, reject) => pending.push({resolve, reject}));
             }
             return fallback(url, method, body);
@@ -7160,7 +7160,7 @@ it("pagination shows loading, blocks repeat clicks, and clears on success or fai
         conversations: { items: [expertA()], total: 60 },
         route(url, method, body, entry, fallback) {
             if (hold && url.startsWith('/api/mail/mailbox/conversations?')
-                && new URL(url, 'http://test').searchParams.get('size') !== '1') {
+                && new URL(url, 'http://test').searchParams.get('projection') === 'SUMMARY') {
                 return new Promise((resolve, reject) => pending.push({ resolve, reject }));
             }
             return fallback(url, method, body);
@@ -7192,7 +7192,7 @@ it("silent refresh cannot lock pagination and a superseded response cannot overw
         conversations: { items: [expertA()], total: 42 },
         route(url, method, body, entry, fallback) {
             if (hold && url.startsWith('/api/mail/mailbox/conversations?')
-                && new URL(url, 'http://test').searchParams.get('size') !== '1') {
+                && new URL(url, 'http://test').searchParams.get('projection') === 'SUMMARY') {
                 return new Promise(resolve => pending.push(resolve));
             }
             return fallback(url, method, body);
@@ -7220,7 +7220,7 @@ it("polling cannot supersede navigation or dismiss its overlay", async () => {
         performance: { now: () => now },
         conversations: { items: [expertA()], total: 42 },
         route(url, method, body, entry, next) {
-            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('size') !== '1') {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('projection') === 'SUMMARY') {
                 return new Promise(resolve => pending.push({ url, resolve }));
             }
             return next(url, method, body);
@@ -7270,7 +7270,7 @@ it("navigation keeps overlay through a multi-page clamp before committing result
     const ctx = await bootChat({
         conversations: { items: [expertA()], total: 62 },
         route(url, method, body, entry, next) {
-            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('size') !== '1') {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('projection') === 'SUMMARY') {
                 return new Promise(resolve => pending.push({ url, resolve }));
             }
             return next(url, method, body);
@@ -7297,7 +7297,7 @@ it("mark-resolved during navigation refreshes the committed page without cancell
     const ctx = await bootChat({
         conversations: { items: [expertA()], total: 42 }, messages: messagesA(), contact: contactA(),
         route(url, method, body, entry, next) {
-            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('size') !== '1') {
+            if (hold && url.startsWith('/api/mail/mailbox/conversations?') && queryOf(url).get('projection') === 'SUMMARY') {
                 return new Promise(resolve => pending.push({ url, resolve }));
             }
             return next(url, method, body);
@@ -7315,5 +7315,133 @@ it("mark-resolved during navigation refreshes the committed page without cancell
     pending[1].resolve({ items: [expertB()], total: 21 }); await flush();
     assert.match(ctx.host.querySelector('.mc-pager').textContent, /第 2\/2 页/);
     assert.equal(ctx.host.querySelector('.mc-conversation h2'), null);
+    ctx.api.unmount();
+});
+
+// Mailbox responsiveness: deferred reads reproduce latency/failure/race conditions.
+describe("mailbox responsive read boundaries", () => {
+    const base = () => ({ conversations: { items: [expertA()], total: 1 }, messages: messagesA(), contact: contactA() });
+    const messagesUrl = url => url.includes('/conversations/1/messages?');
+    it("message failure shows retry, never a false empty mailbox", async () => {
+        const ctx = await bootChat({ ...base(), route(url, method, body, entry, next) {
+            return messagesUrl(url) ? Promise.reject(new Error('503')) : next(url, method, body);
+        }});
+        click(personButtons(ctx.host)[0]); await flush();
+        assert.ok(ctx.host.querySelector('[data-action="mc-retry-conversation"]'));
+        assert.ok(!ctx.host.textContent.includes('该专家暂无往来信件'));
+        ctx.api.unmount();
+    });
+    it("messages render while contact metadata is still pending, late metadata preserves editor", async () => {
+        let release;
+        const ctx = await bootChat({ ...base(), route(url, method, body, entry, next) {
+            return url === '/api/expert-contacts/1' ? new Promise(r => release = r) : next(url, method, body);
+        }});
+        click(personButtons(ctx.host)[0]); await flush();
+        assert.ok(ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]'));
+        const editor = ctx.host.querySelector('.mc-manual-compose');
+        release(contactA()); await flush();
+        assert.strictEqual(ctx.host.querySelector('.mc-manual-compose'), editor);
+        ctx.api.unmount();
+    });
+    it("late same-conversation response cannot undo newer processed state", async () => {
+        let hold = false; const pending = [];
+        const ctx = await bootChat({ ...base(), route(url, method, body, entry, next) {
+            return hold && messagesUrl(url) ? new Promise(r => pending.push(r)) : next(url, method, body);
+        }});
+        click(personButtons(ctx.host)[0]); await flush(); hold = true;
+        await ctx.api.refreshFromHost(); await flush();
+        await ctx.api.refreshFromHost(); await flush();
+        assert.equal(pending.length, 2);
+        const fresh = messagesA(); fresh.items = fresh.items.map(m => m.id === 101 ? { ...m, processStatus: 'PROCESSED' } : m);
+        pending[1](fresh); await flush(); pending[0](messagesA()); await flush();
+        assert.ok(!ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]'));
+        ctx.api.unmount();
+    });
+    it("idle polling reads the selected timeline once and throttles auxiliary reads", async () => {
+        let now = 0;
+        const ctx = await bootChat({ ...base(), performance: { now: () => now } });
+        click(personButtons(ctx.host)[0]); await flush();
+        const start = ctx.calls.api.length;
+        now = 6000; ctx.runTimers(); await flush();
+        const requests = ctx.calls.api.slice(start);
+        assert.equal(requests.filter(r => messagesUrl(r.url)).length, 1);
+        assert.equal(requests.filter(r => /projection=(TAGS|COUNTS)/.test(r.url)).length, 0);
+        ctx.api.unmount();
+    });
+    it("slow auxiliary projections do not delay primary list or pagination", async () => {
+        const pending = [];
+        const ctx = await bootChat({ ...base(), route(url, method, body, entry, next) {
+            return /projection=(TAGS|COUNTS)/.test(url) ? new Promise(r => pending.push(r)) : next(url, method, body);
+        }});
+        assert.equal(personButtons(ctx.host).length, 1);
+        assert.equal(pending.length, 2);
+        assert.equal(ctx.host.querySelector('.mc-pager').textContent.includes('共 1 位'), true);
+        const button = personButtons(ctx.host)[0];
+        pending.forEach(r => r({ expertTagsByContact: { 1: ['updated'] } })); await flush();
+        assert.ok(ctx.host.textContent.includes('updated'));
+        assert.strictEqual(personButtons(ctx.host)[0], button, 'late tags keep the focused navigation node');
+        ctx.api.unmount();
+    });
+    it("processed feedback is immediate while list reconciliation is pending", async () => {
+        let hold = false; let release;
+        const ctx = await bootChat({ ...base(), route(url, method, body, entry, next) {
+            return hold && /projection=SUMMARY/.test(url) ? new Promise(r => release = r) : next(url, method, body);
+        }});
+        click(personButtons(ctx.host)[0]); await flush(); hold = true;
+        click(ctx.host.querySelector('[data-action="mc-mark-resolved"]')); await flush();
+        click(ctx.host.querySelector('[data-action="mc-process-confirm"]')); await flush();
+        assert.ok(ctx.host.textContent.includes('已处理，正在刷新列表'));
+        release({ items: [], total: 0 }); await flush();
+        assert.equal(personButtons(ctx.host).length, 0);
+        ctx.api.unmount();
+    });
+});
+
+it("mark success invalidates a timeline read that started before the mutation", async () => {
+    let hold = false; const pending = [];
+    const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 }, messages: messagesA(), contact: contactA(),
+        route(url, method, body, entry, next) {
+            return hold && url.includes('/conversations/1/messages?') ? new Promise(r => pending.push(r)) : next(url, method, body);
+        }
+    });
+    click(personButtons(ctx.host)[0]); await flush(); hold = true;
+    await ctx.api.refreshFromHost(); await flush();
+    click(ctx.host.querySelector('[data-action="mc-mark-resolved"]')); await flush();
+    click(ctx.host.querySelector('[data-action="mc-process-confirm"]')); await flush();
+    pending[0](messagesA()); await flush();
+    assert.ok(!ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]'));
+    ctx.api.unmount();
+});
+
+it("failed quiet refresh preserves messages with retry and clears warning after recovery", async () => {
+    let fail = false;
+    const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 }, messages: messagesA(), contact: contactA(),
+        route(url, method, body, entry, next) {
+            return fail && url.includes('/conversations/1/messages?') ? Promise.reject(new Error('503')) : next(url, method, body);
+        }
+    });
+    click(personButtons(ctx.host)[0]); await flush(); fail = true;
+    await ctx.api.refreshFromHost(); await flush();
+    assert.ok(ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]'));
+    assert.ok(ctx.host.querySelector('[data-action="mc-retry-conversation"]'));
+    fail = false; await ctx.api.refreshFromHost(); await flush();
+    assert.ok(!ctx.host.querySelector('[data-action="mc-retry-conversation"]'));
+    ctx.api.unmount();
+});
+
+it("refresh during initial message load does not invalidate the scaffold owner", async () => {
+    let release; let reads = 0;
+    const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 }, contact: contactA(),
+        route(url, method, body, entry, next) {
+            if (url.includes('/conversations/1/messages?')) { reads++; return new Promise(r => release = r); }
+            return next(url, method, body);
+        }
+    });
+    click(personButtons(ctx.host)[0]); await flush();
+    await ctx.api.refreshFromHost(); await flush();
+    assert.equal(reads, 1);
+    release(messagesA()); await flush();
+    assert.ok(ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]'));
+    assert.ok(!ctx.host.textContent.includes('正在加载往来信件'));
     ctx.api.unmount();
 });

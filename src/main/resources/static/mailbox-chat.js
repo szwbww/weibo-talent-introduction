@@ -1276,7 +1276,7 @@
                 }
                 if (instance.disposed || docRoot().hidden) return;
                 const active = instance.conversation.items.some((m) => m.delayedReply && ["WAITING", "SENDING"].includes(m.delayedReply.status));
-                if (instance.selectedContactId && !instance.unmatchedDetailHost && now - delayState.lastDetail >= (active ? 2000 : 5000)) {
+                if (instance.selectedContactId && !instance.conversation.loading && !instance.unmatchedDetailHost && now - delayState.lastDetail >= (active ? 2000 : 5000)) {
                     delayState.lastDetail = now;
                     await refreshConversationQuiet();
                     await syncDelayedDraft();
@@ -2519,6 +2519,7 @@
 
         function suspensionCardFooterHtml(item) {
             const values = suspensionCardValues(item);
+            if (resolvedListFeedback.has(Number(item.contactId))) return '<div class="mailbox-suspend-card-footer" role="status">已处理，正在刷新列表…</div>';
             if (!values.show) return "";
             const pendingFlag = (!values.suspended && values.count > 0) ? "true" : "false";
             const label = values.suspended ? "取消挂起" : "挂起";
@@ -2801,6 +2802,7 @@
                     return;
                 }
                 const params = conversationsParams(0, key, 1);
+                params.set("projection", "COUNT");
                 hostApi()(`/api/mail/mailbox/conversations?${params.toString()}`).then((data) => {
                     if (instance.disposed || mySeq !== instance.chipCounts.seq) return;
                     setChipCount(key, data && data.total != null ? Number(data.total) : 0);
@@ -2808,6 +2810,66 @@
                     if (instance.disposed || mySeq !== instance.chipCounts.seq) return;
                     setChipCount(key, null);
                 });
+            });
+        }
+
+        // Auxiliary projections never block the list. Poll them less often than pending state.
+        let auxiliarySeq = 0;
+        let auxiliaryKey = "";
+        let auxiliaryAt = -Infinity;
+        const resolvedListFeedback = new Set();
+        let conversationReadSeq = 0;
+
+        function applyListTags(tagsByContact) {
+            instance.list.items = instance.list.items.map((item) => {
+                if (!Object.prototype.hasOwnProperty.call(tagsByContact, item.contactId)
+                    || JSON.stringify(item.expertTags) === JSON.stringify(tagsByContact[item.contactId])) return item;
+                const updated = { ...item, expertTags: tagsByContact[item.contactId] };
+                const button = host.querySelector(`.mc-person[data-contact-id="${Number(item.contactId)}"] .mc-person-main`);
+                if (button) {
+                    // Patch only tags; a late ES response must not close menus or steal focus.
+                    const template = docRoot().createElement("div");
+                    template.innerHTML = renderPerson(updated);
+                    const nextButton = template.querySelector(".mc-person-main");
+                    button.setAttribute("aria-label", nextButton.getAttribute("aria-label"));
+                    const oldTags = button.querySelector(".mc-person-tags") || button.querySelector(".mc-person-tags-unavailable");
+                    if (oldTags) oldTags.parentNode.removeChild(oldTags);
+                    const tags = nextButton.querySelector(".mc-person-tags") || nextButton.querySelector(".mc-person-tags-unavailable");
+                    if (tags) button.querySelector(".mc-person-meta").insertBefore(tags, button.querySelector(".mailbox-draft-count"));
+                }
+                return updated;
+            });
+        }
+
+        function loadListAuxiliary(background) {
+            if (delegated || isUnmatchedChip() || instance.chip === CHIP_DRAFTS) return;
+            const params = conversationsParams(instance.list.page);
+            const key = params.toString();
+            const owner = instance.user;
+            const now = global.performance ? global.performance.now() : Date.now();
+            if (background && key === auxiliaryKey && now - auxiliaryAt < 30000) return;
+            auxiliaryKey = key;
+            auxiliaryAt = now;
+            const seq = ++auxiliarySeq;
+            const current = () => !instance.disposed && owner === instance.user && seq === auxiliarySeq
+                && conversationsParams(instance.list.page).toString() === key;
+            params.set("projection", "TAGS");
+            hostApi()(`/api/mail/mailbox/conversations?${params}`).then((data) => {
+                if (!current() || !data || !data.expertTagsByContact) return;
+                applyListTags(data.expertTagsByContact);
+            }).catch(() => {
+                if (!current()) return;
+                applyListTags(Object.fromEntries(instance.list.items.map(item => [item.contactId, null])));
+            });
+            params.set("projection", "COUNTS");
+            hostApi()(`/api/mail/mailbox/conversations?${params}`).then((data) => {
+                if (!current() || !data) return;
+                instance.filterCounts = data.filterCounts || null;
+                renderExpertScope();
+            }).catch(() => {
+                if (!current()) return;
+                instance.filterCounts = null;
+                renderExpertScope();
             });
         }
 
@@ -2873,9 +2935,11 @@
             instance.list.error = "";
             // 请求模式在发出时固化；晚到的另一模式响应由 listSeq 拒绝（I-3）。
             const unmatched = isUnmatchedChip();
+            const summaryParams = conversationsParams(page);
+            summaryParams.set("projection", "SUMMARY");
             const url = unmatched
                 ? `/api/mail/unmatched-inbound?${unmatchedParams(page).toString()}`
-                : `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
+                : `/api/mail/mailbox/conversations?${summaryParams.toString()}`;
             return hostApi()(url).then((data) => {
                 if (instance.disposed || mySeq !== instance.listSeq || data == null) return null;
                 const total = Number(unmatched ? data.totalCount : data.total) || 0;
@@ -2887,13 +2951,19 @@
                 }
                 const selectedWasVisible = instance.list.items.some(item => String(item.contactId) === String(instance.selectedContactId));
                 const previousItems = JSON.stringify(instance.list.items);
+                const previousTags = new Map(instance.list.items.map(item => [item.contactId, item.expertTags]));
                 if (!unmatched) {
-                    instance.filterCounts = data.filterCounts || null;
+                    if (data.filterCounts) instance.filterCounts = data.filterCounts;
                     renderExpertScope();
                 }
                 instance.list.items = unmatched
                     ? ((data && Array.isArray(data.records)) ? data.records : [])
                     : ((data && Array.isArray(data.items)) ? data.items : []);
+                if (!unmatched) {
+                    instance.list.items = instance.list.items.map(item => item.expertTags == null && previousTags.has(item.contactId)
+                        ? { ...item, expertTags: previousTags.get(item.contactId) } : item);
+                    resolvedListFeedback.clear();
+                }
                 instance.list.total = unmatched
                     ? (Number(data && data.totalCount) || 0)
                     : (Number(data && data.total) || 0);
@@ -2927,7 +2997,8 @@
                     // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
                     loadMeetingSummaries();
                 }
-                if (options.background && !unmatched && selectedWasVisible) resolveFocusAndSelection();
+                if (options.background && !unmatched && selectedWasVisible) resolveFocusAndSelection({ refresh: false });
+                loadListAuxiliary(options.background);
                 loadDraftSummaries();
                 loadChipCounts();
                 return data;
@@ -3846,7 +3917,7 @@
             body.innerHTML = '<div class="mc-empty">请选择左侧专家查看往来信件</div>';
         }
 
-        function resolveFocusAndSelection() {
+        function resolveFocusAndSelection(options = {}) {
             if (instance.filters.expertScope === "PENDING_REVIEW" && instance.review.mode === "review" && instance.review.detail
                 && !instance.list.items.some((item) => Number(item.contactId) === Number(instance.selectedContactId))) {
                 instance.review.message = "该专家暂无待审核草稿"; renderAdminReview();
@@ -3878,7 +3949,7 @@
                     if (freshSummary) instance.selectedSummary = freshSummary;
                     if (String(instance.conversation.accountScope || "") !== accountFilterFromOptions()) {
                         selectExpert(freshSummary, { skipListReload: true, present: false, force: true });
-                    } else if (!instance.conversation.loading) refreshConversationQuiet();
+                    } else if (options.refresh !== false && !instance.conversation.loading) refreshConversationQuiet();
                 } else {
                     // 当前筛选不再包含该专家：先保存，再回到“请选择专家”空态
                     saveCurrentConversation();
@@ -4040,12 +4111,19 @@
             const msgParams = new URLSearchParams();
             msgParams.set("limit", String(MESSAGE_LIMIT));
             if (accountFilter) msgParams.set("accountCode", accountFilter);
-            const contactPromise = hostApi()(`/api/expert-contacts/${contactId}`).catch(() => null);
-            const messagesPromise = hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`)
-                .catch(() => null);
-
-            Promise.all([contactPromise, messagesPromise]).then(([contact, msgData]) => {
-                if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch) return;
+            const readSeq = ++conversationReadSeq;
+            hostApi()(`/api/expert-contacts/${contactId}`).then((contact) => {
+                if (instance.disposed || myEpoch !== instance.convEpoch) return;
+                instance.conversation.contact = contact && contact.contact ? contact.contact : (contact || null);
+                if (!instance.conversation.loading) {
+                    renderHeader();
+                    refreshHeaderExpertTags();
+                }
+            }).catch(() => {
+                if (!instance.disposed && myEpoch === instance.convEpoch) hostShowStatus("专家资料加载失败，可重新打开重试；邮件仍可查看", "error");
+            });
+            hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`).then((msgData) => {
+                if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch || readSeq !== conversationReadSeq) return;
                 if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
                     instance.conversation.loading = false;
                     teardownConversationSubViews();
@@ -4053,7 +4131,6 @@
                     if (instance.options.onAccessChanged) instance.options.onAccessChanged();
                     return;
                 }
-                instance.conversation.contact = contact && contact.contact ? contact.contact : (contact || null);
                 instance.conversation.accountScope = accountFilter;
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
@@ -4080,7 +4157,8 @@
                 // 02（I-3）：时间线就绪后重算完成提示锚点位置。
                 renderSuspensionDetail();
             }).catch(() => {
-                if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch) return;
+                if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch || readSeq !== conversationReadSeq) return;
+                instance.conversation.error = "邮件加载失败，显示上次读取内容";
                 const cached = getConversationRecord(instance.user, accountFilter, contactId);
                 if (cached && cached.items && cached.items.length > 0) {
                     instance.conversation.items = cached.items;
@@ -5630,7 +5708,7 @@
             const loadOlder = instance.conversation.hasMore
                 ? '<button class="button mc-load-older" type="button" data-action="mc-load-older">加载更早信件</button>'
                 : "";
-            return `<div class="mc-timeline">${loadOlder}${daySeparatorsHtml()}</div>`;
+            return `<div class="mc-timeline">${instance.conversation.error ? '<div class="mc-error" role="alert">刷新失败，当前为上次读取内容。<button class="button" type="button" data-action="mc-retry-conversation">重试</button></div>' : ""}${loadOlder}${daySeparatorsHtml()}</div>`;
         }
 
         function scrollEl() {
@@ -5950,6 +6028,9 @@
                 if (!data || Number(data.id) !== processingId || data.processStatus !== "PROCESSED") {
                     throw new Error("标记结果校验失败，请重试");
                 }
+                ++conversationReadSeq;
+                resolvedListFeedback.add(contactId);
+                renderList();
                 const resolvedBy = data.resolvedBy == null ? null : String(data.resolvedBy);
                 instance.processConfirm.key = null;
                 instance.processConfirm.busy = false;
@@ -10188,16 +10269,18 @@
         function afterSuccessfulSend(clearedKey) {
             const contactId = Number(instance.selectedContactId);
             const myEpoch = instance.convEpoch;
+            const readSeq = ++conversationReadSeq;
             const msgParams = new URLSearchParams();
             msgParams.set("limit", String(MESSAGE_LIMIT));
             const accountFilter = instance.conversation.accountScope || "";
             if (accountFilter) msgParams.set("accountCode", accountFilter);
             hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`).then((msgData) => {
-                if (instance.disposed || myEpoch !== instance.convEpoch) return;
+                if (instance.disposed || myEpoch !== instance.convEpoch || readSeq !== conversationReadSeq) return;
                 if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
                     if (instance.options.onAccessChanged) instance.options.onAccessChanged();
                     return;
                 }
+                instance.conversation.error = "";
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
                 instance.conversation.items = mergeServerIntoWindow(instance.conversation.items, serverItems);
                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
@@ -10205,7 +10288,11 @@
                 renderTimeline();
                 checkInboundChangeQuiet();
                 saveConversationState();
-            }).catch(() => {});
+            }).catch(() => {
+                if (instance.disposed || myEpoch !== instance.convEpoch || readSeq !== conversationReadSeq) return;
+                instance.conversation.error = "刷新失败";
+                renderTimeline();
+            });
             fetchList({ page: instance.list.page });
             // fast-p 03（IP-3）：发送成功恰由服务端产生排期，按 contactId 使两端失效并回读
             notifyMeetingScheduleChanged(contactId);
@@ -10214,38 +10301,48 @@
         // ---- quiet refresh（I-5：合并保留已加载窗口） ----
 
         function refreshConversationQuiet() {
+            // Initial navigation owns the scaffold/editor until its first message read settles.
+            if (instance.conversation.loading) return;
             const contactId = Number(instance.selectedContactId);
             if (!Number.isFinite(contactId) || contactId <= 0) return;
             const myEpoch = instance.convEpoch;
+            const readSeq = ++conversationReadSeq;
             loadExpertNote(contactId);
             const params = new URLSearchParams();
             params.set("limit", String(MESSAGE_LIMIT));
             const scopeAccount = instance.conversation.accountScope || "";
             if (scopeAccount) params.set("accountCode", scopeAccount);
             return hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((msgData) => {
-                if (instance.disposed || myEpoch !== instance.convEpoch) return;
+                if (instance.disposed || myEpoch !== instance.convEpoch || readSeq !== conversationReadSeq) return;
                 if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
                     if (instance.options.onAccessChanged) instance.options.onAccessChanged();
                     return;
                 }
+                const recovering = Boolean(instance.conversation.error);
+                instance.conversation.error = "";
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
                 const previous = JSON.stringify(instance.conversation.items, (key, value) => key === "serverNowMs" ? undefined : value);
                 if (serverItems.length === 0 && (instance.conversation.items || []).length === 0) {
                     instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
                     instance.conversation.hasMore = !!(msgData && msgData.hasMore);
+                    if (recovering) renderTimeline();
                     return;
                 }
                 instance.conversation.items = mergeServerIntoWindow(instance.conversation.items, serverItems);
                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
                 instance.conversation.hasMore = !!(msgData && msgData.hasMore);
-                if (previous !== JSON.stringify(instance.conversation.items, (key, value) => key === "serverNowMs" ? undefined : value)) renderTimeline();
+                if (recovering || previous !== JSON.stringify(instance.conversation.items, (key, value) => key === "serverNowMs" ? undefined : value)) renderTimeline();
                 checkInboundChangeQuiet();
                 saveConversationState();
                 // c3（T-1）：现有刷新成功后按同一 contact 重读推荐（渲染只重绘状态行）。
                 loadContactTiming(contactId);
                 // 02（T3.4）：已有会话刷新成功也是挂起状态 GET 的统一入口。
                 loadSuspensionState(contactId);
-            }).catch(() => {});
+            }).catch(() => {
+                if (instance.disposed || myEpoch !== instance.convEpoch || readSeq !== conversationReadSeq) return;
+                instance.conversation.error = "刷新失败";
+                renderTimeline();
+            });
         }
 
         function checkInboundChangeQuiet() {
