@@ -2,10 +2,11 @@
 id: K-progress-log-batchonly-two-readers
 domain: task
 created: 2026-09-24
-last_used: 2026-09-24
-hit_count: 3
+last_used: 2026-10-26
+hit_count: 10
 source: create-p:batch-execution-log-process-visibility-p1
 severity: P1
+last_source: fix-v:2026-10-26-recheck-repair:initial-pass
 ---
 
 `task_progress_log` 的通用任务弹窗与批量发送日志有不同契约，不应顺手统一。

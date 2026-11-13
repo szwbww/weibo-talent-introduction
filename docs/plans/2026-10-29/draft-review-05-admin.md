@@ -12,7 +12,7 @@
 3. 正文下方按历史邮件样式翻译、评论、查看变动历史；已审核且对话更新时弹确认框，确认不发送。
 必须保持：管理员原富文本工具/草稿/附件/人工发送，原时间线/筛选/chip；user1仍受限且不显示admin工具。
 不做：草稿列表弹窗、独立审核中心、第二富文本框、前端localStorage持久化、自动发送。
-本步14文件（含已证明的跨步门禁兼容及I-5严格占位符修正；仅此有界例外超过10文件/2子系统）、3子系统（admin邮箱前端、必跑后端契约测试、继承的审核草稿服务）；后端依赖01–03；已有共享存储新增字段0。
+本步6文件、1子系统（admin邮箱前端）；后端依赖01–03；已有共享存储新增字段0。
 
 ## 关键不变量
 继承01 I-1–I-7、02 I-8–I-10、03 I-11–I-15；新增：
@@ -168,12 +168,6 @@ approve发送expectedVersion及打开时服务端context token，409先刷新真
 ### T5：样式与验证（I-19–I-22，S-3/S-4/S-5）
 文件：`styles.css`、`index.html`、`mailReviewAdmin.test.js`、`mailboxServerDrafts.test.js`。
 仅新增S-5 CSS；04的共享块不改。统一所有版本资源为 `20261029-review-admin`；执行前按04当时键反查测试字面量。测试覆盖真实mode事件、旧回调、fetch序列，禁止仅搜“审核通过”字符串算通过。浏览器1440/390两宽实测native dialog、单editor、工具栏布局、取消/确认/重新确认。
-执行前反查证据：`grep pattern=20261029-review-reader path=src/test` 命中 `src/test/js/mailReviewReader.test.js:195` 的固定旧资源键断言；同文件191的 `endsWith(css)` 又与本步追加S-5必然冲突。追加授权该文件，仅保留所有资源键一致、S-1逐字块仍存在及真实DOM id存在性检查；退役旧键字面量/样式必须位于文件末尾的实现约束及固定标题源码措辞断言，不重钉新键/标题、不弱化安全权限或真实UI门禁。
-全量门禁实测1951项/1947通过/4失败/0跳过（artifact://1151），其中3个已证明的未列旧契约追加授权：batchEntryRelocation.test.js:31–38的“检查回复必须首子节点”与S-3插入前置待审按钮冲突，只改为保留原按钮容器/相对顺序；discoveryRecheck.test.js:103把尾部所有CSS当作dr-recheck块，只限定该模块的逐字CSS块而不吸收后续S-1/S-5；mailboxMailReadAccess.test.js:1237固定旧键后缀，只退役此断言、保留统一键与脚本邻接。第四项是新mailReviewAdmin.test.js缓存键字面量违反既有守卫，在原授权文件去除固定字面量即可。不得改旧功能/旧模块CSS或跳过测试。
-首次JDK11全量mvn实测5715项/1失败/24错误/24默认opt-in跳过（artifact://1207，raw1206）。仅追加2个必跑测试：AuthInterceptorTest.kt的旧“三个handler”精确白名单须反映01已批准reader审核草稿路由，保留精确verb/handler与其他路由拒绝覆盖，不改生产权限；UnmatchedInboundTrustWorkbenchTest.kt只对4个InvalidUseOfMatchers失败stub补齐03当前发送seam实参matcher，保留422/503/409及dedup结果断言，不改生产发送签名/实现。另20个国家时区初始化错误来自本机旧Zulu11.0.15缺America/Coyhaique；使用临时目录的当前Zulu11补丁版（仍Java11）及真实tzdb解决，不修改时区源码/fixture、不跳过。保留失败收据，最终全量和显式IT仍须重新跑完。
-当前Zulu11显式mysqlIt门禁MailReviewDraftIT实测12项/1失败/0错误/0跳过（artifact://1224/raw1238），原fixture `<p>${broken</p>` 未抛422。只追加MailReviewDraftService.kt：在既有审核草稿正文规范化/验证处复用现有严格 `requireValidTemplatePlaceholders`，替代只检查完整token的调用；保留后续完整变量一律禁用、HTML清洗与最终长度检查。此为继承01 I-5的有界产品修正，不改MailPlaceholderService/共享全局行为，不修改原失败测试或任何已应用迁移。产品修正前遵守代码引用检查；所有必跑命令最终重跑，记录当前JDK与真实运行证据。
-Epoch5独立轻验F-01证明I-20另有迟到retarget回调：原稿target90发起另建target101，进入review501后原GET仍能弹确认/改target/复制原稿附件。仅在既有mailbox-chat.js retarget路径捕获并复核manual mode/review epoch/原owner与target，在已列行为测试增加可控迟到回归；禁止跨来源确认/target改变/额外草稿，退出review须恢复原target/body/attachment。
-同轮必跑全量mvn5715/1失败/0错误/24默认opt-in跳过（artifact://1407）在DiscoveryVerificationWorkerTest.kt:65出现WAITING预期/RUNNABLE实际。仅追加此测试文件，移除63–65对JVM瞬时线程状态的忙等及断言，不替换为sleep/新状态轮询/更长超时或新字面量。保留paperEntered同步点以及后续中断退出、RUNNING租约/证据不变、未写失败/未扣预算、可重领、owner完成与缓存只解析一次等实质断言；不改任何Discovery生产实现、其他测试或跳过此用例。此为已证明全量门禁阻塞的有界测试修正，不新增产品范围。保留失败收据，重新跑全部原门禁。
 
 ## 变更文件清单
 | # | 文件（相对仓库根目录） | 操作 / 边界 |
@@ -184,14 +178,6 @@ Epoch5独立轻验F-01证明I-20另有迟到retarget回调：原稿target90发�
 | 4 | `src/main/resources/static/styles.css` | 仅追加S-5确认框CSS，复用04共享样式 |
 | 5 | `src/test/js/mailReviewAdmin.test.js` | 新增计数/模式/确认/翻译/生命周期行为和样式测试 |
 | 6 | `src/test/js/mailboxServerDrafts.test.js` | 原草稿与审核模式切换回归 |
-| 7 | `src/test/js/mailReviewReader.test.js` | 仅调整跨步资源键/逐字CSS块共存契约，退役固定旧键、文件尾位置及标题源码措辞断言 |
-| 8 | `src/test/js/batchEntryRelocation.test.js` | 仅兼容S-3前置待审按钮，保留原动作容器与按钮相对顺序 |
-| 9 | `src/test/js/discoveryRecheck.test.js` | 仅移除EOF位置耦合，保留dr-recheck逐字CSS/DOM契约 |
-| 10 | `src/test/js/mailboxMailReadAccess.test.js` | 仅退役固定旧缓存键后缀，保留统一键与脚本邻接/权限检查 |
-| 11 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 仅将真实handler/verb精确权限矩阵与01已批准reader草稿API对齐，保留拒绝门禁 |
-| 12 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt` | 仅修复4个stub实参matcher与03当前seam兼容；保留HTTP错误及dedup行为断言 |
-| 13 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt` | 仅在既有规范化验证处复用现有严格占位符校验，关闭I-5不完整token准入缺口；其余行为不变 |
-| 14 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` | 仅移除首次用例63–65的JVM线程状态忙等/断言，保留同步点及全部租约/取消/缓存结果断言；不改Discovery生产代码 |
 
 ## 验收标准
 - I-19：3条/2人fixture；top3、卡2/1、分页expert total2；点击按钮不出现草稿弹框；退出恢复原chip；错误不显0。
@@ -251,21 +237,9 @@ node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
 
-## 修正记录
 
-- 2026-10-30：按用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”持续授权，执行前缓存键反查命中mailReviewReader.test.js:195；191的文件尾CSS锚定与05追加S-5冲突。05补此第7文件，仅保留跨步统一键/逐字S-1块/DOM存在性，退役固定版本/位置/标题措辞断言，不重钉、不扩大功能或削弱浏览器门禁；对应fast-p ledger A9/A10。
+## 2026-10-29 后续权限与UI衔接修正
 
-- 2026-10-30：持续授权下，基于首次全量node门禁1951/1947/4失败/0跳过收据（artifact://1151），补入上述3个旧前端契约文件，05由7文件变10文件；只修正首节点/EOF耦合与固定旧键断言，保留原按钮顺序、旧模块逐字样式和权限、统一资源及真实UI门禁。新测试自己引入的键字面量在原授权文件删除，不改守卫；对应ledger A11/A12。
+用户后续已确认把待审核筛选移入原“更多筛选”最上面，并增加按专家FULL权限。本计划尚未实施；后续实施与[专家分级权限总计划](expert-access-master.md)组合时，顶部`mailboxReviewPendingBtn`的DOM/绑定/测试要求由新计划08的S-3替代，不创建旧顶部按钮。旧05的审核状态、共用富文本、翻译、评论、历史和发送校验保持；待审入口的最终UI人工验收合并到新计划08执行。前置05机器验证可直接设置reviewOnly查询状态验证，不把缺少已废弃按钮当失败。
 
-- 2026-10-30：持续授权下首次完整mvn收据5715/1失败/24错误/24默认opt-in跳过（artifact://1207）证明旧精确reader白名单与4个发送stub实参兼容问题；补入上述2个测试，05例外12文件/2子系统，只有必跑门禁测试增加，不改后端产品。20个时区错误通过临时当前Zulu11真实tzdb解决；全部原机器门禁/安全权限/发送断言不变。对应ledger A13/A14。
-
-- 2026-10-30：持续授权下，当前Zulu11显式MailReviewDraftIT12项/1失败/0错误/0跳过（artifact://1224/raw1238）证明原 `<p>${broken</p>` fixture不被拒；新增上述单个已有服务文件，05有界例外13文件/3子系统，复用已有严格校验只关闭继承I-5缺口。前次“无后端产品改动”的兼容限定仅对此单文件被本记录修正；共享placeholder实现/原失败测试/迁移/权限与发送均不改。对应ledger A15/A16。
-
-- 2026-10-30：Epoch5独立轻验F-01（I-20迟到retarget）须在已有前端路径/行为测试内关闭；O-01全量mvn失败收据artifact://1407证明DiscoveryVerificationWorkerTest.kt:65的瞬时线程状态断言不稳定，只追加此1测试并移除忙等/状态断言，原取消/租约/预算/owner与缓存实质检查全部保留，不改Discovery产品、不重跑确认已报错、不跳过门禁。05白名单14文件/3子系统；持续授权下先登记后执行，进入Epoch6，保留Epoch5失败。对应ledger A17/A18。
-
-## expert-access组合执行的权威修正（2026-10-30）
-
-- 当前执行宿主为expert-access-master的review05前置子项，唯一工作树`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-access-master`，唯一分支`fast/expert-access-master`；01–04已经在执行基线通过独立验证，不重放。用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”授权此有界前置闭环与下列最终UI裁决。
-- 本节优先于本文I-19、S-3、T1、A-1中的顶部按钮要求：禁止创建mailboxReviewPendingBtn的DOM、绑定或对应按钮契约。保留真实服务端待审计数、先筛后分页、专家卡数量和窄setReviewPendingOnly状态接口；本阶段通过API/内部接口验证筛选，最终可见入口由expert-access-08的原更多筛选第一项实现。现有七字段、原toolbar按钮及原草稿chip不变。
-- 其余I-20/I-21/I-22与S-4/S-5完整执行，单编辑器、原稿/附件隔离、审批不发送、确认不发送、必须再次显式发送等门禁均不变。A-1/A-5中“点击顶部按钮”改用内部setReviewPendingOnly，最终人验仍由expert-access-08覆核。
-- 沿用本文13个Authorized Files及原完整node/JDK11/mysqlIt/migrationIt门禁；不扩展产品行为，不改其他子计划、共享CSS或已应用迁移。无缺失先例时不把旧源码/缓存键/EOF位置契约重新钉死。
+user1的READ继续本计划流程；FULL新人工稿走现有mailbox_reply_draft直接人工发送，但不能因此编辑/删除APPROVED审核稿；对应后台兼容由新计划04b处理。迁移V169仍先于新权限V170/V171，禁止并行抢号。本修正是后续开发计划交接，不表示已批准或实现FULL功能。

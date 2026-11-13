@@ -2,8 +2,8 @@
 id: K-ai-generation-observability-not-send-gate
 domain: mail
 created: 2026-07-21
-last_used: 2026-08-18
-hit_count: 37
+last_used: 2026-10-21
+hit_count: 38
 source: create-p:ai-adopt-direct-manual-send
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 severity: P1

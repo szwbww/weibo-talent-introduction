@@ -2,8 +2,8 @@
 id: K-global-p-is-muted-in-dialogs
 domain: frontend
 created: 2026-08-21
-last_used: 2026-09-20
-hit_count: 3
+last_used: 2026-11-01
+hit_count: 7
 source: create-p:ui-tweaks-02-overlay-and-dialog-contrast
 severity: P2
 ---

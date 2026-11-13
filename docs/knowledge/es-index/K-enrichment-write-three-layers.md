@@ -2,8 +2,8 @@
 id: K-enrichment-write-three-layers
 domain: es-index
 created: 2026-09-21
-last_used: 2026-09-22
-hit_count: 14
+last_used: 2026-10-24
+hit_count: 18
 source: create-p:expert-enrichment-backend
 ---
 

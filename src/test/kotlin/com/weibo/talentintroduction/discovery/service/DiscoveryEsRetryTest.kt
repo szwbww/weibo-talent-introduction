@@ -41,6 +41,25 @@ class DiscoveryEsRetryTest {
         assertEquals(4, attempts); assertEquals(17_000L, time.elapsed)
     }
 
+    @Test fun `a Boolean writer cannot hide exhausted forbidden retries or leak them to the next call`() {
+        var attempts = 0
+        val result = DiscoveryEsRetry.withContext(Time(), { false }) {
+            DiscoveryEsRetry.captureForbiddenExhaustion {
+                try {
+                    DiscoveryEsRetry.execute("RAW_CREATE") {
+                        attempts++
+                        throw HttpClientErrorException(HttpStatus.FORBIDDEN)
+                    }
+                    true
+                } catch (_: Exception) { false }
+            }
+        }
+        assertEquals(false to true, result)
+        assertEquals(4, attempts)
+        assertEquals(true to false, DiscoveryEsRetry.captureForbiddenExhaustion { true })
+        assertEquals(false to false, DiscoveryEsRetry.captureForbiddenExhaustion { false })
+    }
+
     @Test fun `non forbidden failures never retry or mask conflicts`() {
         for (status in listOf(HttpStatus.UNAUTHORIZED, HttpStatus.NOT_FOUND, HttpStatus.CONFLICT,
             HttpStatus.TOO_MANY_REQUESTS, HttpStatus.INTERNAL_SERVER_ERROR)) {

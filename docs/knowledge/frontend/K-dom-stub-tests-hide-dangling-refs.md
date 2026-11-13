@@ -2,10 +2,11 @@
 id: K-dom-stub-tests-hide-dangling-refs
 domain: frontend
 created: 2026-08-06
-last_used: 2026-09-23
-hit_count: 17
+last_used: 2026-10-27
+hit_count: 21
 source: create-p:batch-manual-execution-observability-p2
 severity: P1
+last_source: fix-v:2026-10-26-recheck-repair:initial-pass
 ---
 
 经验：仓库的前端测试用 `extractFn` + DOM stub（`sb.__store`）在 vm sandbox 里运行函数，

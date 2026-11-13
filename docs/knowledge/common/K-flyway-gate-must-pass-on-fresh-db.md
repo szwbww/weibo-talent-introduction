@@ -2,8 +2,8 @@
 id: K-flyway-gate-must-pass-on-fresh-db
 domain: common
 created: 2026-09-02
-last_used: 2026-10-26
-hit_count: 1
+last_used: 2026-11-01
+hit_count: 4
 source: execute-p:provider-undelivered-column (repair)
 last_source: fix-v:publish-build-repair:initial-pass
 severity: P0

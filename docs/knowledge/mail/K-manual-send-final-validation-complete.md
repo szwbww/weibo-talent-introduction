@@ -2,8 +2,8 @@
 id: K-manual-send-final-validation-complete
 domain: mail
 created: 2026-07-20
-last_used: 2026-07-20
-hit_count: 4
+last_used: 2026-11-04
+hit_count: 5
 source: fix-v:ai-reply-07-final-send-integrity-plan:fix-2
 last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1

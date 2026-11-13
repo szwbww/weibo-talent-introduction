@@ -2,8 +2,8 @@
 id: K-manual-send-unknown-must-converge
 domain: mail
 created: 2026-07-20
-last_used: 2026-09-16
-hit_count: 7
+last_used: 2026-11-04
+hit_count: 8
 source: fix-v:ai-reply-07-final-send-integrity-plan:fix-1
 last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 severity: P1

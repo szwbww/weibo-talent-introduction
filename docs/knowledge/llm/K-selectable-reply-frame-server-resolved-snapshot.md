@@ -2,8 +2,8 @@
 id: K-selectable-reply-frame-server-resolved-snapshot
 domain: llm
 created: 2026-08-05
-last_used: 2026-08-05
-hit_count: 0
+last_used: 2026-10-21
+hit_count: 2
 source: create-p:trust-reply-configurable-workbench
 severity: P1
 ---

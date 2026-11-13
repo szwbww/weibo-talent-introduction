@@ -63,6 +63,27 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 
 ## 团队沉淀知识
 
+- 新增Flyway迁移须全量搜索src/test的targetSchemaVersion及migrationsExecuted：fresh断言跟随最新版本，历史升级测试显式target原版本，不能只更新名称带Flyway的测试类。(K-flyway-latest-version-test-pin)
+
+- 人工发送指纹必须覆盖完整来源、账号、收件人、最终正文及有序事实；新业务关联只在新路径追加域隔离段，保留旧请求指纹字节不变。(K-manual-send-fingerprint-complete-identity)
+
+- 解析实现版本、队列缓存兼容版本、身份凭证版本分别管理；consumeQueuedItem严格校验EXTRACTION_VERSION，盲目升级会拒绝所有来源旧缓存，不能借日志版本升级暗中作废缓存。(K-identity-cache-version-and-admission)
+
+- 分类补全的LocalDateTime领域对象直写会与HTTP日期格式分裂；核查classificationNode与Search日期解析，真实converter回放才是wire证据（修复仍待实施）。(K-classification-localdatetime-wire-format)
+- 批量统计改缓存前须拆开配额控制、候选早停、日志计数；首封与材料两个循环均需审计，缓存不得作为发送许可。（计划阶段发现）(K-batch-count-is-control-dependency)
+
+- 邮箱异步正文操作同时捕获owner、草稿Map、target、epoch和revision；保存时合并最新草稿，避免迟到回包跨专家写入或丢附件。(K-mailbox-draft-cache-owner-capture)
+
+- 新增ES字段须同步三层mapping、ExpertProfile、sourceFields及toExpertProfile；对外返回时再核对DTO映射。(K-expert-profile-source-sync)
+- country参与机构token并间接进入核验事实指纹；补全优先在首次冻结前，重复登记必须采用实际持久化快照，不能局部重签覆盖RAW。(K-country-bound-to-institution-token)
+
+- 机构比较同时由Worker、准入Gate和QueryService消费；更换算法须明确持久旧记录与在途查询的兼容语义，不能只改一个调用点。(K-institution-rule-persisted-context)
+
+- 作者身份必须绑定可核验且唯一的邮箱归属；同名、首字母或同论文不能替代身份凭据，代码升级也不会自动修复旧数据。(K-author-identity-needs-email-evidence)
+- 核验原文缓存与派生evidence独立持久化；解析修复需显式重建缓存证据，不能在APOLLO_SEARCH恢复中重排查询游标；准入仍须经过Gate复算与commit保护。(K-verification-cached-evidence-replay)
+
+- 任务启动配置要覆盖 preload/run、真实 execution 绑定与失败原因；连续发现的 202 仅受理，须走 pipeline 状态绑定，新增字段在切换弹窗前冻结，不能套同步完成通知。(K-task-launch-config-registration)
+
 - `--panel-bg` 为半透明 rgba(255,255,255,.55)，需遮住底层内容的浮层必须单独定义不透明背景，不能靠提高 z-index 修复透底。(K-panel-bg-token-is-translucent)
 
 - 模板变体审计同时覆盖正式 render/renderByCode 与两类 preview-draft；专家 seed 的旧规则不等于独立随机，改回复片段选择时必须单独保护 QA 确定性。(K-variant-seed-call-sites)
@@ -94,7 +115,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - QA 使用审计的实际选用规则必须以 `mail_record_qa_rule` 为准；操作日志仅记录上下文，只有历史关联缺失时才允许回退日志字段。(K-audit-selected-source)
 - QA 人工外发回复的纯文本与 HTML 渲染、风险校验、落库和审计必须共享同一 canonical `qaRuleIds`，并在 SMTP 前完成校验。(K-qa-outbound-render-seams)
 - 新增 enrichment ES 字段必须只在 `ExpertDiscoveryService.updateExpertAcademicFields()` 的 doc map 显式写入，并依赖该方法对 RAW/CANDIDATE/APPLICATION 三层的按需 `_update`；晋升路径保持 `_source` 全量透传。(K-enrichment-write-three-layers)
-- 回复 frame（问候、致谢、结束语）的现存消费者集中在 `AiReplyPointByPointComposer` Grounded 组装及 `AiReplyDraftService` matched/FREE_FORM prompt/fallback；改 Grounded frame 只改前者，改全局 snippet 前重新 grep 全部 `resolveManualFrame/resolveAck`。(K-manual-frame-three-consumers)
+- 回复frame同时有legacy（AiReplyPointByPointComposer/AiReplyDraftService）和selectable（RagLetterComposer/TrustReplyWorkbenchService）消费者；mailbox-chat跟进还自行拼首尾，修改全局snippet须分别审计。(K-manual-frame-three-consumers)
 - AI 草稿生成有训练模拟、收发件箱工作台、Grounded 自动 decision 三个生产入口；跨入口 prompt/结构/claim/action gate 必须收口在 `AiReplyDraftService.generate()`，deterministic fallback 与自动 fail-closed 门禁仍是独立边界。(K-ai-generate-single-freeform-seam)
 - AI 回复模型由浏览器传稳定业务枚举、由服务端映射 provider model id；回复专用扩展须使用窄 seam，禁止扩改全局 `chat/stitchDraft` 签名。(K-reply-model-stable-enum-mapping)
 - AI 失败 fallback 可在“采用到编辑器”边界按当前草稿 `usedLlm/generationState` 禁用；但人工自行撰写后的最终发送不得读取历史 READY/NEEDS_REVIEW/BLOCKED、draft identity 或审计作为审批条件。(K-ai-generation-observability-not-send-gate)
@@ -156,7 +177,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 删除 UI 功能必须同步删/改直接断言旧 DOM id、函数名、endpoint、表格列的前端契约测试，并把这些测试文件列入变更清单；否则全量测试持续失败阻塞发布。反向陷阱：本仓 JS 测试用 DOM stub，`document.getElementById` 永远返回元素，**真实 index.html 里 id 已删除测试仍全绿**，故还须对新增 id 做一次源文本存在性断言。(K-ui-removal-retires-obsolete-contract-tests, K-dom-stub-tests-hide-dangling-refs)
 - 任何 claim/source 真实性校验只能读 enabled 且非空的 `answerBody`；`displayName` 只能作 UI/prompt 标签，不得参与事实匹配。(K-answerbody-source-exclusive)
 - `sendQaRuleIds` 有两套产生口径：`select()` 走 `orderEvidenceRuleIds`（只读 intent 证据），workbench 走 `flatMap { factRuleIds }`；任何扩大 `factRuleIds` 的改动必须同时评估两条，否则正文与 `mail_record_qa_rule` 审计对不上。(K-send-rule-ids-two-derivations)
-- 本仓没有任何缓存框架（无 Spring Cache/Caffeine/Redis）；需要缓存只有「服务字段上的 ConcurrentHashMap」或「新建带 expiresAt 的表 + Flyway 迁移」两条路。(K-no-cache-framework-in-repo)
+- 2026-10-22复核未配置Spring Cache/Caffeine/Redis；新增缓存须明确容量、并发、失败与重启语义，不假定@Cacheable可用，亦不把历史缓存示例当成穷举。(K-no-cache-framework-in-repo)
 
 - 删除 UI 功能（DOM / 端点 / 表格列）必须同步删除或改写直接断言它们的契约测试，并把这些测试文件列入变更文件清单；漏掉会让全量测试持续失败并阻塞发布。(K-ui-removal-retires-obsolete-contract-tests)
 - 前端测试用 `extractFn` + DOM stub，`document.getElementById` 永远返回 stub，因此真实 `index.html` 里 DOM 已删除时测试仍全绿而函数在生产中静默短路；新增「按 id 取元素再写入」的渲染函数时，测试中必须额外断言该 id 出现在 `index.html` 源文本里。(K-dom-stub-tests-hide-dangling-refs)

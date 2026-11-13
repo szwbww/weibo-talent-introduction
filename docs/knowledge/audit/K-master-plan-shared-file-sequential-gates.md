@@ -2,8 +2,8 @@
 id: K-master-plan-shared-file-sequential-gates
 domain: audit
 created: 2026-08-24
-last_used: 2026-09-23
-hit_count: 3
+last_used: 2026-10-29
+hit_count: 8
 source: create-p:00-trust-reply-manual-authority-master
 severity: P1
 ---

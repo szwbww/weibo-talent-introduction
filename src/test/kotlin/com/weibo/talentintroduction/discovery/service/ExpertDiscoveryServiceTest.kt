@@ -2026,7 +2026,7 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `a synchronous page with an incomplete repair stops without advancing the page (I-3)`() {
-        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.FAILED))
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.FAILED), timeSource = FakeTime())
         DiscoveryMockHelper.stubSearchPapers(
             europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
         )
@@ -2171,7 +2171,7 @@ class ExpertDiscoveryServiceTest {
         val registrar = personRegistrar(
             DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.FAILED, "REGISTRATION_EXCEPTION")
         )
-        val svc = createService(personRegistrationService = registrar)
+        val svc = createService(personRegistrationService = registrar, timeSource = FakeTime())
         DiscoveryMockHelper.stubSearchPapers(
             europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
         )
@@ -2193,6 +2193,8 @@ class ExpertDiscoveryServiceTest {
             "登记未完成的页必须保留进入该页的游标"
         )
         assertTrue(sourceStats?.pendingWork == true)
+        Mockito.verify(registrar, Mockito.times(4)).refresh(Mockito.anyString(), Mockito.anyString())
+        assertEquals(1, sourceStats?.indexed, "人物登记重试不得重复创建 RAW")
     }
 
     @Test
@@ -5023,6 +5025,246 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `ready sources rotate by page even when retry delays are disabled`() {
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn("CROSSREF").`when`(crossref).sourceName
+        Mockito.doReturn("PDF_PARSE").`when`(crossref).emailExtractionMethod
+        Mockito.doReturn(100).`when`(crossref).maxPapersPerSource
+        val order = mutableListOf<String>()
+        for ((name, source) in listOf<Pair<String, AcademicDataSource>>("EUROPE_PMC" to europePmc, "CROSSREF" to crossref)) {
+            var page = 0
+            Mockito.doAnswer {
+                page++
+                order += "$name:$page"
+                PaperSearchResult(listOf(paper("$name-$page", "Paper")), if (page < 3) "$page" else null, 3)
+            }.`when`(source).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+            DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(source, "NO_EMAIL_IN_FULLTEXT")
+        }
+        val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()))
+            .discover(PaperSearchCriteria(pageSize = 1, sources = listOf("EUROPE_PMC", "CROSSREF")), "TEST", 42L, false)
+        assertEquals(listOf("EUROPE_PMC:1", "CROSSREF:1", "EUROPE_PMC:2", "CROSSREF:2", "EUROPE_PMC:3", "CROSSREF:3"), order)
+        assertEquals(6, result.stats.totalPapers)
+        assertTrue(result.stats.bySource.values.all { it.stopReason == DiscoveryStopReason.EXHAUSTED && it.retry == null })
+    }
+
+    @Test
+    fun `a due search recovery runs before a healthy source finishes all pages`() {
+        val time = FakeTime()
+        val openAlex = mockOpenAlex()
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn("CROSSREF").`when`(crossref).sourceName
+        Mockito.doReturn("PDF_PARSE").`when`(crossref).emailExtractionMethod
+        Mockito.doReturn(100).`when`(crossref).maxPapersPerSource
+        val order = mutableListOf<String>()
+        var searches = 0
+        Mockito.doAnswer {
+            if (++searches <= 3) throw ResourceAccessException("timeout", SocketTimeoutException())
+            order += "RECOVERED"
+            PaperSearchResult(emptyList(), null, 0)
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        var page = 0
+        Mockito.doAnswer {
+            order += "PAGE${++page}"
+            time.current = time.current.plusSeconds(20)
+            PaperSearchResult(listOf(paper("P$page", "Paper")), if (page < 3) "$page" else null, 3)
+        }.`when`(crossref).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(crossref, "NO_EMAIL_IN_FULLTEXT")
+        createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(10))), timeSource = time)
+            .discover(PaperSearchCriteria(pageSize = 1, sources = listOf("OPENALEX", "CROSSREF")), "TEST", 42L, false)
+        assertEquals(listOf("PAGE1", "RECOVERED", "PAGE2", "PAGE3"), order)
+    }
+
+    @Test
+    fun `dedup recovery followed by RAW failure retains the author until the write succeeds`() {
+        val author = verifiedAuthorEmail("retry@ox.ac.uk", "Retry", "Author", true, "Oxford", null)
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(author))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, author.email, EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        Mockito.doReturn(false, true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        var searches = 0
+        Mockito.doAnswer {
+            if (++searches <= 3) throw ResourceAccessException("timeout", SocketTimeoutException())
+            ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays =
+            listOf(Duration.ofSeconds(1), Duration.ofSeconds(1))), timeSource = FakeTime())
+            .discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC")), "TEST", 42L, false)
+        val stats = result.stats.bySource.getValue("EUROPE_PMC")
+        assertEquals(5, searches)
+        assertEquals(1, stats.papersSearched)
+        assertEquals(1, stats.authorsExtracted)
+        assertEquals(1, stats.indexed)
+        assertEquals(0, stats.dedupErrors)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, stats.stopReason)
+        Mockito.verify(europePmc, Mockito.times(1)).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper("P", "P"))
+        Mockito.verify(indexWriterService, Mockito.times(2)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    @Test
+    fun `enqueue recovery completes the existing RAW without recreating it or downloading again`() {
+        val docs = installOwnershipStorage()
+        val author = verifiedAuthorEmail("retry@ox.ac.uk", "Retry", "Author", true, "Oxford", null)
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(author))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, author.email, EmailValidationResult(2, true))
+        Mockito.doThrow(IllegalStateException("temporary queue outage")).doNothing().`when`(enrichmentJobService)
+            .enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.anyLong())
+        val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(1))), timeSource = FakeTime())
+            .discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC")), "TEST", 42L, false)
+        val stats = result.stats.bySource.getValue("EUROPE_PMC")
+        assertEquals(1, stats.papersSearched)
+        assertEquals(1, stats.authorsExtracted)
+        assertEquals(1, stats.indexed)
+        assertEquals(0, stats.duplicates, "recovery is not a newly collected duplicate")
+        assertEquals(DiscoveryStopReason.EXHAUSTED, stats.stopReason)
+        assertEquals(1, docs.keys.count { it.contains("/orcid_info/_doc/") })
+        Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.anyLong())
+        Mockito.verify(europePmc, Mockito.times(1)).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper("P", "P"))
+    }
+
+    @Test
+    fun `a persistently failed author does not starve a recoverable author in the same page`() {
+        val authors = listOf(
+            verifiedAuthorEmail("bad@ox.ac.uk", "Bad", "Author", true, "Oxford", null),
+            verifiedAuthorEmail("good@ox.ac.uk", "Good", "Author", false, "Oxford", null))
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), "NEXT", 2))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, authors)
+        authors.forEach { DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(2, true)) }
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        var badWrites = 0
+        var goodWrites = 0
+        Mockito.doAnswer { call ->
+            val profile = call.getArgument<Map<String, Any?>>(1)
+            if (profile["email"] == "bad@ox.ac.uk") { badWrites++; false } else ++goodWrites > 1
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        val criteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"), cursor = "ENTRY")
+        installInMemoryCursorStore()
+        val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays =
+            listOf(Duration.ofSeconds(1), Duration.ofSeconds(1))), timeSource = FakeTime())
+            .discover(criteria, "TEST", 42L, false)
+        val stats = result.stats.bySource.getValue("EUROPE_PMC")
+        assertEquals(3, badWrites)
+        assertEquals(2, goodWrites)
+        assertEquals(1, stats.indexed)
+        assertEquals(2, stats.authorsExtracted)
+        assertEquals(DiscoveryStopReason.RAW_WRITE_INCOMPLETE, stats.stopReason)
+        assertEquals("ENTRY", storedCheckpointFor("EUROPE_PMC", criteria).cursor)
+        Mockito.verify(europePmc, Mockito.times(1)).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper("P", "P"))
+    }
+
+    @Test
+    fun `RAW recovery cannot reset a forbidden retry budget exhausted during the recovery`() {
+        val author = verifiedAuthorEmail("retry@ox.ac.uk", "Retry", "Author", true, "Oxford", null)
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(author))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, author.email, EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        var writes = 0
+        var forbiddenRequests = 0
+        Mockito.doAnswer {
+            if (++writes == 1) false else {
+                try {
+                    DiscoveryEsRetry.execute("RAW_CREATE") {
+                        forbiddenRequests++
+                        throw HttpClientErrorException(HttpStatus.FORBIDDEN)
+                    }
+                    true
+                } catch (_: Exception) { false }
+            }
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        val result = createService(timeSource = FakeTime())
+            .discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC")), "TEST", 42L, false)
+        assertEquals(2, writes)
+        assertEquals(4, forbiddenRequests)
+        assertEquals(DiscoveryStopReason.RAW_WRITE_INCOMPLETE, result.stats.bySource.getValue("EUROPE_PMC").stopReason)
+        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").retry?.round)
+    }
+
+    @Test
+    fun `activation recovery does not repeat RAW lookup write or successful enqueue`() {
+        val author = verifiedAuthorEmail("retry@ox.ac.uk", "Retry", "Author", true, "Oxford", null)
+        val registration = Mockito.mock(DiscoveryVerificationRegistrationService::class.java)
+        Mockito.doReturn(DiscoveryVerificationExecution(42L)).`when`(registration)
+            .begin(Mockito.anyLong(), Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyBoolean())
+        Mockito.doReturn(DiscoveryRegistration()).`when`(registration).reserve(
+            Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L),
+            Mockito.anyString(), anyProfile(), Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        Mockito.doThrow(DiscoveryRegistrationException(IllegalStateException("activation outage"))).doNothing()
+            .`when`(registration).activate(Mockito.any(DiscoveryRegistration::class.java) ?: DiscoveryRegistration())
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(author))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, author.email, EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        val result = createService(timeSource = FakeTime(), verificationRegistration = registration)
+            .discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC")), "TEST", 42L, false)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, result.stats.bySource.getValue("EUROPE_PMC").stopReason)
+        assertEquals(1, result.stats.indexed)
+        Mockito.verify(registration, Mockito.times(2)).activate(Mockito.any(DiscoveryRegistration::class.java) ?: DiscoveryRegistration())
+        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        Mockito.verify(enrichmentJobService, Mockito.times(1)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.anyLong())
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST),
+            Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+    }
+
+    @Test
+    fun `CORE and ORCID recover a transient search on the same cursor`() {
+        val core = Mockito.mock(CoreDataSource::class.java)
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(core).`when`(coreProvider).getIfAvailable()
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        Mockito.doReturn("CORE").`when`(core).sourceName
+        Mockito.doReturn("FULLTEXT_TEXT").`when`(core).emailExtractionMethod
+        Mockito.doReturn(100).`when`(core).maxPapersPerSource
+        Mockito.doReturn("ORCID").`when`(orcid).sourceName
+        Mockito.doReturn(100).`when`(orcid).maxRecordsPerRun
+        val cursors = mutableListOf<Pair<String, String?>>()
+        var coreCalls = 0
+        var orcidCalls = 0
+        Mockito.doAnswer { call ->
+            cursors += "CORE" to call.getArgument<PaperSearchCriteria>(0).cursor
+            if (++coreCalls <= 3) throw ResourceAccessException("connection interrupted", java.io.EOFException())
+            CoreDataSource.CoreSearchPage(PaperSearchResult(emptyList(), null, 0), false, 0)
+        }.`when`(core).searchCorePage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        Mockito.doAnswer { call ->
+            cursors += "ORCID" to call.getArgument<PaperSearchCriteria>(0).cursor
+            if (++orcidCalls <= 3) throw ResourceAccessException("connection interrupted", java.io.EOFException())
+            OrcidDataSource.OrcidSearchPage(emptyList(), null, 0)
+        }.`when`(orcid).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val result = createService(discoveryProperties.copy(maxPapersPerRun = 300,
+            openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(1))), timeSource = FakeTime())
+            .discover(PaperSearchCriteria(sources = listOf("CORE", "ORCID"), cursor = "ENTRY"), "TEST", 42L, false)
+        assertEquals(4, coreCalls)
+        assertEquals(4, orcidCalls)
+        assertTrue(cursors.all { it.second == "ENTRY" })
+        for (name in listOf("CORE", "ORCID")) {
+            assertEquals(DiscoveryStopReason.EXHAUSTED, result.stats.bySource.getValue(name).stopReason)
+            assertEquals(0, result.stats.bySource.getValue(name).sourceFailureCount)
+        }
+    }
+
+    @Test
+    fun `ORCID bad request remains terminal without retries`() {
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        Mockito.doReturn("ORCID").`when`(orcid).sourceName
+        Mockito.doReturn(100).`when`(orcid).maxRecordsPerRun
+        Mockito.doThrow(HttpClientErrorException(HttpStatus.BAD_REQUEST)).`when`(orcid)
+            .searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val result = createService(timeSource = FakeTime())
+            .discover(PaperSearchCriteria(sources = listOf("ORCID")), "TEST", 42L, false)
+        assertEquals(DiscoveryStopReason.SEARCH_FAILED, result.stats.bySource.getValue("ORCID").stopReason)
+        Mockito.verify(orcid, Mockito.times(1)).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+    }
+
+    @Test
     fun `Crossref and Arxiv retry transient same-page search then recover after other sources`() {
         val time = FakeTime()
         val crossref = Mockito.mock(CrossrefDataSource::class.java)
@@ -6120,7 +6362,7 @@ class ExpertDiscoveryServiceTest {
     @Test
     fun `page with failed RAW persistence keeps the entering cursor for replay`() {
         // I-1: 未完成 RAW 持久化的页不得推进检查点
-        val svc = createService()
+        val svc = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()))
         val criteria = PaperSearchCriteria()
         stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
         val page = (1..2).map { paper("PMC$it", "Paper $it") }
@@ -6143,7 +6385,7 @@ class ExpertDiscoveryServiceTest {
         assertEquals(2, result.stats.rawWriteFailed)
         assertEquals(1, result.stats.pendingSources)
         assertEquals(DiscoveryStopReason.RAW_WRITE_INCOMPLETE, result.stats.bySource["EUROPE_PMC"]?.stopReason)
-        // I-1/I-2：消费类错误（RAW 写入失败）保留进入页游标重放，但绝不进入搜索延迟恢复组。
+        // Explicitly disabled recovery must still retain the entering cursor.
         assertNull(result.stats.bySource["EUROPE_PMC"]?.retry)
     }
 
@@ -7387,7 +7629,7 @@ class ExpertDiscoveryServiceTest {
     fun `补全入队失败保留当前页，重放按匹配 _id 补建任务且只新增 1 人（I-1）`() {
         // I-1 缺陷复现：RAW 已落库但入队失败时，旧实现既没有任务也不保留页（跨 ES/MySQL 崩溃窗口漏任务）。
         val criteria = PaperSearchCriteria()
-        val first = createService()
+        val first = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()))
         stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
         val page = PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
         DiscoveryMockHelper.stubSearchPapersSequence(europePmc, page, PaperSearchResult(emptyList(), null, 4))
@@ -8318,7 +8560,8 @@ class ExpertDiscoveryServiceTest {
                     rawDocuments += invocation.getArgument<Map<String, Any?>>(1)
                     true
                 }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
-                val service = createService(verificationRegistration = fault.registration,
+                val service = createService(props = discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()),
+                    verificationRegistration = fault.registration,
                     sampleCapture = if (sampling) DiscoverySampleCapture(store) else null)
                 installInMemoryCursorStore()
                 storedCheckpoints.clear()

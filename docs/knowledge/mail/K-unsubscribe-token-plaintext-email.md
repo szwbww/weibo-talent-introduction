@@ -2,8 +2,8 @@
 id: K-unsubscribe-token-plaintext-email
 domain: mail
 created: 2026-09-25
-last_used: 2026-09-25
-hit_count: 2
+last_used: 2026-10-24
+hit_count: 3
 source: create-p:mail-open-tracking-00-master
 severity: P1
 ---

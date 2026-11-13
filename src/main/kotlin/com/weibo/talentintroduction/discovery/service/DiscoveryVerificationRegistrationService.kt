@@ -233,11 +233,11 @@ class DiscoveryVerificationRegistrationService(
             }
             // I-3: a retry or a concurrent reservation must consume the already frozen facts and issue no HTTP.
             val existing = repository.findItemsByDocIds(listOf(docId))
-                .filter { it.identityHash == snapshot.identityHash && it.policyVersion == run.policyVersion }
+                .filter { it.reviewEpoch == 0L && it.identityHash == snapshot.identityHash && it.policyVersion == run.policyVersion }
             require(existing.size <= 1) { "Multiple reservations for the same identity and policy" }
             existing.firstOrNull()?.let {
                 if (context.archivedPaper?.parent != null) require(it.ownerExecutionId == run.executionId) { "FOREIGN_REGISTRATION" }
-                return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config)
+                return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config, context.archivedPaper?.parent != null)
             }
 
             var finalProfile = rawProfile
@@ -271,7 +271,9 @@ class DiscoveryVerificationRegistrationService(
                     run.policyVersion, sourceName, sourceItemKey, saved, finalSnapshot.factFingerprint), clock.instant())
             }!!
             if (archived?.parent != null) require(item.ownerExecutionId == archived.parent.executionId) { "FOREIGN_REGISTRATION" }
-            return freeze(item, rawProfile, sourceName, sourceItemKey, config)
+            // reserveItem may return a concurrent reservation, including a previously failed RAW write.
+            return resumeExisting(item, rawProfile, sourceName, sourceItemKey, config,
+                archived?.parent != null, verifyFingerprint = true)
         } catch (e: InterruptedException) {
             // I-5: cancellation must stop discovery, never become a retryable registration failure.
             Thread.currentThread().interrupt()
@@ -299,11 +301,45 @@ class DiscoveryVerificationRegistrationService(
         return if (Thread.currentThread().isInterrupted) InterruptedException("Verification registration interrupted") else null
     }
 
-    /** Reuses a reservation only when its frozen facts (excluding country and the institution token) still match. */
+    /** Ordinary identity reservations span papers. Their original frozen evidence remains authoritative. */
     private fun resumeExisting(item: VerificationItem, rawProfile: ExpertProfile, sourceName: String,
-                               sourceItemKey: String, config: AdmissionConfigSnapshot): DiscoveryRegistration {
-        require(item.sourceName == sourceName && item.sourceItemKey == sourceItemKey) { "Reserved source differs" }
-        return freeze(item, rawProfile, sourceName, sourceItemKey, config, verifyFingerprint = false)
+                               sourceItemKey: String, config: AdmissionConfigSnapshot,
+                               paperReprocess: Boolean = false,
+                               verifyFingerprint: Boolean = false): DiscoveryRegistration {
+        require(item.reviewEpoch == 0L) { "Ordinary reservation cannot reuse a recheck item" }
+        val sameSource = item.sourceName == sourceName && item.sourceItemKey == sourceItemKey
+        // Explicit paper reprocessing can resume only its own exact source, never another parent's work.
+        if (paperReprocess) require(sameSource) { "Reserved source differs" }
+        else if (repository.isPaperReprocessOwned(item.ownerExecutionId)) return DiscoveryRegistration(item, protected = true)
+        val frozen = frozenProfile(item)
+        require(DiscoveryReviewIdentity.hash(item.expertDocId, rawProfile.email, rawProfile.givenNames, rawProfile.familyNames) == item.identityHash &&
+            DiscoveryReviewIdentity.hash(item.expertDocId, frozen.email, frozen.givenNames, frozen.familyNames) == item.identityHash) {
+            "Reserved identity differs"
+        }
+        if (!sameSource) {
+            // Same name/email does not authorize merging contradictory bound author identifiers.
+            val originalIds = frozen.externalIds?.let { mapper.readTree(it) }
+            val incomingIds = rawProfile.externalIds?.let { mapper.readTree(it) }
+            for (field in listOf("orcid", "openAlexAuthorId")) {
+                val original = listOfNotNull(originalIds?.get(field)?.takeUnless { it.isNull }?.asText(),
+                    if (field == "orcid") frozen.identityVerification?.orcid else frozen.identityVerification?.openAlexAuthorId)
+                    .filter { it.isNotBlank() }.toSet()
+                val incoming = listOfNotNull(incomingIds?.get(field)?.takeUnless { it.isNull }?.asText(),
+                    if (field == "orcid") rawProfile.identityVerification?.orcid else rawProfile.identityVerification?.openAlexAuthorId)
+                    .filter { it.isNotBlank() }.toSet()
+                require(original.size <= 1 && incoming.size <= 1 &&
+                    (original.isEmpty() || incoming.isEmpty() || original == incoming)) { "Reserved author identifier differs" }
+            }
+        }
+        val registration = freeze(item, if (sameSource) rawProfile else frozen, item.sourceName,
+            item.sourceItemKey, config, verifyFingerprint = verifyFingerprint && sameSource)
+        // The owner may have closed a failed RAW write before this later discovery found the identity again.
+        // Reopen only this unactivated failure; keep owner, source, snapshot and qualification history intact.
+        if (!paperReprocess && missingRawFailure(item)) {
+            val reopened = repository.reopenMissingRawReservation(item.id, item.factFingerprint, clock.instant())
+            return registration.copy(item = reopened, protected = reopened.state != VerificationState.RESERVED)
+        }
+        return registration
     }
 
     /**
@@ -394,7 +430,15 @@ class DiscoveryVerificationRegistrationService(
                         item.policyVersion, java.time.LocalDateTime.ofInstant(clock.instant(), java.time.ZoneOffset.UTC))
                 }
                 val count = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=? AND activated_at IS NOT NULL FOR UPDATE", Long::class.java, item.ownerExecutionId)!!
+                // A closed historical owner can be swept between reserve() and the RAW create.
+                // RAW now exists: under run -> admission -> item locks, recover only that unactivated failure.
+                if (item.reviewEpoch == 0L && !repository.isPaperReprocessOwned(item.ownerExecutionId)) {
+                    repository.findItem(item.id)?.takeIf { missingRawFailure(it) }?.let {
+                        repository.reopenMissingRawReservation(it.id, it.factFingerprint, clock.instant())
+                    }
+                }
                 val activated = repository.activateItem(item.id, (count / 100 + 1).toInt(), clock.instant())
+                check(activated.activatedAt != null) { "Verification reservation was not activated" }
                 traces.initSteps(activated.id, clock.instant())
             }
         } catch (e: Exception) {
@@ -403,11 +447,15 @@ class DiscoveryVerificationRegistrationService(
         }
     }
 
-    /** Only an existing reservation with the exact RAW identity and source may be recovered. */
+    private fun missingRawFailure(item: VerificationItem): Boolean = item.state == VerificationState.ERROR &&
+        item.activatedAt == null && mapper.readTree(item.reasonsJson ?: "[]") == mapper.readTree("[\"REGISTRATION_RAW_MISSING\"]")
+
+    /** A later paper can finish an ordinary reservation, without adopting another paper-reprocess parent. */
     fun recoverDuplicate(docId: String, sourceName: String, sourceItemKey: String) {
         try {
             repository.findItemsByDocIds(listOf(docId)).filter {
-                it.state == VerificationState.RESERVED && it.sourceName == sourceName && it.sourceItemKey == sourceItemKey
+                it.reviewEpoch == 0L && (it.state == VerificationState.RESERVED || missingRawFailure(it)) &&
+                    !repository.isPaperReprocessOwned(it.ownerExecutionId)
             }.forEach { recover(it) }
         } catch (e: Exception) {
             PaperReprocessFailure.log("DISCOVERY_REGISTRATION_RECOVER_FAILED", e)
@@ -439,7 +487,10 @@ class DiscoveryVerificationRegistrationService(
             repository.failReserved(item.id, "[\"REGISTRATION_IDENTITY_CHANGED\"]", clock.instant())
             return false
         }
-        activate(DiscoveryRegistration(item))
+        val recoverable = if (missingRawFailure(item))
+            repository.reopenMissingRawReservation(item.id, item.factFingerprint, clock.instant()) else item
+        if (recoverable.state != VerificationState.RESERVED) return false
+        activate(DiscoveryRegistration(recoverable))
         return true
     }
 

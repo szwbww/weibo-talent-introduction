@@ -6,6 +6,30 @@
 
 ---
 
+## 当前确认口径（人工邮件）
+
+### 启明计划的官方政策文件
+
+**触发场景**：专家询问启明计划的官方政策文件、政府公告、官方链接，或要求发送文件复印件。同类询问统一使用本条口径。
+
+**回复要点**：项目不公开宣传。我方持有中文官方政策文件，不能发送复印件。专家有意继续沟通时，可在视频会议中展示。维基百科链接供了解项目背景。
+
+**英文标准回复**：The Qiming Program is not publicly promoted. We have the official policy documents in Chinese, but we cannot send copies. If you would like to discuss the program further, we can show you the documents during a video call. For background on the Qiming Program, see the Wikipedia article below.
+
+https://en.wikipedia.org/wiki/Thousand_Talents_Plan
+
+### 专家答疑邮件的结尾
+
+专家来信提问时，先回答问题，结尾邀请专家继续咨询。这封答疑邮件不主动索取简历（CV）。
+
+**英文标准结尾**：Please feel free to reach out if you have any other questions.
+
+### 邮件草稿中的链接
+
+输出专家邮件草稿时，链接直接写完整原始 URL，单独成行，末尾不加标点。不要用 Markdown 链接文字包裹地址。
+
+---
+
 ## 第一部分　原始问答对（按对话）
 
 ### 1. 1095 — Rune Brincker（结构健康监测 / OMA）× Sara

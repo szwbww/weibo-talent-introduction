@@ -235,6 +235,11 @@ class DiscoveryVerificationIntegrationTest {
                 Mockito.mock(ExpertSearchService::class.java), ExpertClassificationService(), searchHttp, flow.esProperties,
                 discoveryProperties, OpenAlexProperties(enabled = false), flow.mapper, progress, cursors, enrichment,
                 Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java), Executor { it.run() }, EuropePmcProperties(enabled = false),
+                timeSource = object : PolicyTimeSource {
+                    private var current = flow.clock.instant()
+                    override fun now() = current
+                    override fun sleep(ms: Long) { current = current.plusMillis(ms) }
+                },
                 discoveryReviewService = flow.review, personRegistrationService = persons, verificationRegistration = registration)
             val proxy = ProxyFactory(DiscoveryPaperQueueRepository(jdbc))
             proxy.isProxyTargetClass = true
@@ -483,6 +488,37 @@ class DiscoveryVerificationIntegrationTest {
             assertEquals(VerificationState.ERROR, error.state)
             assertNull(error.activatedAt)
             assertEquals(0, error.batchNumber)
+        }
+    }
+
+    @Test fun `later paper restores missing RAW registration even when recovery sweeps before RAW create`() {
+        Fixture().use { f ->
+            val context = f.context(43)
+            val missing = f.registration.reserve(context, "sync-missing", ruleSnapshot().profile, "CROSSREF", "old-paper")
+            f.registration.closeInput(context)
+            jdbc.update("UPDATE task_execution SET status='FAILED',finished_at=? WHERE id=43", f.flow.clock.instant().verificationUtc())
+            assertEquals(0, f.registration.recoverReserved(100))
+            val before = f.flow.repository.findItem(missing.item!!.id)!!
+            assertEquals(VerificationState.ERROR, before.state)
+            val later = f.registration.reserve(f.context(44), "sync-missing", ruleSnapshot().profile,
+                "OPENALEX", "new-paper")
+            assertFalse(later.protected)
+            assertEquals(before.id, later.item!!.id)
+            assertEquals(before.ownerExecutionId, later.item!!.ownerExecutionId)
+            assertEquals(before.snapshotJson, later.item!!.snapshotJson)
+            // Emulate the terminal owner's sweeper winning the gap before the caller writes RAW.
+            assertEquals(0, f.registration.recoverReserved(100))
+            assertEquals(VerificationState.ERROR, f.flow.repository.findItem(before.id)!!.state)
+            @Suppress("UNCHECKED_CAST") val raw = f.flow.mapper.convertValue(later.preparedProfile,
+                Map::class.java) as Map<String, Any?>
+            f.flow.raws["sync-missing"] = raw
+            f.registration.activate(later)
+            val activated = f.flow.repository.findItem(before.id)!!
+            assertEquals(VerificationState.QUEUED, activated.state)
+            assertNotNull(activated.activatedAt)
+            assertEquals(before.snapshotJson, activated.snapshotJson)
+            assertEquals("old-paper", activated.sourceItemKey)
+            assertEquals(1L, f.itemCount())
         }
     }
 

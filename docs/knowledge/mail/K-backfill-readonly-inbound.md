@@ -2,8 +2,8 @@
 id: K-backfill-readonly-inbound
 domain: mail
 created: 2026-06-26
-last_used: 2026-08-18
-hit_count: 6
+last_used: 2026-10-28
+hit_count: 7
 source: fix-v:inbound-selfcheck-bounce-visibility:fix-1
 severity: P1
 ---

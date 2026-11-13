@@ -1,69 +1,17 @@
 ---
 id: K-sendable-gate-two-implementations
 domain: es-index
-created: 2026-08-28
-last_used: 2026-08-28
-hit_count: 1
+created: 2026-10-18
+last_used: 2026-10-18
+hit_count: 2
 source: create-p:05a-institution-type-collection
 severity: P1
 ---
 
-> **2026-08-28 复验更正（create-p:00-single-gate-master）**：本条原文写「两处独立实现」，
-> **实测为四处** —— 内存侧是**三份逐字相同的手抄副本**，不是一份。行号也已随 05A / 05A-2 偏移。
-> 下方「两处」小节保留原文用于对照，实际清单以本更正段为准：
->
-> | # | 位置（2026-08-28 grep 复核） | 形态 |
-> |---|---|---|
-> | 1 | `ExpertSearchService.expertSendableFilter():55-63` | ES 谓词；**2 个调用点**：`ManualInitialOutreachService.kt:1326`、`ExpertSearchService.kt:420` |
-> | 2 | `BatchExecutionModels.kt:66-72` | 内存 —— `RecipientScope.matchesExpert` 开头的硬门禁块 |
-> | 3 | `ManualInitialOutreachService.kt:604-620` | 内存 —— 发送前最后门禁，记 `EXPERT_NOT_SENDABLE` |
-> | 4 | `InitialOutreachService.kt:44-45` | 内存 —— 旧首发链路的发送前门禁 |
->
-> 三份内存副本的表达式逐字相同：
-> `classification?.sendable != true || classification.version !in ACCEPTED_CLASSIFICATION_VERSIONS`
-> （05A-2 Part C 已把 `!=VERSION` 改为 `!in ACCEPTED_...`）。
-> **教训**：统计"门禁有几处"时，不要只 grep 函数名 —— 手抄副本不含函数名，
-> 必须同时 grep 语义关键词（本例是 `classification.version`）。
->
-> 另：`ExpertSearchServiceTest.kt:1951` 的逐字断言行号亦已偏移，改动前须重新定位。
+发送资格的读者与写者数量不能永久钉死。旧“两处/四处逐字实现”是历史观察，不是当前事实。
 
-发信硬门禁（`sendable` + 分类策略版本）在仓库中有**两处独立实现**，不是一处。
-任何改动分类 `VERSION` 或门禁语义的计划，两处必须同步改，否则复现
-[[K-batch-send-filter-retry-parity]]（ES 路径与 MySQL 重试路径口径分裂）。
+2026-10-18复核：BatchRecipientSelectionService.select/resolveAdmissions读取持久准入；DiscoveryPersonRecipientService在人物维度复用；InitialOutreachService.fetchSendableCandidates通过人物selector.selectAdmission筛选；ManualInitialOutreachService也使用统一选择链。BatchExecutionModels.matchesDiscoveryOutreach仍有历史纯谓词，不能仅见定义就认定所有发送入口仍调用它。未来改规则必须从调用点反查，不只改这个旧函数。
 
-## 两处
+准入也不能只审计发信读者：ExpertRevalidationService的hardBlockingReasons/reconcile可能删除候选，DiscoveryReviewScanService重新算理由。是否可发还叠加显式筛选/人物/联系保护；准入事件不代表已发送。
 
-1. **ES 侧** — `ExpertSearchService.expertSendableFilter()`（`:55-63`）
-   返回 `bool.filter` 含两个 term：`expertClassification.sendable == true`
-   与 `expertClassification.version == ExpertClassificationService.VERSION`。
-   **3 个生产调用点**（2026-08-25 grep 复核）：
-   - `ManualInitialOutreachService.kt:1324` —— 批量首发 ES 目标
-   - `ExpertSearchService.kt:376` —— `searchSendableExpertsWithEmail`，
-     被 `InitialOutreachService.kt:34` 的**旧定时/队列首发**调用
-   - （函数自身）
-
-2. **内存侧** — `RecipientScope.matchesExpert`（`BatchExecutionModels.kt:65-69`）
-   **不调用**上面的函数，是独立复刻：
-   `classification?.sendable != true || classification.version != ExpertClassificationService.VERSION` 即拒。
-   用于 MySQL NEW 重试联系人的过滤。
-
-## 易被忽略的第二个调用点
-
-计划里常写「`buildEsFiltersForLevel` 是 ES 侧唯一 seam」——**对批量首发成立，对全局不成立**。
-`searchSendableExpertsWithEmail` 是另一条独立查询，走旧定时/队列链路。
-好在两者调用同一个函数，改函数即两处生效；但**统计调用点时不要漏**。
-
-## 对版本迁移的直接影响
-
-升 `VERSION` 会让存量分类在两处同时失效 → 可发送池归零直到全量回填完成。
-零停发窗口的做法是两阶段：
-1. 两处的版本判定从「等于 VERSION」改为「属于 ACCEPTED_VERSIONS 集合」（迁移期含新旧两版）
-2. 部署新版代码 → 跑全量回填 → 把集合收窄为只含新版
-
-改 ES 侧是 `term` → `terms`（语义等价扩展，不削弱门禁）；内存侧是 `!=` → `!in`。
-**两者必须同一次提交**，且须配一条不变量约束「迁移完成后必须收窄」。
-
-测试面：`expertSendableFilter` 在测试中被引用约 28 处
-（`ManualInitialOutreachServiceTest` 与 `ExpertSearchServiceTest`），
-多数以函数返回值做期望值会自动跟随，但
-`ExpertSearchServiceTest.kt:1951` 是**逐字结构断言**，必须手改。
+证据：docs/plans/2026-10-18/apollo-evidence/protect-readers.txt、knowledge-revalidation.txt；基线e7c3422。

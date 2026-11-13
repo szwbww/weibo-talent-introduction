@@ -299,24 +299,78 @@ class DiscoveryCountryRegistrationTest {
             VerificationMode.ENFORCE.policyVersion, "ORCID", orcid, "{}", "0".repeat(64))), anyValue(now))
     }
 
-    @Test fun `existing reservation from another source or with changed facts fails registration`() {
-        val base = profile()
-        val identity = DiscoveryVerificationAdmissionGate.snapshot("EMAIL-doc", base.copy(esDocId = "EMAIL-doc", orcidId = "EMAIL-doc"),
-            policy.evaluate("EMAIL-doc", base.copy(esDocId = "EMAIL-doc", orcidId = "EMAIL-doc")).configSnapshot).identityHash
-        val frozenJson = snapshot(profile())
-        val fingerprint = snapshot(profile()).let { mapper.readTree(it).path("factFingerprint").asText() }
-        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(
-            item(VerificationReservation(7, "EMAIL-doc", identity, VerificationMode.ENFORCE.policyVersion,
-                "CROSSREF", "DOI:1", frozenJson, fingerprint))))
-        assertThrows(DiscoveryRegistrationException::class.java) {
-            service().reserve(context(), "EMAIL-doc", base, "ORCID", orcid)
-        }
-        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(
-            item(VerificationReservation(7, "EMAIL-doc", identity, VerificationMode.ENFORCE.policyVersion,
-                "ORCID", orcid, frozenJson, fingerprint))))
+    private fun oldReservation(base: ExpertProfile = profile(), source: String = "CROSSREF", key: String = "DOI:old"): VerificationItem {
+        val root = mapper.readTree(snapshot(base)) as com.fasterxml.jackson.databind.node.ObjectNode
+        root.put("sourceName", source).put("sourceItemKey", key)
+        val json = mapper.writeValueAsString(root)
+        return item(VerificationReservation(7, "EMAIL-doc", root.path("identityHash").asText(),
+            VerificationMode.ENFORCE.policyVersion, source, key, json, root.path("factFingerprint").asText()))
+    }
+
+    @Test fun `cross-paper identity reuses original frozen profile and ignores recheck epochs`() {
+        val old = oldReservation()
+        val recheck = old.copy(id = 2, ownerExecutionId = 42, reviewEpoch = 42)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc"))))
+            .thenReturn(listOf(recheck, old))
+        server.expect(ExpectedCount.never(), anything())
+        val result = service().reserve(context(), "EMAIL-doc", profile(institution = "New University"), "ORCID", orcid)
+        server.verify()
+        assertFalse(result.protected)
+        assertEquals(old, result.item)
+        assertEquals("Example University", result.preparedProfile!!.institution)
+        assertEquals(old.snapshotJson, result.item!!.snapshotJson)
+        assertEquals("CROSSREF", result.item!!.sourceName)
+    }
+
+    @Test fun `same source cannot silently replace frozen facts`() {
+        val old = oldReservation(source = "ORCID", key = orcid)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(old))
         assertThrows(DiscoveryRegistrationException::class.java) {
             service().reserve(context(), "EMAIL-doc", profile(institution = "Changed University"), "ORCID", orcid)
         }
+    }
+
+    @Test fun `cross-paper reservation rejects conflicting bound author identifiers`() {
+        val old = oldReservation()
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(old))
+        val conflicting = profile().copy(externalIds = """{"orcid":"0000-0001-0000-0001"}""")
+        assertThrows(DiscoveryRegistrationException::class.java) {
+            service().reserve(context(), "EMAIL-doc", conflicting, "ORCID", orcid)
+        }
+        Mockito.verify(repository, Mockito.never()).reopenMissingRawReservation(Mockito.anyLong(), anyValue(""), anyValue(now))
+    }
+
+    @Test fun `cross-source concurrent reservation winner also preserves original evidence`() {
+        val old = oldReservation()
+        Mockito.`when`(repository.reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc", "0".repeat(64),
+            VerificationMode.ENFORCE.policyVersion, "ORCID", orcid, "{}", "0".repeat(64))), anyValue(now))).thenReturn(old)
+        val result = service(properties(enabled = false)).reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)
+        assertFalse(result.protected)
+        assertEquals(old, result.item)
+        assertEquals(mapper.readTree(old.snapshotJson).path("profile"), mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(result.preparedProfile))
+    }
+
+    @Test fun `missing RAW failure reopens only after validating frozen identity and receipt`() {
+        val reserved = oldReservation()
+        val failed = reserved.copy(state = VerificationState.ERROR, reasonsJson = "[\"REGISTRATION_RAW_MISSING\"]", completedAt = now)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(failed))
+        Mockito.`when`(repository.reopenMissingRawReservation(failed.id, failed.factFingerprint, now)).thenReturn(reserved)
+        val result = service().reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)
+        assertFalse(result.protected)
+        assertEquals(reserved, result.item)
+        assertEquals(failed.snapshotJson, result.item!!.snapshotJson)
+        Mockito.verify(repository).reopenMissingRawReservation(failed.id, failed.factFingerprint, now)
+    }
+
+    @Test fun `other terminal errors and foreign paper parents remain protected`() {
+        val reserved = oldReservation()
+        val failed = reserved.copy(state = VerificationState.ERROR, reasonsJson = "[\"OTHER_ERROR\"]", completedAt = now)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(failed))
+        assertTrue(service().reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid).protected)
+        Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(reserved))
+        Mockito.`when`(repository.isPaperReprocessOwned(7)).thenReturn(true)
+        assertTrue(service().reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid).protected)
+        Mockito.verify(repository, Mockito.never()).reopenMissingRawReservation(Mockito.anyLong(), anyValue(""), anyValue(now))
     }
 
     @Test fun `already activated reservation is protected and never rewrites RAW`() {

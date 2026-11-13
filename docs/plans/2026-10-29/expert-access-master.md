@@ -1,6 +1,6 @@
 # 专家分级权限、个人待处理与标签只读 · 开发总计划
 
-状态：已获用户持续实施授权；不代表实现/测试已通过。执行基线：`59eb60cf00534a342c1019827a62f2b7b1db0f2b`，含已独立验证的draft-review 01–04及其已提交计划修订；原研究基线为`main@b15bb069f43f89c45ee6859dba04a0baff5d774d`。
+状态：DRAFT，待批准实施。基线：`main@b15bb069f43f89c45ee6859dba04a0baff5d774d`。仅计划，不代表实现/测试已通过。
 
 证据：[审计总表](expert-access-evidence/audit.md)、[逐字源码E01–E37](expert-access-evidence/source-excerpts.md)、[schema迁移链](expert-access-evidence/schema-chain.md)、[检索收据](expert-access-evidence/store-usage.txt)、[SHA256](expert-access-evidence/sha256.json)。
 
@@ -54,7 +54,7 @@
 - 来源: original
 
 ### Invariant I-7: 计数按处理人、数量单位明确
-- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.manualReviewTotal（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
+- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.total（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
 - Applies to: 会话聚合/排序/分页、挂起、旧队列、顶栏及更多图标
 - Violation consequence: 列表与角标不一致或user1邮件仍进admin待处理
 - 来源: K-mailbox-inbound-source-authority
@@ -96,7 +96,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费fixture）；06的18（原10+2个owner路由激活+6个必需fixture，含原监控collation夹具完整性修正）；07的15（原10+4个UI直接消费fixture及1个等级投影非空依赖fixture）。只退役正式能力取代的临时全局拒绝/全局pending/实现次数/位置pin，稳定安全/业务行为不减，不扩大产品能力。核对SHA/迁移号/已有脏改；MySQL目标skip不可算PASS；不授权部署。
+- Rule: 按子计划顺序实施；每步≤10文件、≤2子系统、每张已有表每步≤1新增字段。新增表/字段/API是拟实现而非现状；先核对SHA/迁移号/已有脏改。没有通过真实MySQL门禁不能把跳过算PASS；本次只写计划及知识，不上线。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -126,9 +126,9 @@
 .mail-chat .mc-access-select:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
 .mail-chat .mc-access-select:disabled{opacity:.45;cursor:not-allowed}
 ```
-- 加载中/保存中disabled；失败用既有mc-inline-error提示并恢复服务器已确认值。无需确认/保存按钮；授权本身不发送邮件。列表FULL标记复用`<span class="mc-badge">user1：可写</span>`。桌面权限select最大180px；手机继承既有mobile-core的max-width:100%及44px最小高度，不增加覆盖规则，须保持在视口内。禁止大卡片、额外权限面板、inline style、未列class。
+- 加载中/保存中disabled；失败用既有mc-inline-error提示并恢复服务器已确认值。无需确认/保存按钮；授权本身不发送邮件。列表FULL标记复用`<span class="mc-badge">user1：可写</span>`。禁止大卡片、额外权限面板、inline style、未列class。
 ### S-3：原更多筛选第一项与邮件角标
-- 完整保留E18/E19：七个原字段及原Reset/Apply/关闭按钮；复用mailbox-chat.css:78–100的mc-icon、mc-filter-popover、mc-filter-fields、mc-field、mc-field-wide规则。430px面板/两列/gap14px/padding18px 20px/桌面select34px/圆角7px均不改，手机沿原媒体规则（既有mobile-core min-height:44px优先），不增加覆盖规则。
+- 完整保留E18/E19：七个原字段及原Reset/Apply/关闭按钮；复用mailbox-chat.css:78–100的mc-icon、mc-filter-popover、mc-filter-fields、mc-field、mc-field-wide规则。430px面板/两列/gap14px/padding18px 20px/select34px/圆角7px均不改，手机沿原媒体规则。
 - 在`#mailboxFilterFields`第一个子元素插入；选项数字来自服务器，未知不显示伪0：
 ```html
 <label class="mc-field mc-field-wide">专家筛选
@@ -210,16 +210,15 @@
 
 | 顺序 | 子计划 | 文件数 |
 |---|---|---|
-| review05 | [前置审核管理员闭环](draft-review-05-admin.md) | 13（继承已批准的有界门禁例外） |
 | 1 | [只读标签展示](expert-access-01-read-labels.md) | 3 |
-| 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 10 |
-| 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 41（原8+14直接构造+19必要context fixture接线例外） |
-| 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 11（原5+6个必要fixture/行号守卫例外） |
-| 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 16（原7+中央guard及8个必要消费fixture例外） |
-| 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 12（原9+3个窄UPDATE/锁消费fixture例外） |
-| 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 18（原10+2个owner路由激活+6个必要fixture例外） |
-| 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 15（原10+4个UI消费及1个非空等级投影fixture例外） |
-| 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 10（原7+1个待审入口及2个logout直接消费fixture） |
+| 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 7 |
+| 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 8 |
+| 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 5 |
+| 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 7 |
+| 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 9 |
+| 6 | [个人待处理查询、计数与筛选](expert-access-06-pending-query.md) | 10 |
+| 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 10 |
+| 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 7 |
 
 ### 精确准入表（03/04共同执行，默认拒绝其余）
 以下是**拟开放名单**，不是声称现在已允许。每条同时需要method精确匹配、session和实际资源归属；目标解析后失败立即403/404，不先调用返回内容的方法。controller同名方法须以declaringClass区分。
@@ -247,12 +246,11 @@
 | TranslationController翻译、AuthController.logout | 原审核计划精确方法/登录身份 | 不扩大成全局API prefix；翻译只处理提交文本 |
 
 请求body的权限不能在HandlerInterceptor里偷读inputStream；04用已反序列化的DTO检查。普通path/id归属在固定守卫里统一处理。新增守卫只读MySQL/既有身份解析器，不加入一个可配置权限引擎。现有全局只读AI、模板、sender-account元数据若不在表内，FULL右栏不生成依赖这些接口的控件；不能为了消除403直接放开整类接口。
-分阶段规则：getUnmatchedDetail由04b第3项完成user1 candidates=[]/跳过suggestCandidates后开放；03不提前加入名单。pendingBadge及suspension/suspend/updateSuspensionReason/resumeSuspension由06完成个人owner SQL后精确开放，03保持拒绝。已有FULL path contact且原服务在任何副作用前验证全部成员同contact的材料transfer/ZIP沿既有校验在03可开放，必须覆盖混入外专家id的拒绝；真正缺失DTO目标授权的方法仍等04。上述均不删除最终准入表能力。
 
 ### 数据、接口和前端交接
 - 02提供accessLevel；NONE无行，READ/FULL有行。保持canRead兼容字段；list和messages实时能力由后端提供，不在localStorage记权限。
 - 05写owner，06统一消费：All不隐藏已委派专家；pendingOnly/排序/pendingCount/挂起个人数/旧队列按owner；needsManualAttention及全局历史统计维持专家整体语义。
-- 06提供expertScope及filterCounts，08只绑定现有popover第一项。filterCounts的可写单位是专家、待审单位是草稿；⋯复用pendingBadge.manualReviewTotal单位是邮件。不复用mc-filter-count原“筛选项数”。
+- 06提供expertScope及filterCounts，08只绑定现有popover第一项。filterCounts的可写单位是专家、待审单位是草稿；⋯复用pendingBadge.total单位是邮件。不复用mc-filter-count原“筛选项数”。
 - 07复用右侧现有发送/附件/管理/排期UI，只有一个富文本。READ标签可见但操作缺席；FULL服务端准入同样必须通过，即使前端旧页面还显示按钮。
 - 当前只读用户名/认证响应中的mailReadOnly用于识别受限账号壳，保持兼容；不把它改false来“让user1进入admin”。具体是否可写取当前专家accessLevel。
 
@@ -296,7 +294,7 @@
 
 最终执行：JDK11 `mvn test`；`node --test src/test/js/*.test.js`；隔离MySQL的授权/归属/会话/挂起/审核IT（显式`-DmysqlIt=true`）；`FlywayMigrationIntegrationTest -DmigrationIt=true`。本轮仅产出计划，未运行这些实现验收，不能写测试已通过。
 
-范围自检：原规划9步均≤10文件；授权实施以I-14明确列出的03/06有界例外为准，其他步骤上限不变。02和05各只改一张共享store的一列；frontend步骤具备逐字样式与DOM；X1–X12分别映射A-1～A-15。原脏文件见baseline.txt，不能覆盖；无部署/配置修改授权。
+范围自检：9步均≤10文件；02和05各只改一张共享store的一列；frontend步骤具备逐字样式与DOM；X1–X12分别映射A-1～A-15；无业务代码/部署/配置修改。原脏文件见baseline.txt，交付前复核不能覆盖。
 
 ## 人工验收清单
 ### A-1: READ标签可见且不可写
@@ -423,7 +421,7 @@
 - 操作步骤:
   1. 对照本计划S-1–S-4观察。
   2. 打开popover，切权限，模拟失败与无标签。
-- 预期结果: popover桌面430px、手机不溢出；首项select桌面34px、手机沿既有min-height:44px；header权限select桌面最大180px、手机沿既有max-width:100%且不溢出；角标18px；无大权限卡；null标签显示“标签暂不可用”，[]不显示；失败不伪造授权成功。
+- 预期结果: popover桌面430px、手机不溢出；首项select34px；header权限select最大180px；角标18px；无大权限卡；null标签显示“标签暂不可用”，[]不显示；失败不伪造授权成功。
 - 覆盖: I-3/I-9/I-10/S-1/S-2/S-3/S-4
 
 ### A-15: 并发归属不被旧保存覆盖
@@ -435,30 +433,3 @@
 - 覆盖: I-5/I-6/I-12/X4/X5
 
 A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15覆盖个人待处理；A-8/14覆盖最终UI；A-10/11覆盖审核交接；A-12/13覆盖权限生命周期和原业务回归。进入人工验收时再导出expert-access-master-acceptance.md；本轮不生成衍生清单。
-
-## 修正记录
-
-- 2026-10-30：用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”解除前置基线/范围修订阻塞。另一工作树draft-review 05仍在途，故本轮从已验证01–04的确定提交链`59eb60cf00534a342c1019827a62f2b7b1db0f2b`建立唯一分支`fast/expert-access-master`，不改写另一分支或复制其未提交代码；先在本轮独立实施并验证review05，再01→02→03→04a→04b→05→06→07→08。review05的依赖为none（01–04已在基线），01依赖review05，后续仍各依赖上一项。
-- review05仅复用其现有已提交13文件白名单及原机器门禁，继承此前有证据的13文件/3子系统有界例外；本轮九个专家权限子计划的文件上限、不变量、权限与真实MySQL门禁不变。前置审核store/V169已随基线01落地，不新增第二套实现。
-- 按本总计划I-9/I-11及§顺序、依赖与发布边界的最终UI裁决，review05不创建顶部mailboxReviewPendingBtn，暂用API/内部setReviewPendingOnly覆盖真实筛选；最终入口只由08的原popover提供。审核正文、单编辑框、评论、翻译、确认和显式发送均不减免。
-- 初始规划快照传输曾截断master末段，已在产品工作前以完整源字节恢复；恢复SHA256为`9143669bb109f81699ef7d4fa553ac4a19217347778c47c6b6da8625f1e0deb9`，所有原人工验收条目保留。恢复及本次基线/前置变更均在fast-p Amendments逐项留痕。
-- 全部子计划与最终artifact validator通过后，自动执行独立review-fast-p；机器审核不代替人工验收，不授权合并、推送或部署。
-- 2026-10-30：I-1真实等级投影需要MailboxConversationService注入非空等级服务；完整constructor grep收据在fast-p children/02/execution.md。按持续授权，02追加OutboundAttachmentFlowTest.kt、MailReviewQueryIT.kt两个直接构造fixture文件，仅接续新依赖/真实等级fixture与原行为回归，7→9文件，仍≤10/2子系统，不使用nullable/default兼容shim、不扩大权限与产品行为；对应子计划修正及fast-p Amendments留痕。
-- 2026-10-30：02实际门禁发现01继承的mailboxReadOnly.test.js固定缓存键与现有taskActivityCenter全局guard冲突（完整证据见children/02/execution.md Epoch2），按持续授权将该测试加入02第10文件；仅退役固定版本字面量，保留动态同键/实际module契约，guard/index与前端产品不动。原整命令失败如实保留，最终门禁必须通过；不消耗light-verifier修复轮次（仍是实现阶段，尚未首次提交/验证）。
-- 2026-10-30：03完整构造grep显示非空安全依赖需要14个原名单外fixture（收据见children/03/execution.md Epoch1）；持续授权下I-14为03的8→22仅构造接线授予例外，不改原产品范围/断言。04b原第3项已负责unmatched候选隐藏，故03暂拒getUnmatchedDetail而不提前扩产品controller。个人pendingBadge/挂起原SQL未按owner，03暂拒，06以既定owner SQL后精确激活；06增加policy/guard两个文件，10→12有界例外，真实AuthWebConfig回归。材料已有全成员同contact校验沿用且测越权混入。最终能力/人工验收均不删减，原例外请求23由已有04b职责消解为22。
-- 2026-10-30：03在产品变更前完成Spring全消费者核查，另19个必需context fixture（17个WebMvcTest/2个无扫描manual context）缺新增guard，完整grep与最小import/注册证明见children/03/execution.md Epoch2；持续授权下例外22→41，原5个产品文件不扩大。仅退役02 ExpertMailReadAccessIT临时FULL follow/rich-send全局拒绝pin及被精确资源守卫取代的旧全局文字，不削弱NONE/READ/跨资源/admin/撤权/拒绝副作用断言；每个新增fixture执行原门禁、不得以skip冒充通过。前次22身份保留，epoch3按新身份接续，产品尚未变更。
-- 2026-10-30：04a完整消费者审计需6个原名单外fixture（children/04a/execution.md Epoch1含全量grep/import/直调/lineguard证据），持续授权下I-14仅为5→11构造/MVC/session接线、已完成方法精确矩阵及原noise-site行号修正授予例外。产品范围不变，原权限/业务/版本/拒绝副作用不弱化，临时全局tag禁用pin退役、不重钉措辞；新增fixture原门禁均需实际执行。
-- 2026-10-30：04b完整消费审计证明原名单外中央PROCESSING guard登记及8个非空构造/Spring共享support/精确准入/行号fixture需要迁移（children/04b/execution.md Epoch1），持续授权下7→16的I-14有界例外；复用原guard/共享support，不新增能力/存储/fixture框架，不破坏原已开始SMTP的finalize。原稳定权限/owner/CAS/拒绝副作用保留，仅退役临时personal-draft全局禁用pin；全部新增fixture原门禁必须实际启用执行。
-- 2026-10-30：05既定窄UPDATE/回读/严格contact-first锁需要3个原名单外现有fixture迁移（children/05/execution.md Epoch1含完整save/mock/失败注入/重开锁收据），持续授权下I-14的9→12有界例外，产品/构造/API范围不变。退役save次数/副本实现pin、不换新转发pin；保留失败无ack/状态/UID/物理邮箱/审计/attention/归属安全行为，并fresh执行所有新增fixture。
-- 2026-10-30：06完整owner消费者及精确handler集合审计需4个原名单外fixture（children/06/execution.md Epoch1/addendum含全量参数/JDBC断言/矩阵/行号收据），持续授权下原12→16有界例外。SQL计数复用现有repository/JDBC/reviewPendingPredicate，不加产品依赖/新约定；只退役owner=session已取代的全局pending假设，原READ挂起403/default-deny/跨资源/账号/分页/幂等保持，新增fixture均须实际门禁。
-- 2026-10-30：真实既有MailboxPendingBadge DTO与app refreshUnmatchedBadge消费的是manualReviewTotal，不存在total（完整DTO/app/grep收据见children/06/execution.md Epoch2）。持续授权下仅纠正master/06/07/08的pendingBadge.total规划误名为pendingBadge.manualReviewTotal，保留原wire，不加alias/shim、不迁移DTO/额外调用方；个人未挂起邮件数/0隐藏/失败不可用/专家数与草稿数分离等行为不变。06部分已授权实现于新epoch对齐后继续，旧epoch未测不算PASS。
-- 2026-10-30：06新增未过滤toolbar草稿计数触及MailReviewQueryIT原精确2条review SQL pin（children/06/execution.md Epoch3完整grep与语义收据），持续授权下16→17仅该fixture例外；退役精确数、不重钉3，保留恒定批量/no-body/reader零review查询。新fixture误用无HandlerMethod的POST期望403予以退役，既有global method-error→500不在功能修复范围；真实资源/错verb/default-deny安全验收不减，部分实现于新epoch完成。
-- 2026-10-30：06必需监控门禁真实220/5error/0skip，原自有mysql:8.0.36 fixture只改body collation未同步cleaned_body，导致COALESCE/LIKE1267；完整源/独立诊断/同base哈希见children/06/execution.md Epoch4。持续授权下17→18仅监控fixture已有DDL旁补对应cleaned_body collations，仍outbound unicode_ci/inbound general_ci不同、原断言不减；不改产品SQL/迁移或用skip/连接设置伪过，不扩任意同来源混合collation能力。新epoch完成真实门禁/runtime后才可READY。
-- 2026-10-30：07静态完整消费者核查发现mailboxChatStyle.test.js的reader CSS EOF/suffix位置pin（children/07/execution.md Epoch1含grep原文与全部相关消费者收据）。持续授权下10→11仅该fixture有界例外；退役EOF/末段偏移假设、不重钉顺序/数量，原reader CSS字节/作用域/隐藏行为及admin默认/DOM/cache/安全契约保留，S-4新增布局范围不变。新增fixture必须fresh执行，浏览器1440/390与真实权限/副作用验收不减，未改产品的epoch1不计PASS。
-- 2026-10-30：07真实focused232通过、style46通过/1失败发现同fixture的header单分支/源码时间槽次数pin与既定delegated隐藏email/account冲突；完整sourcegrep/行为DOM对照见children/07/execution.md Epoch2。持续授权下仅扩该已授权fixture343–353段退役范围，仍11文件；不重钉源码数量/分支/顺序，默认admin实际H2→P→时间→排期与唯一时间槽保留，delegated无身份P且唯一时间槽由真实DOM行为检查。原S-4/UI/权限/所有验收不减，保留部分实现与原失败，新身份fresh完成全部门禁/runtime。
-- 2026-10-30：07真实full JS1976/1972pass/4fail/0skip揭示3个原名单外直接消费fixture（children/07/execution.md Epoch3完整失败/grep/既有行为对照）：mailReviewReader的全局MailboxChat源码禁止、mailboxCalendarIntegration的骨架/订阅源码次数、mailboxReplyIdentity的无受限分支时按钮源码相邻pin。持续授权下11→14仅迁移该3fixture；不重钉3/2等计数/相邻源码，保留READ不挂FULL/附件/发送、admin实际工具栏/单实例订阅/卸载与delegated受限行为，原CSS/权限/API/人工验收不减。新增fixture必须独立fresh执行及full回归，新epoch继续部分实现并完成真实backend/browser/SMTP。
-- 2026-10-31：07额外宽泛opt-in全量命令揭示MailboxReadAccessProjectionTest的真实service/mock repo缺06新增filterCounts非空Pair stub，既有等级断言在291行NPE；完整全src/test grep/基线SHA/原因见children/07/execution.md Epoch4。持续授权下14→15仅补该消费fixture必需stub，保留真实等级投影断言，不加mock-echo计数断言/nullable产品shim。其他宽泛命令错误按原输出保留为aggregate观察，不扩大07修复范围、不计PASS；07仍须fresh原门禁/精确后台矩阵及全部实际浏览器/SMTP验收后提交。
-- 2026-10-31：08完整src消费者审计证明mailReviewAdmin.test.js仍直调旧setReviewPendingOnly并只mock旧query（children/08/execution.md Epoch1含逐字grep/行为收据）。持续授权下7→8仅加该fixture、仍在默认≤10内；现有两条审核入口改真实原popover expertScope=PENDING_REVIEW＋单Apply，原同编辑框/批准/历史/翻译/对话确认/显式发送/跨页断言保留。前端旧setter/state/export按既定单authority删除、不留shim，后端兼容参数不扩删；新增fixturefresh独立门禁及原全量/浏览器/精确MySQL门禁不减。
-- 2026-10-31：08真实full JS1985/1983pass/2fail/0skip证明authFlow.test.js与mailboxServerDrafts.test.js实际提取执行logout闭包却缺新增pending-count请求作废seq/publisher环境（children/08/execution.md Epoch2全src/test grep/失败收据）。持续授权下8→10仅两消费fixture，保留flush失败不logout/reload、成功顺序与latest-intent行为，用真实producer/consumer证明当前session迟到计数失效；不加生产缺seq/helper fallback、不测mock echo。先前mailboxSuspensionFollowup额外文件请求因已有calendar DOM通知惯例撤回，不在授权清单；原完整门禁/实际验收不减。
-- 2026-10-31：08真实1440/390测量scope34/44、popover430/310；原styles.css mobile-core共享min-height44覆盖基础34，源grep及与产品base相同blob证据见children/08/execution.md Epoch3。持续授权下仅澄清S-3/A-14桌面34与手机沿原44最小触控高度，化解“首项34”与“手机沿原媒体/共享CSS不可变”的规划冲突；不改变任何产品CSS/白名单/尺寸token，不扩新覆盖。其余原验收、fresh门禁与最终实际浏览器要求不减，旧失败/部分实现保留后新epoch完成。
-- 2026-10-31：08独立settled测量header桌面180×34、手机308×44/max-width100%，同一未改mobile-core共享高specificity规则同时覆盖新字面S-2 max180；完整grep/baseblob/测量见children/08/execution.md Epoch4。持续授权下仅澄清S-2/A-14桌面最大180、手机沿既有100%且不溢出，不新增specificity覆盖/修改共享CSS或白名单。保留全部权限/布局/单Apply/验收及fresh门禁；原部分实现和证据留痕，新身份完成提交与独立验证。

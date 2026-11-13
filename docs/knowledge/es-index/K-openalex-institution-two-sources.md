@@ -1,9 +1,9 @@
 ---
 id: K-openalex-institution-two-sources
 domain: es-index
-created: 2026-08-25
-last_used: 2026-09-21
-hit_count: 1
+created: 2026-10-19
+last_used: 2026-10-19
+hit_count: 2
 source: create-p:05a-institution-type-collection
 severity: P1
 ---
@@ -15,16 +15,12 @@ severity: P1
 
 | | works 搜索路径 | authors 补全路径 |
 |---|---|---|
-| 取数点 | `OpenAlexDataSource.parseResponse:92` `authorship.institutions[0]` | `parseAuthorEnrichmentFromNode:276` `node.last_known_institutions[0]` |
+| 取数点 | `OpenAlexDataSource.parseResponse` 的 `soleInstitution(authorship)` | 作者补全的 `last_known_institutions`（具体解析按当前实现复核） |
 | 语义 | **该专家被发现的那篇论文上的署名机构** | **该作者当前已知机构** |
-| 写入点 | `ExpertDiscoveryService.toIndexMap:752-767` → `institution` / `employment` | `updateExpertAcademicFields:1085-1096` |
+| 写入点 | `ExpertDiscoveryService.buildProfile/toIndexMap` → `institution`（employment=null） | `ExpertDiscoveryService.updateExpertAcademicFields` |
 | 时机 | 发现入库时，一次 | 每次 enrichment |
 
-**关键：`updateExpertAcademicFields` 写的 10 个字段里没有 `institution`**
-（实测：hIndex / citationCount / updatedAt / enrichedAt / enrichmentSource / worksCount /
-researchFields / recentWorkTitles / patentTitles / disciplineCategory）。
-所以**机构名永远停留在发现时的论文署名机构**，而任何由 enrichment 写入的机构衍生字段
-反映的是"当前机构"。两者可能完全无关。
+**2026-10-19重新验证**：updateExpertAcademicFields不写institution、country，且明确禁止enrichment.institutionType覆盖原类型（约3254行）。因此旧描述“当前已将另一机构类型写回”不能再用作现状依据。不能把作者最新机构地址直接补给论文署名机构。works路径仅唯一机构对象可用于结构化字段，多机构保留未知；当前buildProfile不把署名复制为employment。
 
 ## 实证（2026-08-25）
 
@@ -40,7 +36,7 @@ researchFields / recentWorkTitles / patentTitles / disciplineCategory）。
 { "id": "...", "ror": "...", "display_name": "...", "country_code": "..", "type": "...", "lineage": [...] }
 ```
 
-`type` 取值（works 端点实测 662 条目填充率 **100%**）：
+`type` 取值（2026-08-25历史works样本662条曾观测填充率100%，不能当作今天覆盖率）：
 `education` / `company` / `healthcare` / `facility` / `nonprofit` / `government` / `other` / `archive` / `funder`。
 
 ## 三条使用纪律

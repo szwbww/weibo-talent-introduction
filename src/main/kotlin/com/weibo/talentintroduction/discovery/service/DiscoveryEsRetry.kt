@@ -12,6 +12,18 @@ object DiscoveryEsRetry {
     private data class Context(val time: PolicyTimeSource, val stopped: () -> Boolean)
     // Lexical context shares cancellation with synchronous writer calls; never inherited by pool threads.
     private val context = ThreadLocal<Context>()
+    private val forbiddenExhaustion = ThreadLocal<BooleanArray>()
+
+    /** Keep the exhausted short-retry budget visible across legacy Boolean-returning writers. */
+    fun <T> captureForbiddenExhaustion(action: () -> T): Pair<T, Boolean> {
+        val previous = forbiddenExhaustion.get()
+        val observed = booleanArrayOf(false)
+        forbiddenExhaustion.set(observed)
+        return try { action() to observed[0] } finally {
+            if (observed[0] && previous != null) previous[0] = true
+            if (previous == null) forbiddenExhaustion.remove() else forbiddenExhaustion.set(previous)
+        }
+    }
 
     fun <T> withContext(time: PolicyTimeSource, stopped: () -> Boolean, action: () -> T): T {
         val previous = context.get()
@@ -34,6 +46,7 @@ object DiscoveryEsRetry {
                 if (!isForbidden(e)) throw e
                 PaperReprocessFailure.log("DISCOVERY_ES_FORBIDDEN_$operation", e)
                 if (attempt == 4) {
+                    forbiddenExhaustion.get()?.set(0, true)
                     log.warn("event=DISCOVERY_ES_RETRY_EXHAUSTED operation={} attempts=4 status=403", operation)
                     throw e
                 }

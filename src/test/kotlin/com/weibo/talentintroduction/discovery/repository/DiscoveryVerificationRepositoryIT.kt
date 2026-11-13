@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=161"])
+@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=173"])
 @Import(DiscoveryVerificationRepository::class)
 class DiscoveryVerificationRepositoryIT {
     companion object {
@@ -253,6 +253,26 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(VerificationState.ERROR, failed.state); assertNull(failed.activatedAt); assertNull(failed.outcome)
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE activated_at IS NOT NULL", Long::class.java))
         assertEquals("158", jdbc.queryForObject("SELECT version FROM flyway_schema_history WHERE version='158' AND success=1", String::class.java))
+    }
+
+    @Test fun `missing RAW reservation reopens without resetting activated outcomes or moving ownership`() {
+        run()
+        val item = repository.reserveItem(reservation(), NOW)
+        val other = repository.reserveItem(reservation("other"), NOW)
+        repository.closeInput(item.ownerExecutionId, NOW)
+        assertTrue(repository.failReserved(item.id, "[\"REGISTRATION_RAW_MISSING\"]", NOW))
+        val resumed = repository.reopenMissingRawReservation(item.id, item.factFingerprint, NOW.plusSeconds(1))
+        assertEquals(VerificationState.RESERVED, resumed.state)
+        assertNull(resumed.completedAt)
+        assertNull(resumed.reasonsJson)
+        assertEquals(item.ownerExecutionId, resumed.ownerExecutionId)
+        assertEquals(item.snapshotJson, resumed.snapshotJson)
+        assertEquals(item.sourceItemKey, resumed.sourceItemKey)
+        val active = repository.activateItem(item.id, 1, NOW.plusSeconds(2))
+        assertEquals(VerificationState.QUEUED, active.state)
+        assertEquals(active, repository.reopenMissingRawReservation(item.id, item.factFingerprint, NOW.plusSeconds(3)))
+        assertTrue(repository.failReserved(other.id, "[\"REGISTRATION_IDENTITY_CHANGED\"]", NOW))
+        assertEquals(VerificationState.ERROR, repository.reopenMissingRawReservation(other.id, other.factFingerprint, NOW).state)
     }
 
     private fun replayPending(doc: String): DiscoveryVerificationRepository.ReplayExpected {

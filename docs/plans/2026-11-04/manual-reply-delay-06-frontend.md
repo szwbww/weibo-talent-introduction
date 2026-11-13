@@ -1,6 +1,6 @@
 # 06 前端倒计时、异常图标与二次确认
 
-前置05通过。前端工作台与窄恢复接口契约两个子系统，20个文件（A15/A16特批11＋A17–A22既有测试兼容9）。以下CSS为最终合同，不是示意。未开启后端入队时兼容原SENT响应。
+前置05通过。前端工作台一个子系统，9个文件。以下CSS为最终合同，不是示意。未开启后端入队时兼容原SENT响应。
 
 ## 需求描述
 
@@ -10,7 +10,6 @@
 
 ### Invariant I-6 — 草稿保留与恢复
 - Rule — WAITING/SENDING不可编辑/放弃，原稿不清；SENT只有owner/target/seq匹配才清当前稿。取消回读普通草稿，审核稿仍APPROVED且只读；LEGACY通过原编辑器恢复完整输入，遇到新内容必须保留新内容。
-- Rule (A16) — 刷新后的LEGACY恢复必须使用服务端restore-only返回并校验的原inboundProcessingId选择编辑器；禁止从job.id、正文、Message-ID或最新来信猜测。公共只读任务投影保持原字段，不增加恢复身份或能力。
 - Applies to — compose、server draft map、legacy host、review panel。
 - Violation consequence — 自动保存覆盖或旧回包清除新稿。
 - 来源 — K-mailbox-draft-cache-owner-capture。
@@ -134,17 +133,10 @@ LEGACY取消卡footer允许`button.mc-text-button[data-action=mc-delay-restore]`
 - `mailbox-chat.js:9337–9556`先flush草稿→发出→回读详情，当前只阻止DELIVERY_UNKNOWN/IN_PROGRESS；owner/seq隔离不可删除。`:6100`review发送读取context与确认，`:5853`PREPARED被视为可发。
 - `mailbox-chat.js:9595`静默会话刷新、`:10454`unmount，reader的loadList/background与delegated onChanged是另一生命周期。计时器必须按两宿主分别清理，不能仅选中会话时刷新列表。
 - `app.js:21180–21230`reader请求白名单。仅放行04的数字ID GET状态与FULL动作路由，不能放行整个delayed-replies前缀任意方法。
-- 当前index实际有20处版本引用（CSS7、JS13，Impl06Epoch2 grep `\?v=` 回执）；原计划19为计数笔误，不得删资源凑数。08-current-cache-key.txt是原计划历史审计，当前执行须保留全部20项并统一版本值、运行资源引用断言。
+- index基线有19处当前版本引用；08-current-cache-key.txt证明JS测试未写死当前版本串，仍需运行资源引用断言。
 - 本地存储写者仍为原draft map/autosave、review state与本次confirmation/poll state；不新建localStorage邮件副本。服务端数据写者03/04，经05读取。交互X-2草稿、X-3审核、X-6权限、X-7HTTP/poll，全部纳入任务与验收。
-- A16执行前审计：06 epoch1 `../fast/manual-reply-delay-master/children/06-frontend/execution.md:17-35`确认04 Controller:55–67解包originalInput时丢弃已持久的DelayedLegacyRestore.inboundProcessingId；LEGACY originId为空，原request不含路由processingId，05消息id必须仍是job.id且未发送任务无真实mail_record锚点。写链已在快照持久原ID；缺口仅为restore响应→刷新后app原编辑器消费链，不需要改DB/快照schema。
 
 ## 实现方案
-
-### T0 恢复来源契约补全（I-6/I-7，A16）
-
-在新增授权的DelayedManualReplyController.kt给既有DelayedReplyRestoreResponse末尾增加可空默认null的 `inboundProcessingId`，仅LEGACY从已持久restore身份填充。返回前验证正ID、快照内部同语义的processing来源一致、当前inbound_mail_processing的contact/account归属仍匹配job；不得把mail_record.id或source_inbound_id按数值相等当processing身份，不猜替代来源。保持原actor/admin与FULL授权、REVIEW禁止编辑恢复、DRAFT既有来源逻辑。无法恢复/非法快照沿用422 SNAPSHOT_INVALID固定映射，现行403/404/409边界不改变。旧缺originalInput仍422；公共DelayedManualReplyView不变。
-
-在新增授权的DelayedManualReplyControllerTest.kt断言精确原processingId及缺失/不匹配当前来源/快照身份拒绝，保留READ/非owner拒绝、REVIEW不可编辑、完整原输入和历史422。前端T1仅消费该权威字段，刷新后无本地状态也能打开原编辑器；再校验当前宿主user/contact/source后才允许恢复，遇到新内容保留冲突确认。
 
 ### T1 提交响应与草稿（I-6/I-9；S-3/S-4）
 
@@ -185,17 +177,6 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 |7|src/test/js/mailboxServerDrafts.test.js|排队与恢复|
 |8|src/test/js/mailReviewAdmin.test.js|已审核发送排队|
 |9|src/test/js/mailboxChatStyle.test.js|新增CSS/DOM契约断言|
-|10|src/main/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyController.kt|A16：restore-only原processing身份与当前来源校验|
-|11|src/test/kotlin/com/weibo/talentintroduction/mail/controller/DelayedManualReplyControllerTest.kt|A16：原来源精确返回与缺失/错配拒绝，保留原授权断言|
-|12|src/test/js/mailboxChatBehavior.test.js|A18：既有宿主补performance单调时钟与周期定时器清理，保留断言|
-|13|src/test/js/mailboxReadOnly.test.js|A18/A20：宿主兼容；删除被新focus刷新合同替代的旧“不刷新”断言，其余业务/DOM/scroll/权限coalescing断言保留|
-|14|src/test/js/mailboxMailReadAccess.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
-|15|src/test/js/mailboxOutboundAttachments.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
-|16|src/test/js/mailboxReplyIdentity.test.js|A20：extractFn宿主仅补新增直接closure依赖，保留身份/载荷断言|
-|17|src/test/js/mailboxSuspension.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
-|18|src/test/js/meetingConfirmationIntegration.test.js|A20：既有performance/单macrotask timer drain兼容，保留断言|
-|19|src/test/js/authFlow.test.js|A22：extractFn既有sandbox补legacyDelayedReplies Map依赖，保留auth断言|
-|20|src/test/js/mailReviewReader.test.js|A22：删除被T3替代的focus唯一access请求断言，保留编辑器身份/正文/CAS/reload断言|
 
 ## 验收标准
 
@@ -206,11 +187,8 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 - S-1 — 逐字比对manual-reply-delay-contract块；确认DOM与骨架一致；动作都在邮件footer；原footer规则无diff。
 - S-2 — 逐字比对manual-reply-error-contract块；SVG固定17px/#c53e32；列表无嵌套button；键盘焦点可见原因、aria关联唯一。
 - S-3 — 新增/修改节点均复用声明class；无新恢复面板；恢复冲突默认保留当前内容。
-- S-4 — 1440px/390px截图和键盘验证，移动44px、无横向溢出；20个现有资源版本参数一致且数量不变（A18更正原19计数笔误）。前端代码无inline style或未声明class。
+- S-4 — 1440px/390px截图和键盘验证，移动44px、无横向溢出；19个资源版本参数一致且数量不变。前端代码无inline style或未声明class。
 - 执行 `node --test src/test/js/mailboxDelayedReply.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailReviewAdmin.test.js src/test/js/mailboxChatStyle.test.js`，再执行上述既有受影响功能测试。浏览器验收用真实05/04接口及测试SMTP，不能注入假数据宣称集成通过。
-- A16 — 运行JDK11 `mvn test -Dtest=DelayedManualReplyControllerTest`，原及新增控制器断言均实际执行；真实浏览器A-3刷新后从会话撤回恢复到原processing编辑器，使用与job.id不同的源ID，缺失/错配源不能恢复，READ无来源载荷/能力。该命令与Node/浏览器验收均在全部改动完成后执行，不以测试stub代替界面证据。
-- A18/A20 — 既有宿主补齐performance/SVG namespace/直接closure依赖与周期定时器清理，单次drain执行当前macrotask集合而非无限追逐新周期；不得禁用生产轮询或丢弃待验证回调。除已被新focus刷新合同明确替代的mailboxReadOnly“不刷新”断言删除外，原业务/DOM/scroll/权限coalescing断言保留，不将旧计数4重钉为6。所有授权兼容测试进入受影响必跑集且Node正常退出；新刷新合同由行为测试/真实浏览器证明。资源20项回执保留。
-- A22 — authFlow仅补直接closure Map依赖，原认证行为断言保留；mailReviewReader仅删除与T3冲突的focus唯一access请求断言及专用start变量，不重钉调用集合/计数，保留编辑器身份/正文/CAS/reload验证。两文件纳入必跑受影响集；既有失败/中断记录不算通过，最终完整JS/控制器/浏览器必须重新取得实际证据。
 
 ## 人工验收清单
 
@@ -231,14 +209,3 @@ index统一更新缓存键；原样执行现有reader/附件/会议/身份/行�
 - 操作步骤 — 1. 发送审核稿并撤回。2. 旧详情发送后刷新，去会话撤回并恢复。3. 已有不同新输入时再尝试恢复。4. READ用户查看相同会话。
 - 预期结果 — 审核仍APPROVED只读；旧输入和附件/证据可恢复且不覆盖新输入；READ仅状态图标，无撤回/重发/附件。待发从未提示「发送成功」。
 - 覆盖 — I-6/I-7/I-9/I-10、S-2/S-3，X-2/X-3/X-6。
-
-## 修正记录
-
-- A16（2026-11-05 用户选择「授权本次及同类契约补齐」）：04的生产restore响应遗漏原processing标识，导致06T1/A-3刷新后无法安全定位原编辑器。新增控制器/测试授权并将06文件数9→11特批，T0补齐读取契约和直接验证；不改公共READ投影/数据库/快照schema/发送权限，不重写完成子计划证据。Master A15同步例外及后续同类遗漏契约补齐的严格边界。证据见06 epoch1报告；修订不代表实现或验收已通过。
-
-- A18（适用已批准A5与A15）：既有mailboxChatBehavior.test.js:1100–1102、mailboxReadOnly.test.js:184–187的sandbox缺performance，后者缺createElementNS；新必须周期定时器需清理以免Node挂起。授权两个既有宿主兼容修订，保持业务断言，文件数11→13，仅测试扩大、无产品范围变化。另据实际index `\?v=` 回执（CSS lines11–17、JS lines2547–2559）更正资源总数19→20，保留“全部资源、数量不变”的原合同。完整回执由执行报告保存；不构成样式/行为/安全降级。
-
-- A20（适用已批准A5）：artifact2329真实报告436项/432通过/4失败，mailboxMailReadAccess:739–741/778/795–796与mailboxOutboundAttachments:951–953/1145的复制宿主缺performance且无限drain，mailboxReplyIdentity:379报state undefined。全JS定向grep另确认mailboxSuspension:954–956/1107和meetingConfirmationIntegration:930–932/1105相同缺口；新增五个既有测试文件授权，限宿主clock/单turn drain/直接closure依赖，文件数13→18。已有mailboxReadOnly:844–865旧focus不刷列表断言与T3冲突，删除该过时断言、不改计数凑绿，保留其他业务断言。证据/命令/中断记录由execution保存；同epoch2、修复轮0，无产品范围扩张或新job UNKNOWN锁放宽。
-
-- A22（适用已批准A5）：artifact2339实际controller13/13、JS2037/2054通过，authFlow sandbox110/286抽取stopAuthenticatedApp却缺legacyDelayedReplies Map，引发15项ReferenceError；mailReviewReader:147–157的旧focus唯一access请求断言与新刷新合同冲突。新增两既有测试文件授权，限上述直接fixture依赖/过时断言删除，保留其他业务断言，文件数18→20。taskActivityCenter的重复key检查不改；自有新增样式测试在原授权范围消除重复literal。无新产品范围、权限或安全变化；最终必跑证据仍要求全部实际完成。
-

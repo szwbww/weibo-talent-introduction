@@ -2,8 +2,8 @@
 id: K-expert-tag-editor-shared-render-contract
 domain: frontend
 created: 2026-08-14
-last_used: 2026-09-24
-hit_count: 5
+last_used: 2026-10-29
+hit_count: 7
 source: create-p:expert-detail-head
 severity: P1
 ---

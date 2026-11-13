@@ -2,8 +2,8 @@
 id: K-panel-bg-token-is-translucent
 domain: frontend
 created: 2026-08-16
-last_used: 2026-09-25
-hit_count: 10
+last_used: 2026-10-27
+hit_count: 12
 source: create-p:batch-console-log-drawer
 severity: P1
 ---

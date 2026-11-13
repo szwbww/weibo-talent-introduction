@@ -2,8 +2,8 @@
 id: K-execution-detail-running-needs-progress-log
 domain: task
 created: 2026-08-06
-last_used: 2026-09-22
-hit_count: 2
+last_used: 2026-10-21
+hit_count: 4
 source: create-p:batch-execution-log-process-visibility-p1
 severity: P1
 ---

@@ -1350,6 +1350,24 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
 
+    /** Restore only an ordinary, never-activated RAW-write failure; never reset a reviewed outcome. */
+    @Transactional
+    fun reopenMissingRawReservation(itemId: Long, expectedFingerprint: String, now: Instant): VerificationItem {
+        val item = lockItem(itemId)
+        val run = findRun(item.ownerExecutionId)!!
+        require(item.reviewEpoch == 0L && run.recheckJson == null && paperParentId(run) == null)
+        require(item.factFingerprint == expectedFingerprint) { "Reserved fingerprint changed" }
+        if (item.state == VerificationState.ERROR && item.activatedAt == null && item.batchNumber == 0 &&
+            item.outcome == null && item.admissionRevision == null && item.leaseToken == null &&
+            replayMapper.readTree(item.reasonsJson ?: "[]") == replayMapper.readTree("[\"REGISTRATION_RAW_MISSING\"]")) {
+            jdbc.update("""UPDATE discovery_verification_item SET state='RESERVED',reasons_json=NULL,
+                completed_at=NULL,updated_at=? WHERE id=? AND state='ERROR' AND activated_at IS NULL""",
+                now.verificationUtc(), itemId)
+            bump(item.ownerExecutionId, now)
+        }
+        return findItem(itemId)!!
+    }
+
     /** Called by the separate commit bean: no ES/HTTP while the fixed SQL lock order is held. */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     fun lockForCommit(itemId: Long): VerificationItem {

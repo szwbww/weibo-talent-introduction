@@ -2,8 +2,8 @@
 id: K-batch-console-diff-tag-normalization
 domain: frontend
 created: 2026-07-14
-last_used: 2026-07-14
-hit_count: 4
+last_used: 2026-10-25
+hit_count: 5
 source: fix-v:batch-send-task-console-frontend:fix-2
 severity: P1
 ---

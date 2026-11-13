@@ -478,7 +478,7 @@ class ExpertDiscoveryService(
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 stats.refreshGlobalCounts()
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
-                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
+                if (papersUsedForGlobalCap(stats) >= discoveryProperties.maxPapersPerRun) break
 
                 // I-2: 先给每个后来源留一页基础份额，再按来源顺序分配本源的运行额度；
                 // 已穷尽/失效来源没用掉的份额自然留在全局剩余里给后来源复用。
@@ -489,14 +489,15 @@ class ExpertDiscoveryService(
                 log.info("[{}] 本次运行结束: stopReason={}, exhausted={}, resumeCursor={}",
                     source.sourceName, outcome.stopReason, outcome.exhausted,
                     outcome.resumeCursor?.take(50) ?: "null")
-                // I-1：待恢复项只登记在本轮内存里，等所有来源（含 ORCID）停稳后才消费。
+                // I-1：先让各来源（含 ORCID）处理一页，再按到期时间轮转续页与失败恢复。
                 outcome.retry?.let { pending ->
                     val deferred = DeferredSourceRecovery(source.sourceName, pending) { resume ->
                         discoverFromSource(source, criteria, stats, runQuota, deadline, verification, resume)
                     }
                     deferredRecoveries[source.sourceName] = deferred
                     stats.refreshGlobalCounts()
-                    writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
+                    if (pending.reason != "PAGE_CONTINUATION")
+                        writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
                 }
             }
 
@@ -506,7 +507,8 @@ class ExpertDiscoveryService(
                         requireNotNull(discoverFromOrcid(criteria, stats, deadline, verification, resume))
                     }
                     deferredRecoveries["ORCID"] = deferred
-                    writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
+                    if (pending.reason != "PAGE_CONTINUATION")
+                        writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
                 }
             }
             // I-1/I-2：其他来源已经耗过的等待时间就是等待时间，回访时不重复睡；这里也可能因取消/超时
@@ -698,25 +700,37 @@ class ExpertDiscoveryService(
         var permanentFailure = false
     }
 
+    /** Retain only the failed author, never a downloader or a successfully consumed page. */
+    private fun deferConsumption(context: DedupPageContext?, stats: SourceStats, dedupFailed: Boolean = false,
+                                 retry: () -> ConsumeOutcomeResult) {
+        if (context == null) return
+        var outstandingDedup = dedupFailed
+        context.pending += {
+            // The caller replaces an unresolved lookup; other failure counters remain attempt history.
+            if (outstandingDedup) stats.dedupErrors--
+            val result = retry()
+            result.also { outstandingDedup = it.dedupFailed }
+        }
+    }
+
     private fun pendingConsumption(context: DedupPageContext, sourceStats: SourceStats): () -> String? = {
         var stop: String? = null
         val iterator = context.pending.iterator()
-        while (iterator.hasNext() && stop == null) {
-            stop = requestStop(context.deadline)
-            if (stop == null) {
-                // Replace the prior unresolved lookup with this attempt's outcome, not another author.
-                sourceStats.dedupErrors--
-                val result = iterator.next().invoke()
-                stop = when {
-                    result.dedupFailed -> DiscoveryStopReason.DEDUP_INCOMPLETE
-                    result.rawWriteFailed -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
-                    result.enqueueFailed -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
-                    result.identityRepairFailed -> DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
-                    result.registrationFailed -> DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE
-                    else -> null
-                }
-                if (!result.dedupFailed) iterator.remove()
+        while (iterator.hasNext()) {
+            val interrupted = requestStop(context.deadline)
+            if (interrupted != null) { stop = interrupted; break }
+            // One broken author must not prevent the remaining cached authors from recovering.
+            val result = iterator.next().invoke()
+            val failure = when {
+                result.dedupFailed -> DiscoveryStopReason.DEDUP_INCOMPLETE
+                result.rawWriteFailed -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                result.enqueueFailed -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                result.identityRepairFailed -> DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
+                result.registrationFailed -> DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE
+                else -> null
             }
+            if (failure == null) iterator.remove()
+            else if (stop == null) stop = failure
         }
         stop
     }
@@ -731,9 +745,14 @@ class ExpertDiscoveryService(
                 resume.consumedNextCursor == null, 0)
             return null
         }
-        val retry = if (stop == DiscoveryStopReason.DEDUP_INCOMPLETE && sourceStats.lastFailure?.retryable == true) {
-            planDeferredRecovery(resume.round, "DEDUP_" + failureReasonCode(sourceStats), resume.resumeCursor,
-                sourceStats.papersSearched, resume.batchBaseline)?.copy(consumePending = consume, consumedNextCursor = resume.consumedNextCursor)
+        val retry = if (resume.retryAllowed?.invoke() != false && stop in setOf(DiscoveryStopReason.DEDUP_INCOMPLETE, DiscoveryStopReason.RAW_WRITE_INCOMPLETE,
+                DiscoveryStopReason.ENQUEUE_INCOMPLETE, DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE,
+                DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE) &&
+            (stop != DiscoveryStopReason.DEDUP_INCOMPLETE || sourceStats.lastFailure?.retryable == true)) {
+            planDeferredRecovery(resume.round, if (stop == DiscoveryStopReason.DEDUP_INCOMPLETE)
+                "DEDUP_" + failureReasonCode(sourceStats) else "CONSUME_" + stop, resume.resumeCursor,
+                sourceStats.papersSearched, resume.batchBaseline)?.copy(consumePending = consume,
+                    consumedNextCursor = resume.consumedNextCursor, retryAllowed = resume.retryAllowed)
         } else null
         sourceStats.stopReason = if (retry == null) stop else DiscoveryStopReason.RETRY_WAIT
         sourceStats.pendingWork = true
@@ -835,7 +854,7 @@ class ExpertDiscoveryService(
                 break
             }
             stats.refreshGlobalCounts()
-            if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+            if (papersUsedForGlobalCap(stats) >= discoveryProperties.maxPapersPerRun) {
                 stopReason = DiscoveryStopReason.GLOBAL_PAPER_LIMIT
                 break
             }
@@ -1000,7 +1019,8 @@ class ExpertDiscoveryService(
                 // V-2: 过滤后空页只要还有 nextCursor 就继续翻页。
                 cursor = next
                 persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
-                continue
+                retryPending = pageContinuation(recoveryGroupsScheduled, next, sourceStats.papersSearched, batchNumber)
+                break
             }
             batchNumber++
 
@@ -1031,7 +1051,7 @@ class ExpertDiscoveryService(
                 if (consumedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
                 if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
                 stats.refreshGlobalCounts()
-                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+                if (papersUsedForGlobalCap(stats) >= discoveryProperties.maxPapersPerRun) {
                     limitReached = true; limitReason = DiscoveryStopReason.GLOBAL_PAPER_LIMIT; break
                 }
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
@@ -1116,6 +1136,14 @@ class ExpertDiscoveryService(
                 stopReason = DiscoveryStopReason.CANCELLED
                 break
             }
+            if (!limitReached && !timeBudgetExpired && !dedupContext.permanentFailure && dedupContext.pending.isNotEmpty()) {
+                retryPending = planDeferredRecovery(recoveryGroupsScheduled,
+                    if (dedupErrorsInPage > 0) "DEDUP_" + failureReasonCode(sourceStats) else "CONSUME_INCOMPLETE",
+                    resumeCursor, sourceStats.papersSearched, batchNumber)?.copy(
+                        consumePending = pendingConsumption(dedupContext, sourceStats), consumedNextCursor = batch.nextCursor,
+                        retryAllowed = { !dedupContext.permanentFailure })
+                if (retryPending != null) { stopReason = DiscoveryStopReason.RETRY_WAIT; break }
+            }
             if (rawWriteFailedInPage > 0) {
                 stopReason = DiscoveryStopReason.RAW_WRITE_INCOMPLETE
                 break
@@ -1127,13 +1155,7 @@ class ExpertDiscoveryService(
             if (dedupErrorsInPage > 0) {
                 val aborted = requestStop(deadline)
                 if (aborted != null) { stopReason = aborted; break }
-                val canRecover = !dedupContext.permanentFailure && dedupContext.pending.size == dedupErrorsInPage &&
-                    !limitReached && !timeBudgetExpired && !identityRepairFailedInPage && !personRegistrationFailedInPage
-                retryPending = if (canRecover) planDeferredRecovery(recoveryGroupsScheduled,
-                    "DEDUP_" + failureReasonCode(sourceStats), resumeCursor, sourceStats.papersSearched, batchNumber)
-                    ?.copy(consumePending = pendingConsumption(dedupContext, sourceStats), consumedNextCursor = batch.nextCursor)
-                    else null
-                stopReason = if (retryPending != null) DiscoveryStopReason.RETRY_WAIT else DiscoveryStopReason.DEDUP_INCOMPLETE
+                stopReason = DiscoveryStopReason.DEDUP_INCOMPLETE
                 break
             }
             if (identityRepairFailedInPage) {
@@ -1155,6 +1177,8 @@ class ExpertDiscoveryService(
             }
             if (exhausted) break
             cursor = batch.nextCursor
+            retryPending = pageContinuation(recoveryGroupsScheduled, cursor, sourceStats.papersSearched, batchNumber)
+            break
         }
 
         val elapsed = System.currentTimeMillis() - sourceStartTime
@@ -1166,7 +1190,7 @@ class ExpertDiscoveryService(
         sourceStats.stopReason = stopReason
         // I-5: 唯一的重试观察对象。真正开始/取消/超时/结束时只清空 nextRetryAt，保留轮次与脱敏原因
         // 用于审计；只有本轮新安排的恢复项才覆盖轮次与计划时间。无恢复历史的来源不产生观察对象。
-        sourceStats.retry = retryPending?.let { pending ->
+        sourceStats.retry = retryPending?.takeUnless { it.reason == "PAGE_CONTINUATION" }?.let { pending ->
             SourceRetryState(
                 round = pending.round,
                 maxRounds = pending.maxRounds,
@@ -1215,9 +1239,9 @@ class ExpertDiscoveryService(
         verification: DiscoveryVerificationExecution
     ) {
         if (deferred.isEmpty()) return
-        for (round in 1..discoveryProperties.openAlexSearchRecoveryDelays.size) {
-            val waiting = deferred.values.filter { it.pending.round == round }
-            if (waiting.isEmpty()) continue
+        while (deferred.isNotEmpty()) {
+            // Each recovery has its own due time; don't wait on a later one ahead of ready work.
+            val waiting = listOf(deferred.values.minByOrNull { it.pending.nextRetryAt }!!)
             for (item in waiting) {
                 // Each source was scheduled at a different time; never borrow an earlier source's delay.
                 val waitStop = awaitRetryAt(item.pending.nextRetryAt, deadline)
@@ -1229,17 +1253,20 @@ class ExpertDiscoveryService(
                 val blocked = when {
                     progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
                     timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
-                    item.pending.consumePending == null && stats.totalPapers >= discoveryProperties.maxPapersPerRun -> DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+                    item.sourceName != "ORCID" && item.pending.consumePending == null &&
+                        papersUsedForGlobalCap(stats) >= discoveryProperties.maxPapersPerRun -> DiscoveryStopReason.GLOBAL_PAPER_LIMIT
                     item.pending.consumePending == null && stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun -> DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
                     else -> null
                 }
                 if (blocked != null) {
                     stopDeferredRecovery(item, blocked, stats)
+                    deferred.remove(item.sourceName)
                     log.info("[{}] 恢复回访未开始: 停止原因={}, 保留游标 {}",
                         item.sourceName, blocked, item.pending.resumeCursor?.take(50) ?: "null")
                     continue
                 }
-                beginRetryAttempt(stats, item, execId)
+                val recovering = item.pending.reason != "PAGE_CONTINUATION"
+                if (recovering) beginRetryAttempt(stats, item, execId)
                 val outcome = DiscoveryTrafficMeter.measure(
                     trafficSession, item.sourceName, DiscoveryTrafficMeter.Category.METADATA
                 ) {
@@ -1252,11 +1279,14 @@ class ExpertDiscoveryService(
                 val next = outcome.retry
                 if (next == null) {
                     deferred.remove(item.sourceName)
-                    writeRetryEvent(stats, item,
+                    if (recovering) writeRetryEvent(stats, item,
                         "[${item.sourceName}] 恢复结束: 停止原因 ${outcome.stopReason}", execId)
                 } else {
                     item.pending = next
-                    writeRetryEvent(stats, item, retryWaitMessage(item), execId)
+                    // Reinsert after existing ready work to give equal-time continuations fair turns.
+                    deferred.remove(item.sourceName)
+                    deferred[item.sourceName] = item
+                    if (next.reason != "PAGE_CONTINUATION") writeRetryEvent(stats, item, retryWaitMessage(item), execId)
                 }
             }
         }
@@ -1341,7 +1371,12 @@ class ExpertDiscoveryService(
     /** I-5：等待恢复的运营端文案（轮次、计划重试时间按北京时间显示）。 */
     private fun retryWaitMessage(item: DeferredSourceRecovery): String {
         val pending = item.pending
-        return "[${item.sourceName}] ${if (pending.reason.startsWith("DEDUP_")) "查重" else "搜索"}${retryReasonLabel(pending.reason.removePrefix("DEDUP_"))}，等待恢复 " +
+        val stage = when {
+            pending.reason.startsWith("DEDUP_") -> "查重"
+            pending.reason.startsWith("CONSUME_") -> "登记/写入"
+            else -> "搜索"
+        }
+        return "[${item.sourceName}] $stage${retryReasonLabel(pending.reason.removePrefix("DEDUP_"))}，等待恢复 " +
             "${pending.round}/${pending.maxRounds}，计划重试时间 ${displayTime(pending.nextRetryAt.toString())}" +
             "（北京时间）；先处理其他来源"
     }
@@ -1352,11 +1387,12 @@ class ExpertDiscoveryService(
         else -> "连接中断"
     }
 
-    /**
-     * I-1：短尝试用尽后的延迟恢复决定。返回 null 表示不进入恢复（恢复列表为空或恢复组已用尽），
-     * 调用方按既有逻辑记一次终止性 SEARCH_FAILED。恢复组额度不因成功一页而重置：调用方把
-     * [groupsScheduled] 一直带在本次运行的局部状态里。
-     */
+    /** 正常续页立即可运行，不消耗失败恢复额度。 */
+    private fun pageContinuation(round: Int, cursor: String?, processed: Int, batch: Int) = SourceRetryPending(
+        round, discoveryProperties.openAlexSearchRecoveryDelays.size, timeSource.now(),
+        "PAGE_CONTINUATION", cursor, processed, batch)
+
+    /** 短尝试耗尽后安排有限恢复；成功翻页不重置本轮已消耗的恢复组数。 */
     private fun planDeferredRecovery(
         groupsScheduled: Int,
         reason: String,
@@ -1444,6 +1480,8 @@ class ExpertDiscoveryService(
         var exhausted = false
         var stopReason = DiscoveryStopReason.EXHAUSTED
         var retryPending: SourceRetryPending? = null
+        var searchAttempts = 0
+        val recoveryGroupsScheduled = resume?.round ?: 0
 
         fun persistCheckpoint(nextOffset: String?, reason: String, pageExhausted: Boolean) {
             val delta = sourceStats.papersSearched - persistedRecords
@@ -1478,14 +1516,30 @@ class ExpertDiscoveryService(
 
             sourceStats.apiRequests++
 
+            val searchStarted = timeSource.now()
+            searchAttempts++
             val page = try {
                 orcid.searchOrcidPage(criteria.copy(cursor = cursor))
             } catch (e: Exception) {
-                recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
-                log.error("[{}] 搜索失败: {}", orcid.sourceName, e.message)
-                stopReason = DiscoveryStopReason.SEARCH_FAILED
+                val retryable = if (e is HttpStatusCodeException)
+                    e.statusCode.value() in OPENALEX_RETRYABLE_HTTP_STATUS || e.statusCode.value() == 429
+                    else isRetryableOpenAlexFailure(e)
+                recordRequestFailure(sourceStats, "SEARCH", e, searchStarted, batchNumber + 1, searchAttempts, retryable)
+                if (retryable && searchAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
+                    val stopped = waitForOpenAlexRetry(searchAttempts, deadline)
+                    if (stopped != null) { stopReason = stopped; break }
+                    continue
+                }
+                retryPending = if (retryable) planDeferredRecovery(recoveryGroupsScheduled, retryReasonCode(e),
+                    resumeCursor, sourceStats.papersSearched, batchNumber) else null
+                if (retryPending != null) stopReason = DiscoveryStopReason.RETRY_WAIT
+                else {
+                    recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
+                    stopReason = DiscoveryStopReason.SEARCH_FAILED
+                }
                 break
             }
+            searchAttempts = 0
             val records = page.records
             if (records.isEmpty()) {
                 val next = page.nextCursor
@@ -1499,7 +1553,8 @@ class ExpertDiscoveryService(
                 // I-2: 无公开邮箱的整页按原始条数推进 offset/分片后继续。
                 cursor = next
                 persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
-                continue
+                retryPending = pageContinuation(recoveryGroupsScheduled, next, sourceStats.papersSearched, batchNumber)
+                break
             }
             batchNumber++
             val indexedBefore = sourceStats.indexed
@@ -1553,18 +1608,23 @@ class ExpertDiscoveryService(
                     if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
                     sourceStats.emailsValid++
 
+                    val authorEnqueueBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+                    fun deferAuthor(dedupFailed: Boolean = false) {
+                        var afterRaw: (() -> ConsumeOutcomeResult)? = null
+                        deferConsumption(dedupContext, sourceStats, dedupFailed) {
+                            afterRaw?.invoke() ?: consumeOutcomeInternal(listOf(authorEmail), null, null, true, 0, orcid.sourceName,
+                                stats, sourceStats, verification, record.orcidId, orcidIdentityFactory(record),
+                                dedupContext, countEvidence = false, countAuthor = false, resumeAfterRaw = { afterRaw = it })
+                        }
+                    }
+
                     // I-1（08）：与论文路径对称 —— 重复命中只按匹配文档真实 `_id` 补建缺失任务。
                     val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email, sourceStats, deadline, batchNumber)) {
                         is DedupResult.Exists -> emailDedup
                         is DedupResult.Error -> {
                             sourceStats.dedupErrors++
-                            if (emailDedup.retryable) {
-                                dedupContext.pending += {
-                                    consumeOutcomeInternal(listOf(authorEmail), null, null, true, 0, orcid.sourceName,
-                                        stats, sourceStats, verification, record.orcidId, orcidIdentityFactory(record),
-                                        dedupContext, countEvidence = false, countAuthor = false)
-                                }
-                            } else dedupContext.permanentFailure = true
+                            if (emailDedup.retryable) deferAuthor(dedupFailed = true)
+                            else dedupContext.permanentFailure = true
                             continue
                         }
                         DedupResult.NotFound -> null
@@ -1575,6 +1635,8 @@ class ExpertDiscoveryService(
                             record.orcidId)
                         if (disposition.retryable) identityRepairFailedInPage = true
                         if (disposition.person?.retryable == true) personRegistrationFailedInPage = true
+                        if (disposition.retryable || disposition.person?.retryable == true ||
+                            (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > authorEnqueueBefore) deferAuthor()
                         continue
                     }
 
@@ -1586,6 +1648,7 @@ class ExpertDiscoveryService(
                     } catch (e: DiscoveryRegistrationException) {
                         sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
                         personRegistrationFailedInPage = true
+                        deferAuthor()
                         continue
                     }
                     if (registration.protected) continue
@@ -1595,24 +1658,21 @@ class ExpertDiscoveryService(
                     val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
                     val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
                     val profileMap = toIndexMap(finalProfile, null, esDocId, filterResult, rejectReasons)
-                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
-                    sourceStats.indexed++
-                    // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页。
-                    enqueueEnrichmentJob(esDocId, orcid.sourceName, execId, sourceStats)
-                    try {
-                        verificationRegistration?.activate(registration)
-                    } catch (e: DiscoveryRegistrationException) {
-                        sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
-                        personRegistrationFailedInPage = true
+                    val (written, forbiddenExhausted) = DiscoveryEsRetry.captureForbiddenExhaustion {
+                        expertIndexWriterService.indexToRaw(esDocId, profileMap)
+                    }
+                    if (!written) {
+                        sourceStats.rawWriteFailed++
+                        if (forbiddenExhausted) dedupContext.permanentFailure = true else deferAuthor()
                         continue
                     }
-
-                    // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升，不再由旧 eligibility 单独决定。
-                    if (registration.item == null) admitDiscoveryExpert(esDocId, finalProfile, eligibility, profileMap, sourceStats)
-
-                    // 05（I-1/I-2）：ES 事实持久化后统一登记人物关系；登记失败按可重试语义传播。
-                    val person = registerPerson(orcid.sourceName, esDocId, sourceStats)
-                    if (person?.retryable == true) personRegistrationFailedInPage = true
+                    sourceStats.indexed++
+                    val afterRaw = afterRawConsumption(esDocId, finalProfile, eligibility, profileMap,
+                        registration, orcid.sourceName, verification, sourceStats)
+                    val followup = afterRaw()
+                    if (followup.identityRepairFailed || followup.registrationFailed) personRegistrationFailedInPage = true
+                    if (followup.enqueueFailed || followup.identityRepairFailed || followup.registrationFailed)
+                        deferConsumption(dedupContext, sourceStats, retry = afterRaw)
                 }
                 if (limitReason != null) break
             }
@@ -1654,12 +1714,12 @@ class ExpertDiscoveryService(
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
             if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && requestStop(deadline) == null &&
-                rawWriteFailedInPage == 0 && enqueueFailedInPage == 0 && !identityRepairFailedInPage &&
-                !personRegistrationFailedInPage && dedupErrorsInPage > 0 && !dedupContext.permanentFailure &&
-                dedupContext.pending.size == dedupErrorsInPage) {
-                retryPending = planDeferredRecovery(resume?.round ?: 0, "DEDUP_" + failureReasonCode(sourceStats),
+                !dedupContext.permanentFailure && dedupContext.pending.isNotEmpty()) {
+                retryPending = planDeferredRecovery(recoveryGroupsScheduled,
+                    if (dedupErrorsInPage > 0) "DEDUP_" + failureReasonCode(sourceStats) else "CONSUME_INCOMPLETE",
                     resumeCursor, sourceStats.papersSearched, batchNumber)?.copy(
-                        consumePending = pendingConsumption(dedupContext, sourceStats), consumedNextCursor = page.nextCursor)
+                        consumePending = pendingConsumption(dedupContext, sourceStats), consumedNextCursor = page.nextCursor,
+                        retryAllowed = { !dedupContext.permanentFailure })
                 if (retryPending != null) {
                     stopReason = DiscoveryStopReason.RETRY_WAIT
                     break
@@ -1676,6 +1736,8 @@ class ExpertDiscoveryService(
                     cursor == null
                 )
                 if (exhausted) break
+                retryPending = pageContinuation(recoveryGroupsScheduled, cursor, sourceStats.papersSearched, batchNumber)
+                break
             } else {
                 // I-1: partial, interrupted, or failed pages retain their entering offset.
                 persistCheckpoint(
@@ -1699,11 +1761,12 @@ class ExpertDiscoveryService(
         }
 
         val elapsed = System.currentTimeMillis() - sourceStartTime
-        sourceStats.elapsedMs = elapsed
+        sourceStats.elapsedMs += elapsed
         persistCheckpoint(resumeCursor, stopReason, exhausted)
         sourceStats.pendingWork = !exhausted
         sourceStats.stopReason = stopReason
-        sourceStats.retry = retryPending?.let { SourceRetryState(it.round, it.maxRounds, it.nextRetryAt.toString(), it.reason) }
+        sourceStats.retry = retryPending?.takeUnless { it.reason == "PAGE_CONTINUATION" }
+            ?.let { SourceRetryState(it.round, it.maxRounds, it.nextRetryAt.toString(), it.reason) }
             ?: sourceStats.retry?.copy(nextRetryAt = null)
 
         log.info("[{}] 完成: 耗时 ${elapsed}ms | " +
@@ -1915,7 +1978,8 @@ class ExpertDiscoveryService(
         identityFactory: ConsumeIdentityFactory,
         dedupContext: DedupPageContext? = null,
         countEvidence: Boolean = true,
-        countAuthor: Boolean = true
+        countAuthor: Boolean = true,
+        resumeAfterRaw: ((() -> ConsumeOutcomeResult) -> Unit)? = null
     ): ConsumeOutcomeResult {
         val executionId = verification.executionId
         if (countEvidence) sourceStats.fulltextAttempted++
@@ -1982,26 +2046,31 @@ class ExpertDiscoveryService(
             if (countAuthor) sourceStats.emailsValid++
             emailsValid++
 
+            val authorEnqueueBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+            fun deferAuthor(dedupFailed: Boolean = false) {
+                var afterRaw: (() -> ConsumeOutcomeResult)? = null
+                if (countAuthor) deferConsumption(dedupContext, sourceStats, dedupFailed) {
+                    afterRaw?.invoke() ?: consumeOutcomeInternal(listOf(authorEmail), null, null, true, 0, sourceName,
+                        stats, sourceStats, verification, sourceItemKey, identityFactory, dedupContext,
+                        countEvidence = false, countAuthor = false, resumeAfterRaw = { afterRaw = it })
+                }
+            }
+
             // I-1（08）：重复命中时只按匹配文档的真实 `_id` 补建缺失任务，不重写整份专家、不算新增。
             val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email, sourceStats, dedupContext?.deadline, dedupContext?.batchNumber ?: 0)) {
                 is DedupResult.Exists -> emailDedup
                 is DedupResult.Error -> {
                     sourceStats.dedupErrors++
                     dedupFailed = true
-                    if (emailDedup.retryable && countAuthor && dedupContext != null) {
-                        dedupContext.pending += {
-                            consumeOutcomeInternal(listOf(authorEmail), null, null, true, 0, sourceName,
-                                stats, sourceStats, verification, sourceItemKey, identityFactory, dedupContext,
-                                countEvidence = false, countAuthor = false)
-                        }
-                    } else if (!emailDedup.retryable) dedupContext?.permanentFailure = true
+                    if (emailDedup.retryable) deferAuthor(dedupFailed = true)
+                    else dedupContext?.permanentFailure = true
                     continue
                 }
                 DedupResult.NotFound -> null
             }
             var ownedRegistration: DiscoveryRegistration? = null
             if (duplicate != null) {
-                sourceStats.duplicates++
+                if (countAuthor) sourceStats.duplicates++
                 duplicates++
                 if (verification.archivedPaper?.parent != null) {
                     // Crash recovery is not the generic duplicate repair path. A foreign RAW is never adopted.
@@ -2016,6 +2085,8 @@ class ExpertDiscoveryService(
                     val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId, sourceItemKey)
                     if (disposition.retryable) identityRepairFailed = true
                     personCounts.fold(disposition.person)
+                    if (disposition.retryable || disposition.person?.retryable == true ||
+                        (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > authorEnqueueBefore) deferAuthor()
                     continue
                 }
             }
@@ -2029,10 +2100,10 @@ class ExpertDiscoveryService(
             } catch (e: DiscoveryRegistrationException) {
                 sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
                 verificationFailed = true
+                deferAuthor()
                 continue
             }
             if (registration.protected) continue
-            val paperEffects = verification.archivedPaper?.takeIf { it.parent != null }?.target?.result?.path("effects")
             verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RESERVED")
             // I-2: eligibility, RAW and admission all consume the profile frozen by registration.
             val finalProfile = registration.preparedProfile ?: identity.profile
@@ -2042,9 +2113,13 @@ class ExpertDiscoveryService(
             val profileMap = toIndexMap(finalProfile, identity.paper, identity.esDocId, filterResult, rejectReasons)
             if (ownedRegistration == null) {
                 verificationRegistration?.requirePaperPermission(verification)
-                if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+                val (written, forbiddenExhausted) = DiscoveryEsRetry.captureForbiddenExhaustion {
+                    expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)
+                }
+                if (!written) {
                     sourceStats.rawWriteFailed++
                     rawWriteFailed = true
+                    if (forbiddenExhausted) dedupContext?.permanentFailure = true else deferAuthor()
                     continue
                 }
                 sourceStats.indexed++
@@ -2052,44 +2127,19 @@ class ExpertDiscoveryService(
                 if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_RAW")
                 verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RAW")
             }
-            // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
-            if (paperEffects?.path("ENRICHMENT_ENQUEUED")?.asBoolean() != true) {
-                verificationRegistration?.requirePaperPermission(verification)
-                enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
-                if ((sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) == enqueueFailedBefore)
-                    verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ENRICHMENT_ENQUEUED")
-            }
-            try {
-                if (paperEffects?.path("ACTIVATED")?.asBoolean() != true) {
-                    verificationRegistration?.requirePaperPermission(verification)
-                    if (registration.item == null || registration.item.state == VerificationState.RESERVED)
-                        verificationRegistration?.activate(registration)
-                    verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ACTIVATED")
-                    if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_ACTIVATE")
-                }
-            } catch (e: DiscoveryRegistrationException) {
-                sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
-                verificationFailed = true
-                continue
-            }
-
-            // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升。
-            if (registration.item == null && admitDiscoveryExpert(identity.esDocId, finalProfile, eligibility, profileMap, sourceStats) ==
-                AdmissionDisposition.PROMOTED
-            ) {
-                promoted++
-            }
-
-            val personReceipt = verification.archivedPaper?.target?.result?.path("personRegistration")
-            val personRetryable = if (personReceipt?.has("retryable") == true) personReceipt.path("retryable").asBoolean()
-                else verification.archivedPaper?.target?.result?.path("consumeOutcome")?.path("registrationFailed")?.asBoolean() == true
-            if (paperEffects?.path("PERSON_ATTEMPTED")?.asBoolean() != true || personRetryable) {
-                verificationRegistration?.requirePaperPermission(verification)
-                // Only completed/non-retryable original actions suppress explicit retry, including legacy receipts.
-                val personResult = registerPerson(sourceName, identity.esDocId, sourceStats)
-                personCounts.fold(personResult)
-                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "PERSON_ATTEMPTED", personResult)
-                if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_PERSON")
+            val afterRaw = afterRawConsumption(identity.esDocId, finalProfile, eligibility, profileMap,
+                registration, sourceName, verification, sourceStats)
+            val followup = afterRaw()
+            promoted += followup.promoted
+            personCounts.created += followup.personCreated
+            personCounts.attached += followup.personAttached
+            personCounts.needsReview += followup.personNeedsReview
+            personCounts.scopeConflict += followup.personScopeConflict
+            personCounts.failed = personCounts.failed || followup.registrationFailed
+            verificationFailed = verificationFailed || followup.identityRepairFailed
+            if (followup.enqueueFailed || followup.identityRepairFailed || followup.registrationFailed) {
+                if (countAuthor) deferConsumption(dedupContext, sourceStats, retry = afterRaw)
+                else resumeAfterRaw?.invoke(afterRaw)
             }
         }
 
@@ -2115,6 +2165,69 @@ class ExpertDiscoveryService(
         )
     }
 
+
+    /**
+     * The RAW create has already succeeded. Keep each downstream acknowledgement in this closure:
+     * retries never search for the expert again (ES search can lag GET), recreate RAW, or recount authors.
+     * Durable paper-reprocess receipts remain the authority when a later execution reconstructs this closure.
+     */
+    private fun afterRawConsumption(docId: String, profile: ExpertProfile, eligibility: EligibilityResult,
+        profileMap: Map<String, Any?>, registration: DiscoveryRegistration, sourceName: String,
+        verification: DiscoveryVerificationExecution, stats: SourceStats): () -> ConsumeOutcomeResult {
+        val paper = verification.archivedPaper
+        val effects = paper?.takeIf { it.parent != null }?.target?.result?.path("effects")
+        var enqueued = effects?.path("ENRICHMENT_ENQUEUED")?.asBoolean() == true
+        var activated = effects?.path("ACTIVATED")?.asBoolean() == true
+        var admissionAttempted = false
+        val personReceipt = paper?.target?.result?.path("personRegistration")
+        val personRetryable = if (personReceipt?.has("retryable") == true) personReceipt.path("retryable").asBoolean()
+            else paper?.target?.result?.path("consumeOutcome")?.path("registrationFailed")?.asBoolean() == true
+        var personComplete = effects?.path("PERSON_ATTEMPTED")?.asBoolean() == true && !personRetryable
+        return attempt@{
+            verificationRegistration?.requirePaperPermission(verification)
+            if (!enqueued) {
+                val before = stats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+                enqueueEnrichmentJob(docId, sourceName, verification.executionId, stats)
+                if ((stats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) == before) {
+                    verificationRegistration?.recordPaperEffect(verification, registration, docId, "ENRICHMENT_ENQUEUED")
+                    enqueued = true
+                }
+            }
+            if (!activated) {
+                try {
+                    verificationRegistration?.requirePaperPermission(verification)
+                    if (registration.item == null || registration.item.state == VerificationState.RESERVED)
+                        verificationRegistration?.activate(registration)
+                    verificationRegistration?.recordPaperEffect(verification, registration, docId, "ACTIVATED")
+                    if (paper?.parent != null) paperReprocessAfterEffect("AFTER_ACTIVATE")
+                    activated = true
+                } catch (e: DiscoveryRegistrationException) {
+                    stats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
+                    return@attempt ConsumeOutcomeResult(enqueueFailed = !enqueued, identityRepairFailed = true,
+                        failureReasons = snapshotRejectReasons(stats))
+                }
+            }
+            var promoted = 0
+            if (!admissionAttempted) {
+                if (registration.item == null && admitDiscoveryExpert(docId, profile, eligibility, profileMap, stats) ==
+                    AdmissionDisposition.PROMOTED) promoted = 1
+                admissionAttempted = true
+            }
+            val counts = PersonRegistrationCounts()
+            if (!personComplete) {
+                verificationRegistration?.requirePaperPermission(verification)
+                val result = registerPerson(sourceName, docId, stats)
+                counts.fold(result)
+                verificationRegistration?.recordPaperEffect(verification, registration, docId, "PERSON_ATTEMPTED", result)
+                if (paper?.parent != null) paperReprocessAfterEffect("AFTER_PERSON")
+                personComplete = result?.retryable != true
+            }
+            ConsumeOutcomeResult(promoted = promoted, enqueueFailed = !enqueued,
+                personCreated = counts.created, personAttached = counts.attached,
+                personNeedsReview = counts.needsReview, personScopeConflict = counts.scopeConflict,
+                registrationFailed = !personComplete, failureReasons = snapshotRejectReasons(stats))
+        }
+    }
 
     // ------------------------------------------------------------------
     // c2（I-1/I-2/I-4/I-6）：持久化队列的采集 / 抽取 / 消费接缝
@@ -2877,7 +2990,8 @@ class ExpertDiscoveryService(
         return progressStore.isCancelled(taskType)
     }
     private fun supportsSearchRecovery(source: AcademicDataSource) =
-        source is OpenAlexDataSource || source is CrossrefDataSource || source is ArxivDataSource
+        source is OpenAlexDataSource || source is CrossrefDataSource || source is ArxivDataSource ||
+            source is CoreDataSource
 
     private fun requestStop(deadline: Instant): String? = when {
         progressStore.isCancelled("EXPERT_DISCOVERY") || Thread.currentThread().isInterrupted -> DiscoveryStopReason.CANCELLED
@@ -4173,7 +4287,8 @@ data class SourceRetryPending(
     /** Source-local completed/consumed batch baseline; a failed search has not entered its next batch yet. */
     val batchBaseline: Int = 0,
     @get:com.fasterxml.jackson.annotation.JsonIgnore val consumePending: (() -> String?)? = null,
-    val consumedNextCursor: String? = null
+    val consumedNextCursor: String? = null,
+    @get:com.fasterxml.jackson.annotation.JsonIgnore val retryAllowed: (() -> Boolean)? = null
 )
 
 /** I-1: 单来源运行的停止原因，与主方案「每种约束各自给原因」对齐。 */

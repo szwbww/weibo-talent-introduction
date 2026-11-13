@@ -2,8 +2,8 @@
 id: K-batch-multi-value-filter-seams
 domain: campaign
 created: 2026-08-15
-last_used: 2026-08-28
-hit_count: 2
+last_used: 2026-10-25
+hit_count: 3
 source: create-p:batch-task-filters-main
 severity: P1
 ---

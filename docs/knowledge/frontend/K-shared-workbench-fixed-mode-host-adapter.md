@@ -2,8 +2,8 @@
 id: K-shared-workbench-fixed-mode-host-adapter
 domain: frontend
 created: 2026-07-28
-last_used: 2026-09-09
-hit_count: 11
+last_used: 2026-10-27
+hit_count: 12
 source: create-p:trusted-reply-shared-workbench
 severity: P1
 ---

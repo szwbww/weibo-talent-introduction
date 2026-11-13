@@ -2,10 +2,11 @@
 id: K-frontend-cache-key-triad
 domain: frontend
 created: 2026-09-22
-last_used: 2026-09-25
-hit_count: 31
+last_used: 2026-11-04
+hit_count: 43
 source: create-p:v6-topnav-glass-navy-restyle
 severity: P1
+last_source: fix-v:2026-10-26-recheck-repair:initial-pass
 ---
 
 经验：`index.html` 中 `styles.css?v=`、`trust-reply-workbench.js?v=`、`app.js?v=` 三个缓存键**必须同值、同时 bump**。

@@ -2,8 +2,8 @@
 id: K-batch-config-legacy-adapter-field-preservation
 domain: campaign
 created: 2026-08-12
-last_used: 2026-09-26
-hit_count: 4
+last_used: 2026-10-25
+hit_count: 5
 source: create-p:batch-send-rhythm-01-rounds-per-run
 severity: P1
 ---

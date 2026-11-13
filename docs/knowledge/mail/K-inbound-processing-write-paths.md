@@ -1,9 +1,9 @@
 ---
 id: K-inbound-processing-write-paths
 domain: mail
-created: 2026-07-01
-last_used: 2026-09-23
-hit_count: 14
+created: 2026-10-29
+last_used: 2026-10-29
+hit_count: 17
 source: create-p:inbound-mail-tag-backend
 severity: P2
 ---
@@ -15,3 +15,5 @@ copy 改状态（非新建，勿挂新建副作用）：`UnmatchedInboundMailSer
 配合 K-process-single-all-callers：6 个 processSingle 调用方最终都汇入上述两 sink，故挂一次即全覆盖；副作用须 best-effort（runCatching）避免阻断收信主流程。
 
 2026-09-10重新核验：两个新建sink当前位于AutoMailReplyService:1221/1274；状态改写位于UnmatchedInboundMailService:178/223、PendingMailOperationService:1356，另有PendingMailOperationService:1427→InboundMailProcessingRepository.reopenManualResolved条件UPDATE撤销人工处理。当前UID唯一键以V120的(account,uid_validity,uid)为准。
+
+2026-10-29新增核验：AutoMailReplyService.reclassifyFirstReplyAutoResponse:246也会copy-save处理状态。当前生产save共六处：该重分类、两个新行sink:1473/1529、Unmatched绑定:193/完成:238、Pending完成:1618；另有reopenManualResolved窄UPDATE。新增共享列时要防状态copy覆盖并发更新，不能仅核对new构造。证据expert-access-evidence/constructors.txt及source-excerpts E07–E11。
