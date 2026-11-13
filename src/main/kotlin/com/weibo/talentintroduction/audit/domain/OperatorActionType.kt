@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.audit.domain
 
 enum class OperatorActionType(val summary: String) {
+    CHANGE_PRIMARY_EMAIL("变更专家主邮箱"),
+    EDIT_EXPERT_TEMPLATE_VARIABLES("编辑专家模板变量"),
     CHANGE_OPERATOR_STATUS("变更专家状态"),
     CHANGE_INDEX_LEVEL("变更专家层级"),
     SWITCH_REPLY_MODE("切换自动/人工回复"),

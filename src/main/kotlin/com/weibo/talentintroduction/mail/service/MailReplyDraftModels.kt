@@ -37,7 +37,8 @@ data class MailReplyDraftAttachments(val revision: Long = 0, val items: List<Mai
 data class MailReplyDraftContext(
     val schemaVersion: Int = 1, val qa: MailReplyDraftQa? = null, val requestId: String? = null,
     val meeting: MailReplyDraftMeeting? = null, val meetingAccountCode: String? = null,
-    val followUpAnchorMailRecordId: Long? = null, val outboundAttachmentDraft: MailReplyDraftAttachments? = null
+    val followUpAnchorMailRecordId: Long? = null, val outboundAttachmentDraft: MailReplyDraftAttachments? = null,
+    val recipientEmail: String? = null
 )
 data class MailReplyDraftContent(val subject: String = "", val html: String = "", val text: String = "", val context: MailReplyDraftContext = MailReplyDraftContext())
 data class MailReplyDraftSaveRequest(val expectedVersion: Long, val content: MailReplyDraftContent, val reopen: Boolean = false)
@@ -91,6 +92,7 @@ object MailReplyDraftContextCodec {
         mapper.readValue(json, MailReplyDraftContext::class.java).also(::validate)
     } catch (e: MailReplyDraftException) { throw e } catch (e: Exception) { invalid("非法草稿上下文") }
     fun validate(context: MailReplyDraftContext) {
+        if (context.recipientEmail != null && (context.recipientEmail.length > 254 || context.recipientEmail.any { it.isISOControl() })) invalid("非法草稿收件人")
         if (context.schemaVersion != 1) invalid("不支持的草稿 schemaVersion")
         val attachments = context.outboundAttachmentDraft ?: return
         if (attachments.revision < 0 || attachments.items.size > MAX_FILES || attachments.items.map { it.key }.distinct().size != attachments.items.size) invalid("非法附件快照")

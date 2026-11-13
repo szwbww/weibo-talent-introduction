@@ -11566,36 +11566,9 @@ function activateDetailSubTab(btn) {
 }
 
 async function loadTemplatePreview(panel, orcidId) {
-    if (!orcidId) {
-        panel.innerHTML = `<div class="tpl-var-empty">无 ORCID，无法预览模板变量。</div>`;
-        return;
-    }
-    panel.innerHTML = `<div class="tpl-var-loading">加载模板变量中...</div>`;
-    panel.dataset.loaded = "true";
-    try {
-        const level = $("#expertIndexLevel")?.value || "CANDIDATE";
-        const vars = await api(`/api/experts/template-variables?orcidId=${encodeURIComponent(orcidId)}&level=${level}`);
-        const coverage = calculateExpertVariableCoverage(vars);
-        panel.innerHTML = `
-            <div class="tpl-var-summary">
-                <span class="tpl-var-coverage">专家变量覆盖: ${coverage.filled}/${coverage.total} (${coverage.percent}%)</span>
-                <div class="tpl-var-progress-track">
-                    <div class="tpl-var-progress-fill" style="width: ${coverage.percent}%"></div>
-                </div>
-            </div>
-            <div class="tpl-var-grid">
-                ${vars.map((v) => `
-                    <div class="tpl-var-item ${v.filled ? "tpl-var-filled" : "tpl-var-empty-val"}">
-                        <div class="tpl-var-key">\${${escapeHtml(v.key)}}</div>
-                        <div class="tpl-var-value">${v.filled ? escapeHtml(v.value) : "—"}</div>
-                    </div>
-                `).join("")}
-            </div>
-        `;
-    } catch (e) {
-        panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(e.message)}</div>`;
-        panel.dataset.loaded = "";
-    }
+    if (!orcidId) { panel.textContent = "无专家标识，无法编辑变量"; return; }
+    const level = $("#expertIndexLevel")?.value || "CANDIDATE";
+    return window.ExpertMailSettings.mountVariables(panel, orcidId, level, api, showStatus, EXPERT_VAR_KEY_SET);
 }
 
 function calculateExpertVariableCoverage(vars) {
@@ -14834,52 +14807,11 @@ async function openContactInList(contactId) {
 async function loadEmailAliases(contactId, contact) {
     const placeholder = $("#emailAliasPlaceholder");
     if (!placeholder) return;
-    try {
-        const aliases = await api(`/api/expert-contacts/${contactId}/email-aliases`);
-        const aliasTable = aliases.length ? `
-            <table style="width: 100%; font-size: 12px; margin-top: 4px;">
-                <thead>
-                    <tr>
-                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">别名邮箱</th>
-                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">来源</th>
-                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">确认</th>
-                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">创建时间</th>
-                        <th style="padding: 4px 6px; text-align: left; font-size: 11px;">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${aliases.map((alias) => `
-                    <tr>
-                        <td style="padding: 4px 6px;">${escapeHtml(alias.email)}</td>
-                        <td style="padding: 4px 6px;">${escapeHtml(alias.source)}</td>
-                        <td style="padding: 4px 6px;">${alias.verified ? badge("已确认", "ok") : badge("未确认", "warn")}</td>
-                        <td style="padding: 4px 6px;">${escapeHtml(alias.createdAt || "")}</td>
-                        <td style="padding: 4px 6px;">
-                            <button class="button small danger" data-action="delete-alias" data-alias-id="${alias.id}" data-contact-id="${contactId}" style="height: 28px; min-height: 28px; padding: 0 8px; font-size: 11px;">移除</button>
-                        </td>
-                    </tr>`).join("")}
-                </tbody>
-            </table>` : '<p style="color: var(--text-muted); font-size: 12px; margin: 4px 0 0;">暂无别名。</p>';
-        const mainEmail = contact.expertEmail || "";
-        placeholder.innerHTML = `
-            <div class="metadata-card-header">
-                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                <span>邮箱别名</span>
-            </div>
-            <div style="font-size: 13px; color: var(--text-main); margin-bottom: 4px;">
-                <strong>主邮箱:</strong> ${escapeHtml(mainEmail)}
-            </div>
-            ${aliasTable}
-            <div class="add-alias-row" style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-                <input id="newAliasEmail" placeholder="输入邮箱地址" style="flex: 1; height: 34px; min-height: 34px; font-size: 12px;">
-                <button class="button primary small" data-action="add-alias" data-contact-id="${contactId}" style="height: 34px; min-height: 34px; padding: 0 12px; font-size: 12px;">添加别名</button>
-            </div>
-        `;
-    } catch (e) {
-        placeholder.innerHTML = `
-            <div class="metadata-card-header"><span>邮箱别名</span></div>
-            <p style="color: var(--text-muted); font-size: 12px;">加载失败。</p>`;
-    }
+    return window.ExpertMailSettings.mountAliases(placeholder, contact, api, showStatus, (id, email) => {
+        const row = state.contacts.find(c => Number(c.contactId) === Number(id));
+        if (row) row.email = email;
+        refreshMailboxChatList();
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -18693,52 +18625,10 @@ function renderEmailAliasSection(contactId) {
     const container = document.createElement("div");
     container.id = "emailAliasSection";
     container.className = "metadata-card span-all";
-    container.style.border = "1px solid var(--panel-border)";
-    container.style.padding = "14px";
-    container.style.borderRadius = "8px";
-    api(`/api/expert-contacts/${contactId}/email-aliases`).then((aliases) => {
-        container.innerHTML = `
-            <div class="metadata-card-header" style="margin-bottom: 8px;">
-                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                <span>邮箱别名</span>
-            </div>
-            <div style="font-size: 13px; color: var(--text-main); margin-bottom: 8px;">
-                <strong>主邮箱:</strong> ${escapeHtml(state.contacts.find(c => c.contactId === contactId)?.email || "")}
-            </div>
-            ${aliases.length ? `
-            <table style="width: 100%; font-size: 12px; margin-bottom: 8px;">
-                <thead>
-                    <tr>
-                        <th style="padding: 4px 6px; text-align: left;">别名邮箱</th>
-                        <th style="padding: 4px 6px; text-align: left;">来源</th>
-                        <th style="padding: 4px 6px; text-align: left;">确认</th>
-                        <th style="padding: 4px 6px; text-align: left;">创建时间</th>
-                        <th style="padding: 4px 6px; text-align: left;">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${aliases.map((alias) => `
-                    <tr>
-                        <td style="padding: 4px 6px;">${escapeHtml(alias.email)}</td>
-                        <td style="padding: 4px 6px;">${escapeHtml(alias.source)}</td>
-                        <td style="padding: 4px 6px;">${alias.verified ? badge("已确认", "ok") : badge("未确认", "warn")}</td>
-                        <td style="padding: 4px 6px;">${escapeHtml(alias.createdAt || "")}</td>
-                        <td style="padding: 4px 6px;">
-                            <button class="button small danger" data-action="delete-alias" data-alias-id="${alias.id}" data-contact-id="${contactId}">移除</button>
-                        </td>
-                    </tr>`).join("")}
-                </tbody>
-            </table>` : '<p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">暂无别名。</p>'}
-
-            <div class="add-alias-row" style="display: flex; gap: 8px; align-items: center;">
-                <input id="newAliasEmail" placeholder="输入邮箱地址" style="flex: 1; height: 34px; min-height: 34px; font-size: 12px;">
-                <button class="button primary small" data-action="add-alias" data-contact-id="${contactId}">添加别名</button>
-            </div>
-        `;
-    }).catch(() => {
-        container.innerHTML = `<div class="metadata-card-header"><span>邮箱别名</span></div>
-            <p style="color: var(--text-muted); font-size: 12px;">加载失败。</p>`;
-    });
+    api(`/api/expert-contacts/${contactId}`).then(detail => {
+        if (container.isConnected) window.ExpertMailSettings.mountAliases(container, detail.contact, api, showStatus,
+            () => refreshMailboxChatList());
+    }).catch(error => { if (container.isConnected) container.textContent = error.message; });
     return container;
 }
 

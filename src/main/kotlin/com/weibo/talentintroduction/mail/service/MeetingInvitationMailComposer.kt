@@ -7,13 +7,14 @@ import org.springframework.stereotype.Service
 @Service
 class MeetingInvitationMailComposer(
     private val mailSenderAccountService: MailSenderAccountService,
-    private val mailComposeTemplateService: MailComposeTemplateService
+    private val mailComposeTemplateService: MailComposeTemplateService,
+    private val mailVariableService: MailVariableService? = null
 ) {
     fun compose(accountCode: String, expert: ExpertProfile): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
         val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_INVITATION",
-            variables = mapOf(
+            variables = mailVariableService?.buildVariables(account, expert).orEmpty() + mapOf(
                 "senderDisplayName" to account.senderDisplayName.orEmpty()
             ),
             variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)

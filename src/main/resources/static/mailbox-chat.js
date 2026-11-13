@@ -153,7 +153,7 @@
                 ? pick(meeting.preview.attachment, ["filename", "contentType", "icsText", "byteLength", "sha256", "semanticSha256"]) : null;
         }
         return { subject: d.subject || "", html: d.html || "", text: d.text || "", context: {
-            schemaVersion: 1, qa: d.qa ? { ragFactCodes: (d.qa.ragFactCodes || []).slice(),
+            schemaVersion: 1, recipientEmail: d.recipientEmail || null, qa: d.qa ? { ragFactCodes: (d.qa.ragFactCodes || []).slice(),
                 ragCorpusFingerprint: d.qa.ragCorpusFingerprint || "", baselineText: d.qa.baselineText || "" } : null,
             requestId: d.requestId || null, meeting: savedMeeting, meetingAccountCode: d.meetingAccountCode || "",
             followUpAnchorMailRecordId: d.followUpAnchorMailRecordId == null ? null : Number(d.followUpAnchorMailRecordId),
@@ -2578,6 +2578,7 @@
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${errorIcon ? ` aria-describedby="${errorId}"` : ""}${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${errorIcon}${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
+                        ${typeof window !== "undefined" && window.ExpertMailSettings ? window.ExpertMailSettings.emailMarkup(item) : ""}
                         ${item.accessLevel === "FULL" ? '<span class="mc-badge mc-grant-badge">user1: 写</span>' : ""}
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
@@ -4207,6 +4208,12 @@
             bindScrollListener();
         }
 
+        function headerEmailInfo(summary) {
+            if (typeof window === "undefined" || !window.ExpertMailSettings) return escapeText(conversationSummaryInfo() || "-");
+            const accounts = (summary.accountCodes || []).join("、");
+            return window.ExpertMailSettings.emailMarkup(summary) + (accounts ? ` · 账号 ${escapeText(accounts)}` : "");
+        }
+
         function conversationSummaryInfo() {
             const summary = instance.selectedSummary || {};
             const parts = [];
@@ -4240,8 +4247,8 @@
             const identity = head.querySelector(".mc-identity");
             if (identity) {
                 identity.innerHTML = delegated
-                    ? `<h2>${escapeText(summary.name || "未填写姓名")} <span class="mc-badge mc-access-full">可写</span></h2><p>${escapeText(conversationSummaryInfo())}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
-                    : `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
+                    ? `<h2>${escapeText(summary.name || "未填写姓名")} <span class="mc-badge mc-access-full">可写</span></h2><p>${headerEmailInfo(summary)}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
+                    : `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${headerEmailInfo(summary)}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
             }
             // I-4：优先取当前页同一行，回退身份匹配的 selectedSummary；都不可用保留默认文案。
             const selectedRow = contactId ? findSummaryByContactId(contactId) : null;

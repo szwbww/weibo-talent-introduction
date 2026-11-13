@@ -28,6 +28,17 @@ class MailReplyDraftServiceTest {
     private fun failure(status: HttpStatus, action: () -> Unit): MailReplyDraftException = assertThrows(MailReplyDraftException::class.java,action).also { assertEquals(status,it.status) }
     private fun existing(value: MailReplyDraftRow) { `when`(repository.findTarget("A",target)).thenReturn(value); `when`(contacts.existsById(11)).thenReturn(true) }
 
+    @Test fun `changing primary address never silently retargets a frozen draft`() {
+        val content = MailReplyDraftContent(context=MailReplyDraftContext(recipientEmail="old@example.org"))
+        val saved = row(content=content).copy(expertEmail="new@example.org")
+        `when`(repository.findOwned("A",10)).thenReturn(saved)
+        val ex = failure(HttpStatus.CONFLICT) {
+            service.validateConversationSend("A",MailReplyDraftRef(10,1),11,null,"request",null,"","","",emptyList())
+        }
+        assertEquals("DRAFT_RECIPIENT_CHANGED",ex.code)
+        verifyNoInteractions(attachments)
+    }
+
     @Test fun `owner absence and foreign ids do not expose drafts`() {
         failure(HttpStatus.UNAUTHORIZED) { service.get("",10) }
         failure(HttpStatus.NOT_FOUND) { service.get("B",10) }

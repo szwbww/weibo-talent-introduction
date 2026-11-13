@@ -104,7 +104,8 @@ data class ConversationItemResponse(
     val displayPendingOwner: String? = null,
     val displaySuspended: Boolean = false,
     val displaySuspendReason: String? = null,
-    val delayedPendingCount: Long = 0
+    val delayedPendingCount: Long = 0,
+    val emails: List<String> = emptyList()
 )
 
 /** Owner-scoped navigation only; bodies are loaded through the existing guarded draft endpoints. */

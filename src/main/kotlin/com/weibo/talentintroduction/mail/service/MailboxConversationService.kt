@@ -60,7 +60,8 @@ class MailboxConversationService(
     private val replyDraftRepository: com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository? = null,
     private val reviewDraftRepository: com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository? = null,
     private val outboundAttachmentService: OutboundAttachmentService? = null,
-    private val manualReplyAttempts: ManualReplySendAttemptService? = null
+    private val manualReplyAttempts: ManualReplySendAttemptService? = null,
+    private val emailAliases: com.weibo.talentintroduction.campaign.repository.ExpertEmailAliasRepository? = null
 ) {
     fun currentAccess(contactId: Long, username: String?): ExpertMailAccessLevel {
         require(contactId > 0)
@@ -210,6 +211,7 @@ class MailboxConversationService(
             return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal, filterCounts)
         }
         val contactIds = rows.map { it.expertContactId }
+        val aliasesByContact = emailAliases?.findAllByContactIds(contactIds).orEmpty().groupBy { it.expertContactId }
         val accessLevels = readAccessService.accessLevels(contactIds)
         val ownDrafts = if (reader) repository.ownDraftsByContacts(sessionUser, contactIds).orEmpty() else emptyMap()
         val latestMessages = repository.latestMessageByContacts(contactIds, activeCodes, accountCode)
@@ -231,6 +233,8 @@ class MailboxConversationService(
                 contactId = row.expertContactId,
                 name = row.expertName,
                 email = row.expertEmail,
+                emails = (listOf(row.expertEmail) + aliasesByContact[row.expertContactId].orEmpty().map { it.email })
+                    .map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct(),
                 orcid = row.orcidId,
                 // expert_contact 无机构列（MySQL 无 institution 存储），此处恒 null，
                 // 由前端从专家资料（ES 画像）展示；不伪造 DB 事实。

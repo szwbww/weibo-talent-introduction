@@ -907,7 +907,12 @@
                     main.setAttribute("aria-label", name.textContent + "；存在发送异常");
                 }
                 var account = makeNode(doc, "small"); setText(account, (item.accountCodes || []).join("、")); main.appendChild(account);
-                if (item.accessLevel === "FULL" && item.email) appendText(main, item.email);
+                if (item.accessLevel === "FULL" && item.email) {
+                    if (global.ExpertMailSettings) {
+                        var emailLine = makeNode(doc, "span", ""); emailLine.innerHTML = global.ExpertMailSettings.emailMarkup(item);
+                        main.insertBefore(emailLine, account);
+                    } else appendText(main, item.email);
+                }
                 var subject = makeNode(doc, "small");
                 setText(subject, (item.latestMessage && item.latestMessage.direction === "INBOUND" ? "最近来信：" : "最近发件：") + latestSubject(item)); main.appendChild(subject);
                 var reply = makeNode(doc, "span", "mailbox-reply-list"), replyLabel = makeNode(doc, "span");

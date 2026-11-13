@@ -93,7 +93,8 @@ class AutoReplyPreviewService(
                 }
                 val rendered = mailComposeTemplateService.renderByCode(
                     templateCode = "MEETING_INVITATION",
-                    variables = mailTemplateVariables(account),
+                    variables = mailVariableService.buildVariables(account, contactForSeed?.let { mailVariableService.resolveExpertProfileFor(it) },
+                        contactForSeed?.expertEmail, previewFallbacks = true, contact = contactForSeed) + mailTemplateVariables(account),
                     variantSeed = variantSeed
                 )
                 val meetingAlreadySent = contactId != null && hasMeetingInvitation(contactId)

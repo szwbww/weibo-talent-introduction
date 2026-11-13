@@ -13639,6 +13639,23 @@ body[data-mail-read-only="true"] #view-mailbox.mc-refined #mailboxList{padding:1
     line-height: 1.6;
 }
 
+/* Expert mail defaults: shared mailbox email hint and inline variable editor. */
+.expert-email-line{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;color:var(--text-secondary);font-size:12px}
+.expert-email-address{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.expert-email-alert{display:inline-grid;place-items:center;flex:0 0 16px;width:16px;height:16px;border:1px solid #d6a25b;border-radius:50%;background:#fff6e8;color:#a36513;font:600 11px/1 sans-serif;cursor:help}
+.expert-email-alert:hover,.expert-email-alert:focus-visible{outline:2px solid #efcf9f;outline-offset:2px;background:#ffebc8}
+.expert-email-tooltip{position:fixed;z-index:1500;max-width:calc(100vw - 16px);padding:12px 16px;border:1px solid #d6dce5;border-radius:9px;background:#fff;color:#334155;box-shadow:0 8px 30px #16243626;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.9;pointer-events:none}
+.expert-variable-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.expert-variable-toolbar p,.expert-variable-help{font-size:12px;color:var(--text-secondary);margin:6px 0;line-height:1.7}
+.expert-variable-badge{font:10px var(--font-body);color:var(--text-secondary);margin-left:8px}
+.expert-variable-progress{flex:1;min-width:0;height:7px;accent-color:var(--primary)}
+.tpl-var-item textarea{width:100%;resize:vertical;min-height:68px;margin-top:8px;font-size:13px;line-height:1.6}
+.expert-variable-save{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;padding:12px;background:#f3f4f6;border-top:1px solid var(--border);margin-top:14px;z-index:2}
+.expert-variable-save>span{flex:1;color:var(--text-secondary);font-size:12px}
+.expert-primary-summary{font-size:13px;margin:8px 0;overflow-wrap:anywhere}
+.expert-email-table{width:100%;font-size:12px}.expert-email-table td{overflow-wrap:anywhere}
+.expert-email-actions,.expert-alias-add{display:flex;align-items:center;gap:8px}.expert-email-actions{flex-wrap:wrap}.expert-alias-add{margin-top:12px}.expert-alias-add input{flex:1;min-width:0}
+
 /* paper-reprocess-contract:start */
 .rp-batch{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px;border:1px solid #c7d2fe;border-radius:8px;background:#f6f8ff}
 .rp-batch strong{font-size:14px;color:#1e293b}

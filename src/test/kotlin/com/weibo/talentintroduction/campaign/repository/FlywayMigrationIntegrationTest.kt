@@ -200,12 +200,13 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh empty database reaches V174 and creates the reprocess tables without seeded rows`() {
+    fun `fresh empty database reaches V175 and creates the reprocess tables without seeded rows`() {
         val flyway = flyway()
         flyway.clean()
         val result = flyway.migrate()
-        assertEquals("174", result.targetSchemaVersion)
+        assertEquals("175", result.targetSchemaVersion)
         connection().use { c ->
+            assertTrue(c.tableExists("expert_template_override"))
             assertTrue(c.tableExists("delayed_manual_reply"))
             assertTrue(c.tableExists("discovery_paper_reprocess_run"))
             assertTrue(c.tableExists("discovery_paper_reprocess_item"))
@@ -226,6 +227,69 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `V175 expert defaults persist with CAS and primary email pins old drafts atomically`() {
+        migrateToV23AndSeedBase()
+        flyway(MigrationVersion.fromVersion("174")).migrate()
+        val result = flyway().migrate()
+        assertEquals("175", result.targetSchemaVersion)
+        assertEquals(1, result.migrationsExecuted)
+        val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+        val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+        val tx = TransactionTemplate(DataSourceTransactionManager(ds))
+        val audit = Mockito.mock(com.weibo.talentintroduction.audit.service.OperatorActionLogService::class.java)
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        fun defaults() = com.weibo.talentintroduction.mail.service.ExpertTemplateOverrideService(jdbc, mapper, audit)
+        val values = mapOf("expertFamilyName" to "Szunerits", "institution" to "")
+        tx.executeWithoutResult { defaults().save("0000-0001", 0, values, "admin") }
+        assertEquals(values, defaults().read("0000-0001").values)
+        assertEquals(1L, defaults().read("0000-0001").version)
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            tx.executeWithoutResult { defaults().save("0000-0001", 0, emptyMap(), "admin") }
+        }
+        assertEquals(values, defaults().read("0000-0001").values)
+        val failingAudit = Mockito.mock(com.weibo.talentintroduction.audit.service.OperatorActionLogService::class.java) {
+            throw IllegalStateException("audit unavailable")
+        }
+        assertThrows(IllegalStateException::class.java) {
+            tx.executeWithoutResult {
+                com.weibo.talentintroduction.mail.service.ExpertTemplateOverrideService(jdbc, mapper, failingAudit)
+                    .save("0000-0001", 1, emptyMap(), "admin")
+            }
+        }
+        assertEquals(1L, defaults().read("0000-0001").version)
+        tx.executeWithoutResult { defaults().save("0000-0001", 1, emptyMap(), "admin") }
+        assertTrue(defaults().read("0000-0001").values.isEmpty())
+
+        for ((id, context) in listOf(95001 to "{}", 95002 to "{\"recipientEmail\":null}", 95003 to "{\"recipientEmail\":\"pinned@example.com\"}")) {
+            jdbc.update("""INSERT INTO mailbox_reply_draft
+                (id,username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,
+                 subject,html_body,text_body,context_json,created_at,updated_at)
+                VALUES (?,'admin',1,'INBOUND',?,'sender',3,'ACTIVE','','','',?,NOW(3),NOW(3))""", id, id, context)
+        }
+        val aliases = Mockito.mock(ExpertEmailAliasRepository::class.java)
+        Mockito.`when`(aliases.findByNormalizedEmail("new@example.com")).thenReturn(
+            com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias(expertContactId=1,email="new@example.com",normalizedEmail="new@example.com"))
+        val bindings = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService::class.java)
+        Mockito.`when`(bindings.bindAlias(1,"one@example.com","PREVIOUS_PRIMARY")).thenAnswer {
+            jdbc.update("INSERT INTO expert_email_alias (expert_contact_id,email,normalized_email,source,verified,created_at) VALUES (1,'one@example.com','one@example.com','PREVIOUS_PRIMARY',true,NOW())")
+            com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias(expertContactId=1,email="one@example.com",normalizedEmail="one@example.com")
+        }
+        val primary = com.weibo.talentintroduction.campaign.service.ExpertPrimaryEmailService(
+            jdbc, Mockito.mock(ExpertContactRepository::class.java), aliases, bindings, audit)
+        tx.executeWithoutResult { primary.change(1,"new@example.com","one@example.com","admin") }
+        assertEquals("new@example.com", jdbc.queryForObject("SELECT expert_email FROM expert_contact WHERE id=1", String::class.java))
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM expert_email_alias WHERE normalized_email='one@example.com'", Long::class.java))
+        for (id in listOf(95001,95002)) {
+            assertEquals("one@example.com", jdbc.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(context_json,'$.recipientEmail')) FROM mailbox_reply_draft WHERE id=?", String::class.java,id))
+            assertEquals(4L, jdbc.queryForObject("SELECT version FROM mailbox_reply_draft WHERE id=?", Long::class.java,id))
+        }
+        assertEquals("pinned@example.com", jdbc.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(context_json,'$.recipientEmail')) FROM mailbox_reply_draft WHERE id=95003", String::class.java))
+        val stale = com.weibo.talentintroduction.campaign.domain.ExpertContact(id=1,campaignId=1,orcidId="0000-0001",expertEmail="one@example.com",expertName="One")
+        val callback = com.weibo.talentintroduction.campaign.service.ExpertContactPrimaryEmailCallback(jdbc)
+        assertEquals("new@example.com", tx.execute { callback.onBeforeConvert(stale) }!!.expertEmail)
+    }
+
+    @Test
     fun `V173 upgrades to V174 creating the delayed manual reply table without touching legacy drafts`() {
         val before = flyway(MigrationVersion.fromVersion("173"))
         before.clean()
@@ -243,7 +307,7 @@ class FlywayMigrationIntegrationTest {
                         '2026-01-01 00:00:00.123','2026-01-01 00:00:00.123')""")
         }
 
-        val result = flyway().migrate()
+        val result = flyway(MigrationVersion.fromVersion("174")).migrate()
         assertEquals("174", result.targetSchemaVersion)
         assertEquals(1, result.migrationsExecuted)
         connection().use { c ->

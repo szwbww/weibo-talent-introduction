@@ -29,7 +29,8 @@ class MeetingScheduleService(
     private val senderAccountBindingService: SenderAccountBindingService,
     private val mailDeliveryService: MailDeliveryService,
     private val mailComposeTemplateService: MailComposeTemplateService,
-    private val conversationStateService: ConversationStateService
+    private val conversationStateService: ConversationStateService,
+    private val mailVariableService: com.weibo.talentintroduction.mail.service.MailVariableService? = null
 ) {
     fun extractAndCreate(contactId: Long, mailRecord: MailRecord): MeetingSchedule {
         val body = mailRecord.cleanedBody ?: ""
@@ -118,7 +119,7 @@ class MeetingScheduleService(
         }
         val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_CONFIRMATION",
-            variables = mapOf(
+            variables = mailVariableService?.let { it.buildVariables(account, it.resolveExpertProfileFor(contact), contact.expertEmail, contact = contact) }.orEmpty() + mapOf(
                 "meetingTime" to command.chinaTime,
                 "meetingTool" to command.meetingTool,
                 "meetingLink" to command.meetingLink,

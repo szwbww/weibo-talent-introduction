@@ -112,11 +112,26 @@ class MailVariableService(
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val unsubscribeTokenService: UnsubscribeTokenService? = null,
     private val mailPlaceholderService: MailPlaceholderService = MailPlaceholderService(),
-    private val expertMaterialService: ExpertMaterialService? = null
+    private val expertMaterialService: ExpertMaterialService? = null,
+    private val templateOverrides: ExpertTemplateOverrideService? = null
 ) {
     private val log = LoggerFactory.getLogger(MailVariableService::class.java)
 
     fun buildVariables(
+        account: MailSenderAccount?,
+        expert: ExpertProfile?,
+        unsubscribeEmail: String? = expert?.email,
+        previewFallbacks: Boolean = false,
+        contact: ExpertContact? = null
+    ): Map<String, String> {
+        val original = buildOriginalVariables(account, expert, unsubscribeEmail, previewFallbacks, contact)
+        val expertKey = contact?.orcidId ?: expert?.orcidId
+        val overrides = if (!expertKey.isNullOrBlank()) templateOverrides?.read(expertKey)?.values.orEmpty() else emptyMap()
+        return original + overrides
+    }
+
+    /** Raw profile values for the editor's explicit restore action. Outbound callers use buildVariables. */
+    fun buildOriginalVariables(
         account: MailSenderAccount?,
         expert: ExpertProfile?,
         unsubscribeEmail: String? = expert?.email,

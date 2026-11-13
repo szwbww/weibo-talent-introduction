@@ -1390,7 +1390,7 @@ class AutoMailReplyService(
         val variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
         val rendered = mailComposeTemplateService.renderByCode(
             templateCode = "MEETING_INVITATION",
-            variables = mailTemplateVariables(account),
+            variables = mailVariableService.buildVariables(account, mailVariableService.resolveExpertProfileFor(contact), contact.expertEmail, contact = contact) + mailTemplateVariables(account),
             variantSeed = variantSeed
         )
         val mail = ComposedMail(

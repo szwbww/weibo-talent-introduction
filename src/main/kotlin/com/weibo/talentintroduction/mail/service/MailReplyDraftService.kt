@@ -63,7 +63,10 @@ class MailReplyDraftService(
         }
         existing = existing?.let { releaseTerminalDelayedBinding(it) }
         validateTarget(target)
-        val content = normalizeAttachments(owner,target,request.content,existing)
+        val pinnedRecipient = existing?.takeIf { it.state == MailReplyDraftState.ACTIVE }?.contextJson
+            ?.let(MailReplyDraftContextCodec::parse)?.recipientEmail
+        val submitted = if (pinnedRecipient != null) request.content.copy(context=request.content.context.copy(recipientEmail=pinnedRecipient)) else request.content
+        val content = normalizeAttachments(owner,target,submitted,existing)
         val json = MailReplyDraftContextCodec.serialize(content.context)
         if (content.subject.codePointCount(0,content.subject.length) > 255) invalid("主题最多255字符")
         val bytes = sequenceOf(content.subject,content.html,content.text,json).sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
@@ -258,6 +261,11 @@ class MailReplyDraftService(
         identity(owner)
         val row = authorizedOwned(owner,ref.id)
         if (ref.version <= 0 || row.version != ref.version || row.state != MailReplyDraftState.ACTIVE) conflict(row)
+        val pinned = content(row).context.recipientEmail
+        if (pinned != null && !pinned.equals(row.expertEmail, true)) {
+            throw MailReplyDraftException(HttpStatus.CONFLICT,"DRAFT_RECIPIENT_CHANGED",
+                "专家主邮箱已变更，原草稿收件人为 $pinned。请复制正文并新建草稿，确认收件人后发送",row.version,row.state)
+        }
         return row
     }
     private fun locked(owner: String, id: Long): MailReplyDraftRow =
