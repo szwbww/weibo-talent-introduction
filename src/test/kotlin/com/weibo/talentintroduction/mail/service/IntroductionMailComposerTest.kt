@@ -24,6 +24,21 @@ class IntroductionMailComposerTest {
     private val composer = IntroductionMailComposer(accountService, templateService, mailVariableService)
 
     @Test
+    fun `statistics evaluator uses expert variables and excludes account requirements`() {
+        val frozen = com.weibo.talentintroduction.template.service.StatisticsTemplateSnapshot(
+            10, listOf("Hello"), listOf(0 to listOf("\${institution} \${senderName}")),
+            listOf("institution", "senderName")
+        )
+        Mockito.`when`(templateService.loadStatisticsEvaluationSnapshot(10L)).thenReturn(frozen)
+        val evaluate = composer.statisticsTemplateEvaluator(10L)
+        assertEquals(listOf("institution"), evaluate(sparseExpert().copy(institution = null)))
+        assertTrue(evaluate(sparseExpert().copy(institution = "Institute")).isEmpty())
+        Mockito.verify(templateService, Mockito.times(1)).loadStatisticsEvaluationSnapshot(10L)
+        Mockito.verifyNoMoreInteractions(templateService)
+        Mockito.verifyNoInteractions(accountService)
+    }
+
+    @Test
     fun `batch evaluation preserves missing variable gate when rendered subject is invalid`() {
         val expert = sparseExpert().copy(researchFields = "x".repeat(256))
         Mockito.`when`(templateService.renderForBatchEvaluation(Mockito.isNull(), anyValue(emptyMap()), Mockito.anyInt()))

@@ -156,7 +156,21 @@ class BatchRecipientPreflightService(
     private val introductionMailComposer: IntroductionMailComposer
 ) {
 
-    fun preflight(input: BatchRecipientPreflightInput): BatchRecipientPreflightResult {
+    fun preflight(input: BatchRecipientPreflightInput): BatchRecipientPreflightResult =
+        calculatePreflight(input, null, {})
+
+    fun preflightForStatistics(
+        input: BatchRecipientPreflightInput,
+        templateKeys: ((ExpertProfile) -> List<String>)?,
+        checkActive: () -> Unit
+    ): BatchRecipientPreflightResult = calculatePreflight(input, templateKeys, checkActive)
+
+    private fun calculatePreflight(
+        input: BatchRecipientPreflightInput,
+        templateKeys: ((ExpertProfile) -> List<String>)?,
+        checkActive: () -> Unit
+    ): BatchRecipientPreflightResult {
+        checkActive()
         val distinct = dedupeByDocId(input.profiles)
         val selection = if (distinct.isEmpty()) {
             RecipientSelection.EMPTY
@@ -175,6 +189,7 @@ class BatchRecipientPreflightService(
 
         val decisions = ArrayList<RecipientPreflightDecision>(distinct.size)
         for (profile in distinct) {
+            checkActive()
             val docId = BatchRecipientSelectionService.docIdOf(profile)
             val selected = decisionByDoc[docId]
             val conditionKeys = selected?.filterKeys.orEmpty()
@@ -194,7 +209,7 @@ class BatchRecipientPreflightService(
                 }
             }
             val templateKeys = if (input.gateFilterEnabled) {
-                expertMissingTemplateKeys(profile, input.templateId)
+                templateKeys?.invoke(profile) ?: expertMissingTemplateKeys(profile, input.templateId)
             } else {
                 emptyList()
             }

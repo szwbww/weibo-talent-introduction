@@ -59,12 +59,61 @@ class BatchRecipientStatisticsCacheTest {
 
     @AfterEach
     fun `cache only calls read-only statistics seams`() {
+        cache.close()
         assertTrue(Mockito.mockingDetails(outreach).invocations.all {
             it.method.name in setOf("statisticsContext", "countStrictStatistics")
         }, "Cache must not call sending, preview, or other business operations")
         assertTrue(Mockito.mockingDetails(templates).invocations.all {
             it.method.name == "statisticsFingerprint"
         }, "Cache must not render or mutate templates")
+    }
+
+    @Test
+    fun `timeout retains old cache cancels scan and releases key for retry`() {
+        val original = cache.statistics(snapshot())
+        cache.timeoutMillis = 100
+        val interrupted = CountDownLatch(1)
+        compute = {
+            try { CountDownLatch(1).await() } catch (ex: InterruptedException) {
+                interrupted.countDown()
+                throw ex
+            }
+            summary(999)
+        }
+        val failed = cache.statistics(snapshot(), refresh = true)
+        assertEquals("STATISTICS_TIMEOUT", failed.errorCode)
+        assertEquals(original.summary, failed.summary)
+        assertEquals(original.cachedAt, failed.cachedAt)
+        await(interrupted)
+        assertEquals(BatchRecipientStatisticsState.ERROR, cache.statistics(snapshot(), cacheOnly = true).state)
+        cache.timeoutMillis = 10000
+        compute = { summary(321) }
+        assertEquals(321, cache.statistics(snapshot(), refresh = true).summary?.totalSendable)
+    }
+
+    @Test
+    fun `late timed out worker cannot publish or consume unbounded workers`() {
+        val release = CountDownLatch(1)
+        val exited = CountDownLatch(1)
+        cache.timeoutMillis = 100
+        compute = {
+            while (release.count > 0) {
+                try { release.await() } catch (_: InterruptedException) { /* simulate an uninterruptible driver */ }
+            }
+            exited.countDown()
+            summary(999)
+        }
+        try {
+            assertEquals("STATISTICS_TIMEOUT", cache.statistics(snapshot()).errorCode)
+            // The abandoned worker still occupies one of the two physical slots.
+            assertEquals("STATISTICS_TIMEOUT", cache.statistics(snapshot(8)).errorCode)
+            assertEquals("STATISTICS_BUSY", cache.statistics(snapshot(9)).errorCode)
+            assertEquals(2, computations.get())
+            release.countDown()
+            await(exited)
+            assertEquals("STATISTICS_TIMEOUT", cache.statistics(snapshot(), cacheOnly = true).errorCode)
+            assertNull(cache.statistics(snapshot(), cacheOnly = true).summary)
+        } finally { release.countDown() }
     }
 
     @Test

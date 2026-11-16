@@ -7821,6 +7821,39 @@ class ManualInitialOutreachServiceTest {
         )
 
     @Test
+    fun `strict statistics reuses one template evaluator for full count and diagnostic scan`() {
+        stubEmptyRetryCandidates()
+        val profiles = (1..20).map { expert("SNAP$it", "snap$it@example.org") }
+        stubPagedExperts(profiles)
+        val evaluated = mutableListOf<String>()
+        val evaluator: (ExpertProfile) -> List<String> = { profile ->
+            evaluated += profile.orcidId
+            if (profile.orcidId == "SNAP1") listOf("institution") else emptyList()
+        }
+        Mockito.`when`(introductionMailComposer.statisticsTemplateEvaluator(42L)).thenReturn(evaluator)
+        val snapshot = runScheduledSnapshot().copy(templateId = 42L, gateFilterEnabled = true)
+        val result = service.countStrictStatistics(service.statisticsContext(snapshot))
+        assertEquals(19, result.totalSendable)
+        assertEquals(20, result.baseline)
+        assertEquals(2, evaluated.count { it == "SNAP1" })
+        Mockito.verify(introductionMailComposer, Mockito.times(1)).statisticsTemplateEvaluator(42L)
+        Mockito.verify(introductionMailComposer, Mockito.never()).evaluateForBatch(
+            Mockito.nullable(String::class.java), anyValue(profiles.first()), Mockito.nullable(Long::class.javaObjectType)
+        )
+        assertStatisticsReadOnly()
+    }
+
+    @Test
+    fun `expired statistics stops before opening candidate cursor even after interrupt was cleared`() {
+        org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.TimeoutException::class.java) {
+            RecipientStatisticsCancellation.withDeadline({ true }) {
+                service.countStrictStatistics(service.statisticsContext(runScheduledSnapshot()))
+            }
+        }
+        Mockito.verify(expertSearchService, Mockito.never()).openCandidateCursor(anyIndexLevel(), anyValue(emptyList()), anyInt())
+    }
+
+    @Test
     fun `strict statistics shares person identity across NEW and ES`() {
         val d1 = discoveredExpert("D1", "d1@test.com")
         val d2 = discoveredExpert("D2", "d2@test.com")

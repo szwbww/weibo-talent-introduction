@@ -623,9 +623,16 @@ class ManualInitialOutreachService(
 
     /** Strict reads fail closed; the legacy preview deliberately retains its original contract. */
     fun countStrictStatistics(context: BatchRecipientStatisticsContext): PendingOutreachSummary {
-        val summary = countStatistics(context.snapshot, context.scope, strict = true)
+        val checkActive = { checkStatisticsActive() }
+        checkActive()
+        val templateKeys = if (context.snapshot.gateFilterEnabled &&
+            context.scope.mailType == BatchSendType.INTRODUCTION.name) {
+            introductionMailComposer.statisticsTemplateEvaluator(context.snapshot.templateId)
+        } else null
+        val summary = countStatistics(context.snapshot, context.scope, strict = true, templateKeys = templateKeys)
+        checkActive()
         if (context.scope.mailType == BatchSendType.INTRODUCTION.name) return summary
-        val preflight = strictPreflight(context.snapshot, context.scope)
+        val preflight = strictPreflight(context.snapshot, context.scope, templateKeys)
         return summary.withDiagnostics(preflight)
     }
 
@@ -636,12 +643,15 @@ class ManualInitialOutreachService(
         partial = result.partial, asOf = result.asOf, reasonHitsDetail = result.reasonHits
     )
 
+    private fun checkStatisticsActive() = RecipientStatisticsCancellation.checkActive()
+
     /** NEW enumeration is bounded keyset pagination; callbacks retain no page beyond this call. */
     private fun forEachStrictRetryPage(campaignId: Long, consume: (List<ExpertContact>) -> Boolean) {
         val upper = expertContactRepository.findNewRetryUpperId(campaignId) ?: return
         var updatedAt: LocalDateTime? = null
         var id: Long? = null
         while (true) {
+            checkStatisticsActive()
             val page = expertContactRepository.findNewRetryPage(campaignId, upper, updatedAt, id, 500)
             if (page.isEmpty()) return
             if (!consume(page)) return
@@ -657,6 +667,7 @@ class ManualInitialOutreachService(
             level, listOf(mapOf("terms" to mapOf("orcidId" to orcids.distinct()))), 500
         ).use { cursor ->
             while (true) {
+                checkStatisticsActive()
                 val page = cursor.nextPage()
                 if (page.profiles.isEmpty()) break
                 found.addAll(expertSearchService.findByDocumentIdsStrict(
@@ -692,12 +703,16 @@ class ManualInitialOutreachService(
     }
 
     /** Full targets and bounded diagnostics are deliberately independent strict traversals. */
-    private fun strictPreflight(snapshot: BatchExecutionSnapshot, scope: RecipientScope): BatchRecipientPreflightResult {
+    private fun strictPreflight(
+        snapshot: BatchExecutionSnapshot, scope: RecipientScope,
+        templateKeys: ((ExpertProfile) -> List<String>)?
+    ): BatchRecipientPreflightResult {
         val preflight = requireNotNull(batchRecipientPreflightService) { "Read-only preflight service is required" }
         val base = baseRecipientScope(scope)
         val collected = LinkedHashMap<String, ExpertProfile>()
         fun collect(profiles: List<ExpertProfile>): Boolean {
             for (profile in profiles) {
+                checkStatisticsActive()
                 collected.putIfAbsent(BatchRecipientSelectionService.docIdOf(profile), profile)
                 if (collected.size >= MAX_BASELINE_SCAN) return false
             }
@@ -708,6 +723,7 @@ class ManualInitialOutreachService(
             val level = ExpertIndexLevel.valueOf(levelName)
             expertSearchService.openCandidateCursor(level, buildBaseEsFilters(base), 500).use { cursor ->
                 while (collected.size < MAX_BASELINE_SCAN) {
+                    checkStatisticsActive()
                     val page = cursor.nextPage(minOf(500, MAX_BASELINE_SCAN - collected.size))
                     if (page.profiles.isEmpty()) break
                     if (!collect(expertSearchService.findByDocumentIdsStrict(
@@ -728,18 +744,23 @@ class ManualInitialOutreachService(
                 }
             }
         }
-        return preflight.preflight(preflightInput(snapshot, scope, collected.values.toList(), collected.size >= MAX_BASELINE_SCAN))
+        return preflight.preflightForStatistics(
+            preflightInput(snapshot, scope, collected.values.toList(), collected.size >= MAX_BASELINE_SCAN),
+            templateKeys, ::checkStatisticsActive
+        )
     }
 
     private fun countStatistics(
         snapshot: BatchExecutionSnapshot,
         scope: RecipientScope,
-        strict: Boolean
+        strict: Boolean,
+        templateKeys: ((ExpertProfile) -> List<String>)? = null
     ): PendingOutreachSummary = when (snapshot.mailType) {
         BatchSendType.MATERIAL_REMINDER.name -> {
             val accumulator = AdmissionPreviewAccumulator()
             val materialSnapshot = buildMaterialReminderSnapshot(
-                scope, verificationFilterNow(), onSelection = accumulator::record
+                scope, verificationFilterNow(), onSelection = accumulator::record,
+                checkActive = if (strict) ::checkStatisticsActive else ({})
             )
             PendingOutreachSummary(
                 pending = materialSnapshot.targetCount,
@@ -756,7 +777,9 @@ class ManualInitialOutreachService(
             val now = verificationFilterNow()
             val accumulator = AdmissionPreviewAccumulator()
             // A3 (I-4)：门禁开启时用精确模板门禁（与发送期 compose 同源），不再是 ES 字段白名单子集。
-            val gate = batchTemplateGate(snapshot)
+            val gate: (List<ExpertProfile>) -> List<ExpertProfile> = if (templateKeys != null) {
+                { profiles -> profiles.filter { checkStatisticsActive(); templateKeys(it).isEmpty() } }
+            } else batchTemplateGate(snapshot)
             var retryable = 0
             var excluded = 0
             val seenOrcids = mutableSetOf<String>()
@@ -783,7 +806,7 @@ class ManualInitialOutreachService(
             excluded += esExcluded
             // I-1/I-2（02）：完整母集只读预检查 —— 母集仅按所选层级/标签读取（不再被地区/状态/模板提前缩小），
             // 保护/模板/邮箱原因独立表达；新增字段为兼容扩展，旧字段含义逐字保留。
-            val preflight = if (strict) strictPreflight(snapshot, scope) else preflightForSnapshot(snapshot, scope)
+            val preflight = if (strict) strictPreflight(snapshot, scope, templateKeys) else preflightForSnapshot(snapshot, scope)
             PendingOutreachSummary(
                 pending = esEstimate,
                 retryable = retryable,
@@ -1853,7 +1876,8 @@ class ManualInitialOutreachService(
         private val executionId: Long?,
         private val gate: (List<ExpertProfile>) -> List<ExpertProfile>,
         private val now: LocalDateTime,
-        private val onSelection: ((RecipientSelection) -> Unit)? = null
+        private val onSelection: ((RecipientSelection) -> Unit)? = null,
+        private val checkActive: () -> Unit = {}
     ) : AutoCloseable {
         var scanned = 0L
             private set
@@ -1873,8 +1897,10 @@ class ManualInitialOutreachService(
         private val seenEmails = mutableSetOf<String>()
         private val seenContacts = mutableSetOf<Long>()
 
-        private fun cancelled() = executionId != null &&
-            progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+        private fun cancelled(): Boolean {
+            checkActive()
+            return executionId != null && progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+        }
 
         private fun <T> readCandidates(action: () -> T): T = try {
             action()
@@ -2585,12 +2611,13 @@ class ManualInitialOutreachService(
     private fun buildMaterialReminderSnapshot(
         scope: RecipientScope,
         now: LocalDateTime,
-        onSelection: ((RecipientSelection) -> Unit)? = null
+        onSelection: ((RecipientSelection) -> Unit)? = null,
+        checkActive: () -> Unit = {}
     ): MaterialReminderSnapshot {
         val scopeDescription = scope.funnelLevels.joinToString("+") + " + tags=${scope.tags}" +
             (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (scope.discipline?.let { " + discipline=$it" } ?: "")
-        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription, now, onSelection)
+        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription, now, onSelection, checkActive)
     }
 
     private fun buildMaterialReminderSnapshot(config: BatchSendConfig): MaterialReminderSnapshot {
@@ -2614,12 +2641,14 @@ class ManualInitialOutreachService(
         scope: RecipientScope,
         scopeDescription: String,
         now: LocalDateTime,
-        onSelection: ((RecipientSelection) -> Unit)? = null
+        onSelection: ((RecipientSelection) -> Unit)? = null,
+        checkActive: () -> Unit = {}
     ): MaterialReminderSnapshot {
-        val source = DemandCandidateSource(null, scope, null, null, { it }, now, onSelection)
+        val source = DemandCandidateSource(null, scope, null, null, { it }, now, onSelection, checkActive)
         var count = 0
         source.iterator { 500 }.use { iterator ->
             while (iterator.hasNext()) {
+                checkActive()
                 iterator.next()
                 count = Math.addExact(count, 1)
             }
@@ -2699,6 +2728,7 @@ class ManualInitialOutreachService(
                     ExpertIndexLevel.valueOf(level), buildEsFiltersForLevel(scope, level), 500
                 ).use { cursor ->
                     while (true) {
+                        checkStatisticsActive()
                         val page = cursor.nextPage()
                         if (page.profiles.isEmpty()) break
                         if (!consume(page.profiles)) error("Strict statistics interrupted")

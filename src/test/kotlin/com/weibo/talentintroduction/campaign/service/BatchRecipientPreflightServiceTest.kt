@@ -140,6 +140,34 @@ class BatchRecipientPreflightServiceTest {
     // ── G-2：共同 fixture ─────────────────────────────────────────────────────
 
     @Test
+    fun `statistics evaluator preserves diagnostic results without per recipient live template reads`() {
+        val profiles = listOf(expert("A"), expert("B"))
+        stubAdmissions("A", "B")
+        stubTemplateMissing("B")
+        val request = input(profiles, gate = true)
+        val expected = service.preflight(request)
+        Mockito.clearInvocations(composer)
+        val actual = service.preflightForStatistics(request,
+            { profile -> if (profile.orcidId == "B") listOf("expertFamilyName") else emptyList() }, {})
+        assertEquals(expected, actual)
+        Mockito.verifyNoInteractions(composer)
+    }
+
+    @Test
+    fun `statistics cancellation stops diagnostic recipient loop`() {
+        val profiles = listOf(expert("A"), expert("B"))
+        stubAdmissions("A", "B")
+        var evaluated = 0
+        org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.TimeoutException::class.java) {
+            service.preflightForStatistics(input(profiles, gate = true),
+                { evaluated++; emptyList() },
+                { if (evaluated > 0) throw java.util.concurrent.TimeoutException() })
+        }
+        assertEquals(1, evaluated)
+        Mockito.verifyNoInteractions(composer)
+    }
+
+    @Test
     fun `GA-2 fixture yields 10 4 6 3 with six overlappable reason hits (MAIN G-2 M-3)`() {
         val all = (1..10).map { "D%02d".format(it) }
         stubAdmissions(*all.toTypedArray())

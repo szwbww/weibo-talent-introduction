@@ -57,6 +57,37 @@ class MailComposeTemplateServiceTest {
     )
 
     @Test
+    fun `statistics snapshot freezes reference pools and never rereads repositories for recipients`() {
+        stubTemplate(1, "Subject", blocks = listOf(
+            customBlock(1, 0, "Hello \${expertFamilyName}"), snippetBlock(1, 10, 5),
+            snippetBlock(1, 20, 6), snippetBlock(1, 30, 7),
+            MailComposeTemplateBlock(templateId = 1, blockOrder = 40, blockType = ComposeBlockType.QA_RULE, refId = 8)
+        ))
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "At \${institution}")))
+        Mockito.`when`(replySnippetRepository.findById(6)).thenReturn(Optional.of(snippet(6, "\${country}", false)))
+        Mockito.`when`(replySnippetRepository.findById(7)).thenReturn(Optional.empty())
+        Mockito.`when`(qaRuleRepository.findById(8)).thenReturn(Optional.of(QaRule(
+            id = 8, categoryId = 1, replySubject = null, keywords = "test", replyBody = "QA \${employment}"
+        )))
+        allSnippetVariants(5, listOf(snippetVariant(50, 5, 10, "At \${institution|your institution}")))
+        val snapshot = service.loadStatisticsEvaluationSnapshot(1)
+        assertEquals(service.effectiveRequiredKeys(1), snapshot.requiredKeys)
+        Mockito.clearInvocations(templateRepository, blockRepository, replySnippetRepository, contentVariantRepository, qaRuleRepository)
+        val random = kotlin.random.Random(123)
+        val draws = (1..1000).map { snapshot.selectRawTexts(random) }
+        assertEquals(setOf("At \${institution}", "At \${institution|your institution}"), draws.map { it[2] }.toSet())
+        assertTrue(draws.all { it.size == 4 && it[3] == "QA \${employment}" })
+        val gate = com.weibo.talentintroduction.mail.service.PersonalizationGateService()
+        assertEquals(listOf("institution"), gate.evaluate(
+            draws.first { it[2] == "At \${institution}" },
+            mapOf("expertFamilyName" to "Smith", "employment" to "Lab"), snapshot.requiredKeys
+        ).missingKeys)
+        assertTrue(gate.evaluate(draws.first { it[2].contains("|") },
+            mapOf("expertFamilyName" to "Smith", "employment" to "Lab"), snapshot.requiredKeys).missingKeys.isEmpty())
+        Mockito.verifyNoInteractions(templateRepository, blockRepository, replySnippetRepository, contentVariantRepository, qaRuleRepository)
+    }
+
+    @Test
     fun `renderByCode renders custom text variables and returns mail type`() {
         Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION"))
             .thenReturn(

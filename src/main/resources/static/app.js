@@ -5008,6 +5008,17 @@ async function api(path, options = {}) {
             ...fetchOptions,
             ...(controller ? { signal: controller.signal } : {})
         });
+        await handleAuthResponse(response);
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : null;
+        if (!response.ok) {
+            const message = data?.message || `${response.status} ${response.statusText}`;
+            const error = new Error(message);
+            error.status = response.status;
+            error.data = data;
+            throw error;
+        }
+        return data;
     } catch (e) {
         if (controller && controller.signal.aborted) {
             throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
@@ -5016,17 +5027,6 @@ async function api(path, options = {}) {
     } finally {
         if (timer) clearTimeout(timer);
     }
-    await handleAuthResponse(response);
-    const text = await response.text();
-    const data = text ? JSON.parse(text) : null;
-    if (!response.ok) {
-        const message = data?.message || `${response.status} ${response.statusText}`;
-        const error = new Error(message);
-        error.status = response.status;
-        error.data = data;
-        throw error;
-    }
-    return data;
 }
 
 function showStatus(message, type = "ok") {
@@ -24632,7 +24632,8 @@ function renderRecipientStatistics(kind, envelope, snapshot, loading) {
     var hasValue = Boolean(res && res.totalSendable !== null && res.totalSendable !== undefined);
     setRecipientPreviewState(kind, envelope.state, hasValue, loading, envelope.stale);
     if (!hasValue) {
-        hint.textContent = envelope.state === "ERROR" ? "统计不可用，可重试。" :
+        hint.textContent = envelope.state === "ERROR" ?
+            (envelope.errorCode === "STATISTICS_TIMEOUT" ? "统计超时，请缩小筛选范围后重试。" : "统计不可用，可重试。") :
             (envelope.state === "REFRESHING" ? "正在统计当前条件…" : "尚未统计，点击‘统计并缓存’获取参考人数。");
         return;
     }
@@ -24689,19 +24690,31 @@ function refreshRecipientPreview(kind, mode) {
     var seq = ++recipientPreviewRequestSeq[kind];
     var refresh = mode !== "cacheOnly";
     var oldEnvelope = previous && previous.envelope;
-    var pendingEnvelope = Object.assign({}, oldEnvelope || {}, { state: refresh ? "REFRESHING" : "MISS" });
-    hint.recipientStatistics = { identity: identity, envelope: oldEnvelope, loading: refresh };
-    renderRecipientStatistics(kind, pendingEnvelope, snapshot, refresh);
+    var startedAt = !refresh && previous && previous.startedAt || Date.now();
+    var pendingEnvelope = Object.assign({}, oldEnvelope || {}, {
+        state: refresh || oldEnvelope && oldEnvelope.state === "REFRESHING" ? "REFRESHING" : "MISS"
+    });
+    hint.recipientStatistics = { identity: identity, envelope: oldEnvelope, loading: refresh, startedAt: startedAt };
+    renderRecipientStatistics(kind, pendingEnvelope, snapshot, pendingEnvelope.state === "REFRESHING");
     var current = function() {
         var now = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
         return seq === recipientPreviewRequestSeq[kind] && identity === JSON.stringify(now);
     };
     return api("/api/mail/batch-send/recipients/statistics?" + (refresh ? "refresh=true" : "cacheOnly=true"), {
-        method: "POST", body: JSON.stringify(snapshot)
+        method: "POST", body: JSON.stringify(snapshot), timeoutMs: refresh ? 125000 : 10000
     }).then(function(envelope) {
         if (!current()) return;
-        hint.recipientStatistics = { identity: identity, envelope: envelope, loading: false };
-        renderRecipientStatistics(kind, envelope, snapshot, false);
+        if (envelope.state === "REFRESHING" && Date.now() - startedAt >= 130000) {
+            envelope = Object.assign({}, envelope, { state: "ERROR", errorCode: "STATISTICS_TIMEOUT" });
+        }
+        hint.recipientStatistics = { identity: identity, envelope: envelope, loading: false, startedAt: startedAt };
+        renderRecipientStatistics(kind, envelope, snapshot, envelope.state === "REFRESHING");
+        if (envelope.state === "REFRESHING") {
+            recipientPreviewTimers[kind] = setTimeout(function() {
+                recipientPreviewTimers[kind] = null;
+                if (current()) refreshRecipientPreview(kind, "cacheOnly");
+            }, 2000);
+        }
     }).catch(function(error) {
         if (!current()) return;
         // A server key change invalidates old statistics even when the form snapshot is unchanged.

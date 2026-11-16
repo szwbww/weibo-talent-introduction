@@ -111,6 +111,16 @@ class IntroductionMailComposer(
         )
     }
 
+    /** Same raw-text gate as evaluateForBatch, with request-scoped frozen references. */
+    fun statisticsTemplateEvaluator(templateId: Long?): (ExpertProfile) -> List<String> {
+        val snapshot = mailComposeTemplateService.loadStatisticsEvaluationSnapshot(templateId)
+        return { expert ->
+            personalizationGateService.evaluate(
+                snapshot.selectRawTexts(), buildVariables(null, expert), snapshot.requiredKeys
+            ).missingKeys.filter { it !in MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS }
+        }
+    }
+
     private fun renderTemplate(
         templateId: Long?,
         variables: Map<String, String>,

@@ -259,6 +259,23 @@ class MailComposeTemplateService(
         return TemplateStatisticsFingerprint(resolvedId, fingerprint)
     }
 
+    /** Statistics-only snapshot: all referenced text is read once; evaluation performs no repository calls. */
+    fun loadStatisticsEvaluationSnapshot(templateId: Long?): StatisticsTemplateSnapshot {
+        val template = templateId?.let(::findTemplate)
+            ?: templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")
+            ?: error("Enabled compose template not found: INTRODUCTION")
+        val id = template.id ?: error("Compose template id is required")
+        val subjects = subjectCandidates(template).toList()
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)
+            .sortedBy { it.blockOrder }
+            .mapNotNull { block -> blockRenderTexts(block).texts?.let { block.blockOrder to it.toList() } }
+        val required = linkedSetOf<String>()
+        (subjects + blocks.flatMap { it.second }).forEach {
+            required.addAll(mailPlaceholderService.requiredKeysIn(it))
+        }
+        return StatisticsTemplateSnapshot(id, subjects, blocks, required.toList())
+    }
+
     private fun snapshotOf(
         template: MailComposeTemplate,
         blocks: List<MailComposeTemplateBlock>
@@ -1090,3 +1107,19 @@ data class ComposeTemplatePreviewDraftResult(
     val variables: List<PreviewVariableItem> = emptyList(),
     val variantPoolSize: Int = 1
 )
+
+/** Frozen pools retain independent random snippet selection and legacy QA's single body. */
+class StatisticsTemplateSnapshot internal constructor(
+    val templateId: Long,
+    private val subjects: List<String>,
+    private val blocks: List<Pair<Int, List<String>>>,
+    val requiredKeys: List<String>
+) {
+    fun selectRawTexts(random: kotlin.random.Random = kotlin.random.Random.Default): List<String> {
+        fun select(pool: List<String>): String = if (pool.size == 1) pool.first() else pool[random.nextInt(pool.size)]
+        val subject = select(subjects)
+        val selectedBlocks = linkedMapOf<Int, String>()
+        blocks.forEach { (order, pool) -> selectedBlocks[order] = select(pool) }
+        return listOf(subject) + selectedBlocks.values
+    }
+}

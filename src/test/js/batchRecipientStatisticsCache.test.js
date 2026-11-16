@@ -38,11 +38,11 @@ function fixture() {
     const sandbox = {
         document: { getElementById: get }, batchGateState: { editor: {}, manual: {} },
         recipientPreviewRequestSeq: { editor: 0, manual: 0 }, recipientPreviewTimers: { editor: null, manual: null },
-        setTimeout: (cb, ms) => { assert.equal(ms, 300); timers.set(++next, cb); return next; },
+        setTimeout: (cb, ms) => { assert.ok(ms === 300 || ms === 2000); timers.set(++next, cb); return next; },
         clearTimeout: id => timers.delete(id),
         buildConfigEditorRecipientSnapshot: () => snapshots.editor,
         buildManualExecutionSnapshot: () => snapshots.manual,
-        api: (url, opts) => { calls.push({ url, body: JSON.parse(opts.body) }); return new Promise((resolve, reject) => pending.push({ resolve, reject })); }
+        api: (url, opts) => { calls.push({ url, body: JSON.parse(opts.body), timeoutMs: opts.timeoutMs }); return new Promise((resolve, reject) => pending.push({ resolve, reject })); }
     };
     vm.createContext(sandbox);
     for (const name of ["escapeHtml", "recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview", "scheduleRecipientPreview", "renderRecipientStatistics", "refreshRecipientPreview"]) vm.runInContext(fn(name), sandbox);
@@ -110,7 +110,7 @@ test("READY zero is distinct from MISS and repeated opens preserve both server t
     assert.ok(f.calls.every(c => c.url.endsWith("cacheOnly=true")));
 });
 
-test("stale and REFRESHING show old values with explicit states without polling or scans", async () => {
+test("stale values remain visible and REFRESHING polls cache only until ready", async () => {
     const f = fixture();
     f.sandbox.refreshRecipientPreview("editor", "cacheOnly");
     f.pending[0].resolve(ready(100, { stale: true })); await flush();
@@ -119,9 +119,15 @@ test("stale and REFRESHING show old values with explicit states without polling 
     f.sandbox.refreshRecipientPreview("editor", "cacheOnly");
     f.pending[1].resolve(ready(100, { state: "REFRESHING" })); await flush();
     assert.equal(status(f).textContent, "正在刷新统计…");
-    assert.equal(button(f).disabled, false);
+    assert.equal(button(f).disabled, true);
     assert.match(hint(f).innerHTML, /2026-10-22 16:00:00/);
-    assert.equal(f.calls.length, 2); assert.equal(f.timers.size, 0);
+    assert.equal(f.calls.length, 2); assert.equal(f.timers.size, 1);
+    f.tick();
+    assert.ok(f.calls[2].url.endsWith("cacheOnly=true"));
+    f.pending[2].resolve(ready(150)); await flush();
+    assert.equal(status(f).textContent, "已加载缓存");
+    assert.equal(button(f).disabled, false);
+    assert.equal(f.timers.size, 0);
 });
 
 test("503 old summary uses matching key only and never rewrites cachedAt", async () => {
@@ -224,4 +230,58 @@ test("both real controls retain exact copy/layout and send/launch never consult 
     assert.ok(classes.length > 0);
     assert.ok(classes.every(name => ["batch-gate-warnline", "batch-gate-excluded"].includes(name)));
     assert.ok(!source.includes('recipients/preview"'), "UI statistics no longer computes gate comparison previews");
+});
+
+for (const kind of ["editor", "manual"]) test(kind + " bounds requests and polling, resets polling on close", async () => {
+    const f = fixture();
+    let now = 1000;
+    f.sandbox.Date = { now: () => now };
+    f.sandbox.refreshRecipientPreview(kind);
+    assert.equal(f.calls[0].timeoutMs, 125000);
+    f.pending[0].resolve({ state: "REFRESHING", summary: null }); await flush();
+    f.tick();
+    assert.equal(f.calls[1].timeoutMs, 10000);
+    now += 130001;
+    f.pending[1].resolve({ state: "REFRESHING", summary: null }); await flush();
+    assert.equal(button(f, kind).disabled, false);
+    assert.equal(hint(f, kind).textContent, "统计超时，请缩小筛选范围后重试。");
+    assert.equal(f.timers.size, 0);
+    f.sandbox.refreshRecipientPreview(kind);
+    f.pending[2].resolve({ state: "REFRESHING", summary: null }); await flush();
+    assert.equal(f.timers.size, 1);
+    f.sandbox.resetRecipientPreview(kind);
+    f.tick();
+    assert.equal(f.calls.length, 3);
+});
+
+test("poll failure restores retry and preserves cached value", async () => {
+    const f = fixture();
+    f.sandbox.refreshRecipientPreview("editor", "cacheOnly");
+    f.pending[0].resolve(ready(100, { state: "REFRESHING" })); await flush();
+    f.tick();
+    f.pending[1].reject(new Error("请求超时")); await flush();
+    assert.equal(button(f).disabled, false);
+    assert.equal(status(f).textContent, "刷新失败，保留上次缓存");
+    assert.match(hint(f).innerHTML, /100/);
+    assert.equal(f.timers.size, 0);
+});
+
+test("api timeout remains armed while reading response body", async () => {
+    let timeout, cleared = false;
+    const sandbox = {
+        contextPath: "", AbortController, handleAuthResponse: async () => {},
+        setTimeout: callback => { timeout = callback; return 1; },
+        clearTimeout: () => { cleared = true; },
+        fetch: async (url, options) => ({ ok: true, text: () => new Promise((resolve, reject) => {
+            options.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }) })
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(fn("api"), sandbox);
+    const request = sandbox.api("/statistics", { timeoutMs: 1000 });
+    await flush();
+    assert.equal(cleared, false);
+    timeout();
+    await assert.rejects(request, /请求超时/);
+    assert.equal(cleared, true);
 });
