@@ -643,6 +643,11 @@ class DiscoveryPipelineService(
                 onStarted = { executionId ->
                     state.executionId.set(executionId)
                     check(repository.bindExecutionId(ownerToken, executionId, now()) == 1) { "Window execution binding failed" }
+                    check(progressStore.tryStart(DISCOVERY_PIPELINE_TASK_TYPE, TaskProgress(
+                        DISCOVERY_PIPELINE_TASK_TYPE, "RUNNING", 0, 0, 0,
+                        message = "正在检查原文容量...", executionId = executionId
+                    ))) { "Another discovery execution owns the progress slot" }
+
                     state.verification = verificationRegistration?.begin(executionId, requireNotNull(state.criteria),
                         historical = initial.criteriaVersion == 1)
                         ?: DiscoveryVerificationExecution(executionId)
@@ -661,9 +666,20 @@ class DiscoveryPipelineService(
             val traffic = state.trafficSession.snapshot()
             log.error("深度发现窗口异常终止: {}, 已读取响应体={} 字节, 来源={}, 站点={}",
                 e.message, traffic.totalBytes, traffic.bySource, traffic.byHost, e)
+            state.executionId.get().takeIf { it > 0 }?.let { executionId ->
+                progressStore.update(DISCOVERY_PIPELINE_TASK_TYPE, TaskProgress(
+                    DISCOVERY_PIPELINE_TASK_TYPE, "FAILED", -1, 0, 0, e.message,
+                    details = progressStore.peek(DISCOVERY_PIPELINE_TASK_TYPE)?.takeIf { it.executionId == executionId }?.details
+                ), executionId)
+            }
             runCatching { repository.markFaulted(ownerToken, PipelineWaitReason.SOURCE_ERROR, now()) }
         } finally {
-            state.verification?.let { verificationRegistration?.closeInput(it) }
+            try { state.verification?.let { verificationRegistration?.closeInput(it) } }
+            finally {
+                state.executionId.get().takeIf { it > 0 }?.let {
+                    progressStore.clearExecutionContext(DISCOVERY_PIPELINE_TASK_TYPE, it)
+                }
+            }
         }
     }
 
@@ -673,7 +689,19 @@ class DiscoveryPipelineService(
         if (criteria == null || queryHash == null) {
             log.error("流水线查询条件缺失或版本不支持（criteriaVersion={}），窗口只做故障标记", initial.criteriaVersion)
             releaseWindow(state, PipelineWaitReason.SOURCE_ERROR, now().plus(properties.pipelineTick))
-            return state.snapshot(initial, PipelineTerminationReason.SOURCE_ERROR, now(), drained = false)
+            val result = state.snapshot(initial, PipelineTerminationReason.SOURCE_ERROR, now(), drained = false)
+            publishProgress(state, PipelineTerminationReason.SOURCE_ERROR, initial, result)
+            return result
+        }
+
+        try {
+            ensureArchiveCapacity(state, expertDiscoveryService.queueSourceNames(criteria))
+        } catch (e: PaperArchiveBlockedException) {
+            if (e.code != "ARCHIVE_CLEANUP_CANCELLED") throw e
+            releaseWindow(state, PipelineWaitReason.MANUAL_PAUSE, null)
+            val result = state.snapshot(initial, PipelineTerminationReason.MANUAL_PAUSE, now(), drained = false)
+            publishProgress(state, PipelineTerminationReason.MANUAL_PAUSE, initial, result)
+            return result
         }
 
         // I-1：来源流按「本源条件」建流；旧 v2 检查点只在条件完全匹配时用于首次种子。
@@ -733,6 +761,11 @@ class DiscoveryPipelineService(
             val budgetWait = after.waitReason?.takeIf { it in DAILY_BUDGET_REASONS }
             if (budgetWait != null && state.inFlightCount() == 0) {
                 terminationReason = PipelineTerminationReason.DAILY_BUDGET
+                break
+            }
+            if (state.waitReasons.any { it.startsWith("ARCHIVE_") } && state.inFlightCount() == 0) {
+                terminationReason = if ("ARCHIVE_CLEANUP_CANCELLED" in state.waitReasons)
+                    PipelineTerminationReason.MANUAL_PAUSE else PipelineTerminationReason.SOURCE_ERROR
                 break
             }
             if (state.capacityBlocked && state.inFlightCount() == 0) {
@@ -840,11 +873,27 @@ class DiscoveryPipelineService(
         }
     }
 
+    private fun ensureArchiveCapacity(state: WindowState, sources: Collection<String>) {
+        var renewAt = Instant.MIN
+        expertDiscoveryService.ensureArchiveCapacity(state.executionId.get(), sources) {
+            val pipeline = repository.findPipeline()
+            if (pipeline == null || pipeline.desiredState == PipelineDesiredState.PAUSED || pipeline.generation != state.generation)
+                throw com.weibo.talentintroduction.discovery.archive.ArchiveException("ARCHIVE_CLEANUP_CANCELLED", 409)
+            val at = now()
+            if (!at.isBefore(renewAt)) {
+                if (repository.renewOwner(state.ownerToken, at.plus(OWNER_LEASE), at) != 1)
+                    throw com.weibo.talentintroduction.discovery.archive.ArchiveException("ARCHIVE_BUSY", 409)
+                renewAt = at.plusSeconds(10)
+            }
+        }
+    }
+
     /** I-1：单页采集 + 整页入队（同一事务）；容量不足/租约被接管都不推进游标。 */
     private fun collectPage(state: WindowState, stream: StreamRow, leaseToken: String) {
         val criteria = state.criteria
         try {
             if (criteria == null) return
+            ensureArchiveCapacity(state, listOf(stream.source))
             val page = DiscoveryTrafficMeter.measure(
                 state.trafficSession, stream.source, DiscoveryTrafficMeter.Category.METADATA
             ) {
@@ -924,6 +973,7 @@ class DiscoveryPipelineService(
                 EnqueuePageStatus.COMMITTED -> Unit
             }
         } catch (e: Exception) {
+            if (e is PaperArchiveBlockedException) state.waitReasons.add(e.code)
             log.warn("[{}] 队列采集页失败: {}", stream.source, e.message)
             runCatching { repository.releaseStreamLease(stream.id, leaseToken, now()) }
             state.waitReasons.add(PipelineWaitReason.SOURCE_ERROR)
@@ -1297,6 +1347,8 @@ class DiscoveryPipelineService(
             PipelineTerminationReason.SOURCE_ERROR -> "来源错误，窗口结束，等待下次重试"
             else -> "所有来源已穷尽"
         }
+        val cleanup = progressStore.peek(DISCOVERY_PIPELINE_TASK_TYPE)
+            ?.takeIf { it.executionId == state.executionId.get() }?.details?.get("archiveCleanup")
         progressStore.update(
             DISCOVERY_PIPELINE_TASK_TYPE,
             TaskProgress(
@@ -1305,8 +1357,8 @@ class DiscoveryPipelineService(
                 batchNumber = state.collectionPages,
                 processedCount = state.processedItems.toLong(),
                 totalCount = pipeline.queuedPapers + pipeline.queuedRecords,
-                message = message,
-                details = snapshot.toDetails()
+                message = message + (state.waitReasons.firstOrNull { it.startsWith("ARCHIVE_") }?.let { "；原文容量门禁：$it，本页未消费" } ?: ""),
+                details = snapshot.toDetails() + (cleanup?.let { mapOf("archiveCleanup" to it) } ?: emptyMap())
             ),
             state.executionId.get().takeIf { it > 0L }
         )

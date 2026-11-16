@@ -15,7 +15,9 @@ class ArchiveException(val code: String, val httpStatus: Int, override val messa
                        val preview: ArchiveDeletePreview? = null) : IllegalStateException(message)
 
 data class ArchiveSetting(val revision: Long = 0, val enabled: Boolean = false,
-    val maxBytes: Long = 20 * ARCHIVE_GIB, val minFreeBytes: Long = 15 * ARCHIVE_GIB, val updatedAt: Instant? = null) {
+    val maxBytes: Long = 20 * ARCHIVE_GIB, val minFreeBytes: Long = 5 * ARCHIVE_GIB, val updatedAt: Instant? = null) {
+    val recoveryFreeBytes: Long get() = maxOf(15 * ARCHIVE_GIB, minFreeBytes + 10 * ARCHIVE_GIB)
+    val recoveryMaxBytes: Long get() = maxBytes - minOf(2 * ARCHIVE_GIB, maxBytes / 20)
     fun validate() {
         if (revision < 0 || listOf(maxBytes, minFreeBytes).any { it !in ARCHIVE_GIB..1024 * ARCHIVE_GIB || it % ARCHIVE_GIB != 0L })
             throw ArchiveException("INVALID_SETTINGS", 400)
@@ -23,7 +25,9 @@ data class ArchiveSetting(val revision: Long = 0, val enabled: Boolean = false,
 }
 data class ArchiveSettingsRequest(val revision: Long, val enabled: Boolean, val maxBytes: Long, val minFreeBytes: Long)
 data class ArchiveSettingsResponse(val revision: Long, val enabled: Boolean, val maxBytes: Long, val minFreeBytes: Long,
-    val effectiveEnabled: Boolean, val gate: ArchiveGate, val reasonCode: String?, val updatedAt: Instant?)
+    val effectiveEnabled: Boolean, val gate: ArchiveGate, val reasonCode: String?, val updatedAt: Instant?,
+    val recoveryFreeBytes: Long = ArchiveSetting(minFreeBytes = minFreeBytes).recoveryFreeBytes,
+    val recoveryMaxBytes: Long = ArchiveSetting(maxBytes = maxBytes).recoveryMaxBytes)
 data class ArchiveRecord(val id: Long, val executionId: Long, val sourceName: String, val paperKey: String,
     val metadataJson: String, val outcomeJson: String?, val analysisJson: String?, val protected: Boolean,
     val revision: Long, val createdAt: Instant, val updatedAt: Instant)

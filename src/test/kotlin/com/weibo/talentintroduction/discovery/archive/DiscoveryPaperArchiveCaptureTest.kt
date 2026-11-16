@@ -35,7 +35,7 @@ class DiscoveryPaperArchiveCaptureTest {
             val oldPath = f.root.resolve("blobs/${old.blobSha256!!.take(2)}/${old.blobSha256}.bin")
             f.service.diskProbe = {
                 ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
-                    if (Files.exists(oldPath)) ARCHIVE_GIB - 1 else ARCHIVE_GIB + 4096)
+                    if (Files.exists(oldPath)) ARCHIVE_GIB - 1 else 15 * ARCHIVE_GIB + 4096)
             }
             val expected = outcome()
             assertSame(expected, DiscoveryPaperArchiveCapture(f.service, f.mapper).capture(context(2), "current", paper()) {
@@ -58,7 +58,7 @@ class DiscoveryPaperArchiveCaptureTest {
                 val token = DiscoveryPaperArchiveCapture.beginAttempt(ArchiveAttemptKind.PDF_URL, null)
                 f.service.diskProbe = {
                     ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
-                        if (Files.exists(sparePath)) ARCHIVE_GIB - 1 else ARCHIVE_GIB + 2047)
+                        if (Files.exists(sparePath)) ARCHIVE_GIB - 1 else 15 * ARCHIVE_GIB + 2047)
                 }
                 DiscoveryPaperArchiveCapture.fullBody(token, f.pdf())
                 outcome()
@@ -70,6 +70,19 @@ class DiscoveryPaperArchiveCaptureTest {
             assertEquals(ArchiveAttemptStatus.SAVED, f.repository.attempt(reused.id)!!.status)
         }
     }
+    @Test fun `startup gate bypasses ORCID absent identity and disabled retention`() {
+        ArchiveFixture().use { f ->
+            val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)
+            capture.ensureCapacity(1, listOf("OPENALEX"))
+            f.enable(); f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 0, 0) }
+            capture.ensureCapacity(1, listOf("ORCID"))
+            capture.ensureCapacity(null, listOf("OPENALEX"))
+            f.props.allowed = false
+            capture.ensureCapacity(1, listOf("OPENALEX"))
+            assertTrue(f.repository.records().isEmpty())
+        }
+    }
+
     @Test fun `disabled capture delegates unchanged and makes no archive writes`() {
         ArchiveFixture().use { f ->
             val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)

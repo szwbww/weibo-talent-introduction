@@ -1039,6 +1039,50 @@ class DiscoveryPipelineServiceTest {
     // 服务装配
     // ==================================================================
 
+    @Test fun `pipeline binds real execution progress before archive gate and never replaces another run`() {
+        val progress = TaskProgressStore(Mockito.mock(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java), objectMapper)
+        val h = harness(providedProgress = progress)
+        streamFor(h)
+        var observed: Long? = null
+        Mockito.doAnswer {
+            observed = progress.peek(DISCOVERY_PIPELINE_TASK_TYPE)?.executionId
+            (it.getArgument<() -> Unit>(2)).invoke()
+            null
+        }.`when`(h.discovery).ensureArchiveCapacity(Mockito.anyLong(), Mockito.anyCollection<String>() ?: emptyList(), Mockito.any() ?: {})
+        runWindow(h)
+        assertEquals(77L, observed)
+        assertNull(progress.peek(DISCOVERY_PIPELINE_TASK_TYPE)?.executionId)
+        progress.clear(DISCOVERY_PIPELINE_TASK_TYPE)
+        progress.setCurrentExecutionId(DISCOVERY_PIPELINE_TASK_TYPE, 999)
+        val other = progress.peek(DISCOVERY_PIPELINE_TASK_TYPE)
+        val next = harness(providedProgress = progress, executionId = 78)
+        streamFor(next)
+        assertTrue(next.service.tick().dispatched)
+        assertEquals(other, progress.peek(DISCOVERY_PIPELINE_TASK_TYPE))
+        Mockito.verify(next.discovery, Mockito.never()).collectQueuePage(anyText(), anyCriteria(), Mockito.any(), Mockito.anyInt())
+    }
+
+    @Test fun `startup archive gate prevents pipeline collection and preserves cursors`() {
+        val h = harness()
+        val stream = streamFor(h)
+        val before = h.store.findStreamById(stream.id)!!.cursorValue
+        Mockito.doThrow(com.weibo.talentintroduction.discovery.archive.PaperArchiveBlockedException("ARCHIVE_STORAGE_BLOCKED"))
+            .`when`(h.discovery).ensureArchiveCapacity(Mockito.anyLong(), Mockito.anyCollection<String>() ?: emptyList(), Mockito.any() ?: {})
+        assertTrue(h.service.tick().dispatched)
+        Mockito.verify(h.discovery, Mockito.never()).collectQueuePage(anyText(), anyCriteria(), Mockito.any(), Mockito.anyInt())
+        assertEquals(before, h.store.findStreamById(stream.id)!!.cursorValue)
+    }
+
+    @Test fun `startup archive cancellation is pipeline cancelled result before collection`() {
+        val h = harness()
+        streamFor(h)
+        Mockito.doThrow(com.weibo.talentintroduction.discovery.archive.PaperArchiveBlockedException("ARCHIVE_CLEANUP_CANCELLED"))
+            .`when`(h.discovery).ensureArchiveCapacity(Mockito.anyLong(), Mockito.anyCollection<String>() ?: emptyList(), Mockito.any() ?: {})
+        val result = runWindow(h)
+        assertEquals("CANCELLED", result.taskFinalStatus)
+        Mockito.verify(h.discovery, Mockito.never()).collectQueuePage(anyText(), anyCriteria(), Mockito.any(), Mockito.anyInt())
+    }
+
     private class Harness(
         val store: InMemoryQueueStore,
         val clock: FakeClock,
@@ -1077,15 +1121,18 @@ class DiscoveryPipelineServiceTest {
         coordinator: Executor = Executor { it.run() },
         collection: Executor = Executor { it.run() },
         fetch: Executor = Executor { it.run() },
-        executionId: Long = 77L
+        executionId: Long = 77L,
+        providedProgress: TaskProgressStore? = null
     ): Harness {
         val clock = FakeClock(Instant.parse("2026-09-22T00:00:00Z"))
         val queueStore = store ?: InMemoryQueueStore(clock)
         val resolvedDiscovery = discovery ?: mockDiscovery(queueStore)
-        val progressStore = Mockito.mock(TaskProgressStore::class.java)
-        Mockito.`when`(progressStore.isCancelled(Mockito.anyString())).thenReturn(false)
-        Mockito.`when`(progressStore.update(anyText(), anyProgress(), Mockito.any()))
-            .thenReturn(true)
+        val progressStore = providedProgress ?: Mockito.mock(TaskProgressStore::class.java)
+        if (providedProgress == null) {
+            Mockito.`when`(progressStore.isCancelled(Mockito.anyString())).thenReturn(false)
+            Mockito.`when`(progressStore.update(anyText(), anyProgress(), Mockito.any())).thenReturn(true)
+            Mockito.`when`(progressStore.tryStart(anyText(), anyProgress())).thenReturn(true)
+        }
         val results = mutableListOf<PipelineWindowResult>()
         val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
         Mockito.`when`(

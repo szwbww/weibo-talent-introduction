@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.archive
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.slf4j.LoggerFactory
 import com.weibo.talentintroduction.config.DiscoveryPaperArchiveProperties
 import com.weibo.talentintroduction.config.DiscoverySampleProperties
@@ -32,10 +33,13 @@ class DiscoveryPaperArchiveService(
     private val repository: DiscoveryPaperArchiveRepository,
     private val properties: DiscoveryPaperArchiveProperties,
     private val sampleProperties: DiscoverySampleProperties,
-    private val mapper: ObjectMapper
+    private val mapper: ObjectMapper,
+    private val progressStore: TaskProgressStore? = null
 ) {
     private val lock = ReentrantLock()
     private val recoveryRunning = AtomicBoolean()
+    // Capacity recovery survives a failed/cancelled entry until both targets are verified.
+    private var capacityRecoveryPending = false
     private val activeWriters = mutableSetOf<Path>()
     private val analysisReaders = mutableMapOf<String, Int>()
     internal data class AnalysisBody(val attempt: ArchiveAttempt, val hash: String, val mediaType: String, val input: InputStream)
@@ -205,47 +209,113 @@ class DiscoveryPaperArchiveService(
     private fun permit(value: ScopePermit) {
         if (!scopePermits.contains(value)) throw ArchiveException("INVALID_SCOPE", 409)
     }
-    private fun preflight(executionId: Long, bytes: Long = 0, requireHeadroom: Boolean = true, keepHash: String? = null) {
+    /** Run before any source request; disabled retention remains a no-op. */
+    fun ensureCapacity(executionId: Long, checkContinue: () -> Unit = {}) = mutation {
+        id(executionId)
+        if (!properties.allowed || !repository.setting().enabled) return@mutation
+        preflight(executionId, checkContinue = checkContinue)
+    }
+    private fun preflight(executionId: Long, bytes: Long = 0, requireHeadroom: Boolean = true,
+        keepHash: String? = null, checkContinue: () -> Unit = {}) {
         if (!properties.allowed) throw ArchiveException("ARCHIVE_DISABLED", 409)
         val settings = repository.setting()
         val base = root()
         if (!Files.isDirectory(base, LinkOption.NOFOLLOW_LINKS) || !Files.isWritable(base)) throw ArchiveException("STORAGE_UNAVAILABLE", 503)
-        fun hasCapacity(): Boolean {
-            val size = sizes()
-            val available = diskProbe(base).usable
-            return bytes <= settings.maxBytes - size.first - size.second &&
-                (!requireHeadroom || bytes != 0L || size.first + size.second < settings.maxBytes) &&
-                available - bytes >= settings.minFreeBytes
+        val taskType = "EXPERT_DISCOVERY" // Pipeline and legacy share this execution slot.
+        var reclaimed = 0L
+        var lastProgress = 0L
+        fun report(phase: String, force: Boolean = false) {
+            val now = System.nanoTime()
+            if (!force && now - lastProgress < 1_000_000_000L) return
+            lastProgress = now
+            val current = progressStore?.peek(taskType)?.takeIf { it.executionId == executionId && executionId > 0 } ?: return
+            val label = when (phase) {
+                "READY" -> "原文容量恢复完成"
+                "BLOCKED" -> "可安全清理的原文不足，停止下载；本页未消费"
+                "CANCELLED" -> "原文清理已取消；本页未消费"
+                else -> "正在按历史任务先后清理原文"
+            }
+            progressStore?.update(taskType, current.copy(
+                message = "$label，已回收 $reclaimed 字节；磁盘目标 ${settings.recoveryFreeBytes + bytes} 字节",
+                details = (current.details ?: emptyMap()) + mapOf("archiveCleanup" to mapOf(
+                    "executionId" to executionId, "phase" to phase, "reclaimedBytes" to reclaimed,
+                    "recoveryFreeBytes" to settings.recoveryFreeBytes, "recoveryMaxBytes" to settings.recoveryMaxBytes
+                ))
+            ), executionId)
         }
-        if (hasCapacity()) return
+        fun checkActive() {
+            if (Thread.currentThread().isInterrupted || progressStore?.isCancelled(taskType, executionId) == true) {
+                report("CANCELLED", true)
+                throw ArchiveException("ARCHIVE_CLEANUP_CANCELLED", 409)
+            }
+            try { checkContinue() } catch (e: ArchiveException) {
+                if (e.code == "ARCHIVE_CLEANUP_CANCELLED") report("CANCELLED", true)
+                throw e
+            }
+        }
+        checkActive()
+        val initial = sizes()
+        var used = initial.first + initial.second
+        fun fits(recovering: Boolean): Boolean {
+            val quota = if (recovering) settings.recoveryMaxBytes else settings.maxBytes
+            val reserve = if (recovering) settings.recoveryFreeBytes else settings.minFreeBytes
+            return bytes <= quota - used &&
+                (!requireHeadroom || bytes != 0L || used < settings.maxBytes) &&
+                diskProbe(base).usable - bytes >= reserve
+        }
+        if (!capacityRecoveryPending && fits(false)) return
         // An impossible single body must not evict the entire archive.
-        if (bytes <= settings.maxBytes) {
-            val selectedExecutions = mutableSetOf<Long>()
-            val activeRecords = scopePermits.map { it.recordId }.toSet()
-            for (oldExecution in repository.cleanupExecutions(executionId)) {
-                selectedExecutions.add(oldExecution)
-                var afterHash = ""
-                while (true) {
-                    val candidates = repository.cleanupBlobs(oldExecution, afterHash)
-                    if (candidates.isEmpty()) break
-                    for (blob in candidates) {
-                        afterHash = blob.sha256
-                        if (blob.sha256 == keepHash || (analysisReaders[blob.sha256] ?: 0) > 0) continue
-                        val refs = repository.references(blob.sha256)
-                        if (refs.isEmpty() || refs.any { ref ->
-                            val r = repository.record(ref.recordId)
-                            r == null || r.protected || r.executionId !in selectedExecutions || r.id in activeRecords
-                        }) continue
-                        if (!validBlob(blob)) continue
-                        val deleted = deleteBlob(blob)
-                        LOG.info("event=DISCOVERY_PAPER_AUTO_CLEANUP executionId={} sourceExecutionId={} hash={} bytes={} deleted={}",
-                            executionId, oldExecution, blob.sha256, blob.sizeBytes, deleted)
-                        if (hasCapacity()) return
-                    }
+        if (bytes > settings.recoveryMaxBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409,
+            "原文超过清理恢复后的可用配额，本页未消费")
+        capacityRecoveryPending = true
+        report("CLEANING", true)
+        fun verified(): Boolean {
+            if (!fits(true)) return false
+            // Only the final authoritative check traverses the archive again.
+            val actual = sizes(); used = actual.first + actual.second
+            if (!fits(true)) return false
+            checkActive()
+            capacityRecoveryPending = false
+            report("READY", true)
+            return true
+        }
+        if (verified()) return
+        val selectedExecutions = mutableSetOf<Long>()
+        val activeRecords = scopePermits.map { it.recordId }.toSet()
+        for (oldExecution in repository.cleanupExecutions(executionId)) {
+            checkActive()
+            selectedExecutions.add(oldExecution)
+            var afterHash = ""
+            while (true) {
+                checkActive()
+                val candidates = repository.cleanupBlobs(oldExecution, afterHash)
+                if (candidates.isEmpty()) break
+                for (blob in candidates) {
+                    checkActive()
+                    afterHash = blob.sha256
+                    if (blob.sha256 == keepHash || (analysisReaders[blob.sha256] ?: 0) > 0) continue
+                    val refs = repository.references(blob.sha256)
+                    if (refs.isEmpty() || refs.any { ref ->
+                        val r = repository.record(ref.recordId)
+                        r == null || r.protected || r.executionId !in selectedExecutions || r.id in activeRecords
+                    }) continue
+                    if (!validBlob(blob)) continue
+                    val deleted = deleteBlob(blob)
+                    if (deleted) { used -= blob.sizeBytes; reclaimed += blob.sizeBytes }
+                    LOG.info("event=DISCOVERY_PAPER_AUTO_CLEANUP executionId={} sourceExecutionId={} hash={} bytes={} deleted={}",
+                        executionId, oldExecution, blob.sha256, blob.sizeBytes, deleted)
+                    checkActive()
+                    report("CLEANING")
+                    if (verified()) return
                 }
             }
         }
-        throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
+        // Failed unlink/finalization or external filesystem changes require a fresh final measurement.
+        val actual = sizes(); used = actual.first + actual.second
+        if (verified()) return
+        report("BLOCKED", true)
+        throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409,
+            "可安全清理的原文不足：磁盘需恢复至 ${settings.recoveryFreeBytes + bytes} 字节，原文库需降至 ${settings.recoveryMaxBytes - bytes} 字节；本页未消费")
     }
     internal fun beginScopeAttempt(value: ScopePermit, extractionId: UUID, sequence: Int, kind: ArchiveAttemptKind, url: String?): ArchiveAttempt = mutation {
         permit(value); preflight(record(value.recordId).executionId)
@@ -374,7 +444,7 @@ class DiscoveryPaperArchiveService(
         val gate = when {
             size == null || disk == null -> ArchiveGate.UNAVAILABLE
             !enabled -> ArchiveGate.DISABLED
-            !available || size.first + size.second > s.maxBytes || disk.usable < s.minFreeBytes -> ArchiveGate.BLOCKED
+            !available || capacityRecoveryPending || size.first + size.second > s.maxBytes || disk.usable < s.minFreeBytes -> ArchiveGate.BLOCKED
             else -> ArchiveGate.READY
         }
         val reason = when (gate) { ArchiveGate.READY -> null; ArchiveGate.DISABLED -> "ARCHIVE_DISABLED"; ArchiveGate.UNAVAILABLE -> "STORAGE_UNAVAILABLE"; else -> "ARCHIVE_STORAGE_BLOCKED" }

@@ -502,7 +502,7 @@ class ExpertMailReadAccessIT {
         val flyway = Flyway.configure().dataSource(dataSource).placeholderReplacement(false)
             .cleanDisabled(false).load()
         flyway.clean()
-        assertEquals("175", flyway.migrate().targetSchemaVersion)
+        assertEquals("176", flyway.migrate().targetSchemaVersion)
         assertEquals(0L, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM expert_mail_read_access", Long::class.java))
     }
 

@@ -110,6 +110,8 @@ internal class ArchiveFlowFixture(val realDisk: Boolean = false) : AutoCloseable
         val arxiv=Mockito.spy(ArxivDataSource(rest,ArxivProperties(requestDelayMs=0),pdf))
         sources=listOf(europe,pmc,open,crossref,core,arxiv).associateBy { it.sourceName }
         fun register(name: String,value: Any) { context.beanFactory.registerSingleton(name,value) }
+        val probe = archive.service.diskProbe
+        archive.service = DiscoveryPaperArchiveService(archive.repository, archive.props, archive.sampleProps, mapper, progress).also { it.diskProbe = probe }
         register("archiveService",archive.service)
         register("objectMapper",mapper)
         register("expertDiscoveryProperties",props)
@@ -293,6 +295,31 @@ class DiscoveryPaperArchiveFlowIT {
             assertEquals((1L..10L).toSet(),f.archive.repository.records().map { it.executionId }.toSet())
         }
     }
+    @Test fun `SYNC startup capacity block precedes source search and cursor writes`() {
+        ArchiveFlowFixture().use { f ->
+            f.archive.enable(); f.archive.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 0, 0) }
+            val error = assertThrows(PaperArchiveBlockedException::class.java) {
+                f.sync(listOf(f.paper("ARXIV", download = f.url("/same.pdf"))))
+            }
+            assertEquals("ARCHIVE_STORAGE_BLOCKED", error.code)
+            assertEquals(0, f.totalRequests())
+            assertTrue(Mockito.mockingDetails(f.sources.getValue("ARXIV")).invocations.none { it.method.name == "searchPapers" })
+            val cursor = f.context.getBean(DiscoverySourceCursorRepository::class.java)
+            assertTrue(Mockito.mockingDetails(cursor).invocations.none { it.method.name == "save" })
+        }
+    }
+
+    @Test fun `SYNC cleanup cancellation returns CANCELLED without source search`() {
+        ArchiveFlowFixture().use { f ->
+            f.archive.enable()
+            Mockito.`when`(f.progress.isCancelled("EXPERT_DISCOVERY", 12)).thenReturn(true)
+            val result = f.sync(listOf(f.paper("ARXIV", download = f.url("/same.pdf"))), 12)
+            assertTrue(result.wasCancelled); assertEquals("CANCELLED", result.taskFinalStatus)
+            assertEquals(0, f.totalRequests())
+            assertTrue(Mockito.mockingDetails(f.sources.getValue("ARXIV")).invocations.none { it.method.name == "searchPapers" })
+        }
+    }
+
     @Test fun `SYNC blocked page awaits all workers consumes zero and keeps checkpoint`() {
         ArchiveFlowFixture().use { f ->
             f.archive.enable(); f.responses["/one.pdf"]=f.archive.pdf(); f.responses["/two.pdf"]=f.archive.pdf(fill=66)

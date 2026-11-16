@@ -53,7 +53,7 @@
         function policy() {
             const s = settings;
             find('policy').dataset.state = s?.gate || 'UNAVAILABLE';
-            text('policy', s ? '留存' + (s.enabled ? '已开启' : '已关闭') + ' · 实际生效：' + (s.effectiveEnabled ? '是' : '否') + ' · 上限 ' + bytes(s.maxBytes) + ' · 最低可用 ' + bytes(s.minFreeBytes) + ' · ' + s.gate + (s.reasonCode ? ' / ' + s.reasonCode : '') : '留存设置未知，请重新进入本页重试');
+            text('policy', s ? '留存' + (s.enabled ? '已开启' : '已关闭') + ' · 实际生效：' + (s.effectiveEnabled ? '是' : '否') + ' · 上限 ' + bytes(s.maxBytes) + ' · 清理触发低于 ' + bytes(s.minFreeBytes) + ' · 恢复至 ' + bytes(s.recoveryFreeBytes) + ' / 原文库降至 ' + bytes(s.recoveryMaxBytes) + ' · ' + s.gate + (s.reasonCode ? ' / ' + s.reasonCode : '') : '留存设置未知，请重新进入本页重试');
         }
         function storage(failed) {
             const s = snapshot?.storage;

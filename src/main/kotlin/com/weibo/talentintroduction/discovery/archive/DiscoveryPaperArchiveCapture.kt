@@ -12,7 +12,7 @@ import java.time.Instant
 import java.util.UUID
 
 class PaperArchiveBlockedException(val code: String, cause: Throwable? = null) :
-    IllegalStateException("论文原文留存受阻，本页尚未消费 [$code]", cause)
+    IllegalStateException("论文原文留存受阻，本页尚未消费 [$code]" + (cause?.message?.let { "：$it" } ?: ""), cause)
 
 @Component
 class DiscoveryPaperArchiveCapture(private val service: DiscoveryPaperArchiveService, private val mapper: ObjectMapper) {
@@ -77,6 +77,11 @@ class DiscoveryPaperArchiveCapture(private val service: DiscoveryPaperArchiveSer
                 if (scope.firstFatal == null) scope.firstFatal = PaperArchiveBlockedException((e as? ArchiveException)?.code ?: "STORAGE_UNAVAILABLE", e)
             }
         }
+    }
+    fun ensureCapacity(executionId: Long?, sources: Collection<String>, checkContinue: () -> Unit = {}) {
+        if (executionId == null || executionId <= 0 || sources.none { it in SOURCES }) return
+        try { service.ensureCapacity(executionId, checkContinue) }
+        catch (e: Exception) { throw PaperArchiveBlockedException((e as? ArchiveException)?.code ?: "STORAGE_UNAVAILABLE", e) }
     }
     fun capture(context: DiscoverySampleContext?, paperKey: String, paper: PaperMetadata, delegate: () -> EmailExtractionOutcome): EmailExtractionOutcome {
         if (context == null || context.executionId <= 0 || context.source !in SOURCES) return delegate()

@@ -200,11 +200,11 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh empty database reaches V175 and creates the reprocess tables without seeded rows`() {
+    fun `fresh empty database reaches V176 and creates the reprocess tables without seeded rows`() {
         val flyway = flyway()
         flyway.clean()
         val result = flyway.migrate()
-        assertEquals("175", result.targetSchemaVersion)
+        assertEquals("176", result.targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("expert_template_override"))
             assertTrue(c.tableExists("delayed_manual_reply"))
@@ -227,10 +227,28 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `V176 changes only persisted ten GiB trigger and preserves custom policy`() {
+        for (oldGiB in listOf(10L, 7L)) {
+            val previous = flyway(MigrationVersion.fromVersion("175"))
+            previous.clean(); previous.migrate()
+            connection().use { c -> c.createStatement().use { it.executeUpdate(
+                "INSERT INTO discovery_paper_archive_setting VALUES (1,1,42949672960,${oldGiB * 1073741824},7,CURRENT_TIMESTAMP(3))") } }
+            val result = flyway().migrate()
+            assertEquals("176", result.targetSchemaVersion); assertEquals(1, result.migrationsExecuted)
+            connection().use { c ->
+                assertEquals((if (oldGiB == 10L) 5L else oldGiB) * 1073741824, c.queryLong("SELECT min_free_bytes FROM discovery_paper_archive_setting WHERE id=1"))
+                assertEquals(42949672960L, c.queryLong("SELECT max_bytes FROM discovery_paper_archive_setting WHERE id=1"))
+                assertEquals(1L, c.queryLong("SELECT enabled FROM discovery_paper_archive_setting WHERE id=1"))
+                assertEquals(if (oldGiB == 10L) 8L else 7L, c.queryLong("SELECT revision FROM discovery_paper_archive_setting WHERE id=1"))
+            }
+        }
+    }
+
+    @Test
     fun `V175 expert defaults persist with CAS and primary email pins old drafts atomically`() {
         migrateToV23AndSeedBase()
         flyway(MigrationVersion.fromVersion("174")).migrate()
-        val result = flyway().migrate()
+        val result = flyway(MigrationVersion.fromVersion("175")).migrate()
         assertEquals("175", result.targetSchemaVersion)
         assertEquals(1, result.migrationsExecuted)
         val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)

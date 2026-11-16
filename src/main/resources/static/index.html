@@ -5,19 +5,19 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Weibo Talent Introduction Console — 人才引进系统</title>
-    <script src="console-theme.js?v=20261113-expert-mail-defaults"></script>
+    <script src="console-theme.js?v=20261116-archive-capacity"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261113-expert-mail-defaults">
-    <link rel="stylesheet" href="expert-materials.css?v=20261113-expert-mail-defaults">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261113-expert-mail-defaults">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261113-expert-mail-defaults">
-    <link rel="stylesheet" href="world-clock.css?v=20261113-expert-mail-defaults">
-<link rel="stylesheet" href="meeting-records.css?v=20261113-expert-mail-defaults">
-<link rel="stylesheet" href="contact-details.css?v=20261113-expert-mail-defaults">
-    <link rel="stylesheet" href="console-shell.css?v=20261113-expert-mail-defaults">
-    <link rel="stylesheet" href="console-theme.css?v=20261113-expert-mail-defaults">
+    <link rel="stylesheet" href="styles.css?v=20261116-archive-capacity">
+    <link rel="stylesheet" href="expert-materials.css?v=20261116-archive-capacity">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261116-archive-capacity">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261116-archive-capacity">
+    <link rel="stylesheet" href="world-clock.css?v=20261116-archive-capacity">
+<link rel="stylesheet" href="meeting-records.css?v=20261116-archive-capacity">
+<link rel="stylesheet" href="contact-details.css?v=20261116-archive-capacity">
+    <link rel="stylesheet" href="console-shell.css?v=20261116-archive-capacity">
+    <link rel="stylesheet" href="console-theme.css?v=20261116-archive-capacity">
 </head>
 <body class="console-ui console-nav-collapsed">
 <!-- Login Overlay -->
@@ -1403,7 +1403,7 @@
   </div></div>
   <div class="dp-dialog-foot"><span class="dp-muted" data-dp="readerFoot"></span><button class="button secondary small" type="button" data-dp-action="close-reader">关闭</button></div>
 </dialog>
-<dialog id="discoveryPaperSettings" class="dp-dialog dp-confirm" aria-labelledby="dpSettingsTitle"><div class="dp-dialog-head"><h3 id="dpSettingsTitle">论文原文留存设置</h3><button class="button small" type="button" data-dp-action="close-settings" aria-label="关闭设置">×</button></div><form data-dp="settingsForm"><div class="dp-dialog-body"><label class="dp-check"><input type="checkbox" data-dp="enabled">保存实际下载的完整论文原文</label><label class="dp-setting-field">原文库上限（GiB）<input type="number" min="1" max="1024" step="1" required data-dp="maxGiB"></label><label class="dp-setting-field">磁盘最低可用空间（GiB）<input type="number" min="1" max="1024" step="1" required data-dp="minFreeGiB"></label><p class="dp-warning">达到阈值会阻断新的全文下载，不会自动删除已有原文。原有单文件下载限制仍有效。</p><div class="dp-error" role="alert" data-dp="settingsError" hidden></div></div><div class="dp-dialog-foot"><button class="button secondary" type="button" data-dp-action="close-settings">取消</button><button class="button primary" type="submit">保存设置</button></div></form></dialog>
+<dialog id="discoveryPaperSettings" class="dp-dialog dp-confirm" aria-labelledby="dpSettingsTitle"><div class="dp-dialog-head"><h3 id="dpSettingsTitle">论文原文留存设置</h3><button class="button small" type="button" data-dp-action="close-settings" aria-label="关闭设置">×</button></div><form data-dp="settingsForm"><div class="dp-dialog-body"><label class="dp-check"><input type="checkbox" data-dp="enabled">保存实际下载的完整论文原文</label><label class="dp-setting-field">原文库上限（GiB）<input type="number" min="1" max="1024" step="1" required data-dp="maxGiB"></label><label class="dp-setting-field">磁盘清理触发空间（GiB）<input type="number" min="1" max="1024" step="1" required data-dp="minFreeGiB"></label><p class="dp-warning">磁盘可用低于默认 5 GiB 时，先按历史任务从旧到新安全清理，恢复至至少 15 GiB 后才下载（还需容纳新文件）。自定义磁盘阈值恢复至至少阈值＋10 GiB。原文库上限独立计算：40 GiB 时清理至 38 GiB；小配额预留 5%，最多 2 GiB。保留受保护、使用中及共享原文；元数据和解析记录不删除。可取消清理，空间不足会停止并保留当前页。原有单文件下载限制仍有效。</p><div class="dp-error" role="alert" data-dp="settingsError" hidden></div></div><div class="dp-dialog-foot"><button class="button secondary" type="button" data-dp-action="close-settings">取消</button><button class="button primary" type="submit">保存设置</button></div></form></dialog>
 <dialog id="discoveryPaperDelete" class="dp-dialog dp-confirm" aria-labelledby="dpDeleteTitle"><div class="dp-dialog-head"><h3 id="dpDeleteTitle">确认删除论文原文</h3><button class="button small" type="button" data-dp-action="close-delete" aria-label="关闭删除确认">×</button></div><div class="dp-dialog-body"><div class="dp-delete-metrics"><div><span>可删除文件</span><strong data-dp="deleteFiles">0</strong></div><div><span>文件逻辑字节</span><strong data-dp="deleteBytes">0 B</strong></div></div><p data-dp="deleteSkipped"></p><p class="dp-warning">保护文件和仍被未选记录引用的文件会跳过。论文元数据、解析记录和专家准入结果保留。</p><div class="dp-error" role="alert" data-dp="deleteError" hidden></div></div><div class="dp-dialog-foot"><button class="button secondary" type="button" data-dp-action="close-delete">取消</button><button class="button danger" type="button" data-dp-action="confirm-delete" disabled>确认删除原文</button></div></dialog>
 <!-- S-2: 与现有 discoveryPaperDelete 同级，在 taskProgressModal 内 -->
 <dialog id="paperReprocessConfirm" class="dp-dialog rp-dialog" aria-labelledby="rpConfirmTitle">
@@ -2561,21 +2561,21 @@
 <dialog id="meetingEditor" class="cr-dialog cr-meeting-dialog"><form id="meetingForm"><header class="cr-dialoghead"><div><span class="cr-eyebrow">会议记录</span><h2 id="meetingEditorTitle">添加会议记录</h2></div><button class="button cr-iconbtn" type="button" data-close="meetingEditor" aria-label="关闭会议编辑">×</button></header><div class="cr-dialogbody"><div class="cr-editor-expert" id="meetingExpert"></div><div class="cr-formgrid"><label class="cr-full">会议主题 <span class="cr-required">*</span><input name="title" placeholder="例如：企业技术对接会" maxlength="200" required></label><label>会议时间 <span class="cr-labelhint">北京时间</span><input type="datetime-local" name="time"></label><label>参会人<input name="participants" placeholder="填写姓名，多人用逗号分隔" maxlength="500"></label><label class="cr-full">会议纪要<textarea name="minutes" rows="7" placeholder="讨论事项：&#10;会议结论：&#10;后续行动：" maxlength="10000"></textarea></label></div><div class="cr-fileheading"><h3>会议视频 <span id="fileCount" class="cr-count"></span></h3><button class="button cr-btn" id="pickVideo" type="button">＋ 添加视频</button><input id="videoInput" type="file" accept=".mp4,.mov,.webm" multiple hidden></div><p class="cr-hint">MP4 / MOV / WebM · 单个最大 1 GiB · 名称可修改，扩展名固定</p><div id="fileQueue" class="cr-filequeue"></div><p id="meetingError" class="cr-error" role="alert" hidden></p></div><footer class="cr-dialogfoot"><span class="cr-muted cr-footnote">先保存会议记录，再逐个上传视频。</span><button class="button cr-btn" type="button" data-close="meetingEditor">取消</button><button class="button cr-btn primary cr-primary" type="submit">保存并上传</button></footer></form></dialog>
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
-<script src="console-shell.js?v=20261113-expert-mail-defaults"></script>
+<script src="console-shell.js?v=20261116-archive-capacity"></script>
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261113-expert-mail-defaults"></script>
-<script src="expert-materials.js?v=20261113-expert-mail-defaults"></script>
-<script src="meeting-confirmation.js?v=20261113-expert-mail-defaults"></script>
-<script src="expert-mail-settings.js?v=20261113-expert-mail-defaults"></script>
-<script src="mailbox-chat.js?v=20261113-expert-mail-defaults"></script>
-<script src="contact-history.js?v=20261113-expert-mail-defaults"></script>
-<script src="meeting-records.js?v=20261113-expert-mail-defaults"></script>
-<script src="contact-details.js?v=20261113-expert-mail-defaults"></script>
-<script src="discovery-paper-reprocess.js?v=20261113-expert-mail-defaults"></script>
-<script src="discovery-papers.js?v=20261113-expert-mail-defaults"></script>
-<script src="discovery-recheck.js?v=20261113-expert-mail-defaults"></script>
-<script src="mailbox-readonly.js?v=20261113-expert-mail-defaults"></script>
-<script src="app.js?v=20261113-expert-mail-defaults"></script>
-<script src="world-clock.js?v=20261113-expert-mail-defaults"></script>
+<script src="trust-reply-workbench.js?v=20261116-archive-capacity"></script>
+<script src="expert-materials.js?v=20261116-archive-capacity"></script>
+<script src="meeting-confirmation.js?v=20261116-archive-capacity"></script>
+<script src="expert-mail-settings.js?v=20261116-archive-capacity"></script>
+<script src="mailbox-chat.js?v=20261116-archive-capacity"></script>
+<script src="contact-history.js?v=20261116-archive-capacity"></script>
+<script src="meeting-records.js?v=20261116-archive-capacity"></script>
+<script src="contact-details.js?v=20261116-archive-capacity"></script>
+<script src="discovery-paper-reprocess.js?v=20261116-archive-capacity"></script>
+<script src="discovery-papers.js?v=20261116-archive-capacity"></script>
+<script src="discovery-recheck.js?v=20261116-archive-capacity"></script>
+<script src="mailbox-readonly.js?v=20261116-archive-capacity"></script>
+<script src="app.js?v=20261116-archive-capacity"></script>
+<script src="world-clock.js?v=20261116-archive-capacity"></script>
 </body>
 </html>

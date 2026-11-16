@@ -26,12 +26,126 @@ class DiscoveryPaperArchiveServiceTest {
     private fun path(a: ArchiveAttempt) = f.root.resolve("blobs/${a.blobSha256!!.take(2)}/${a.blobSha256}.bin")
     private class Crash : Error("simulated process interruption")
 
+    @Test fun `default disk trigger is five GiB and existing quota default is preserved`() {
+        assertEquals(5 * ARCHIVE_GIB, f.service.settings().minFreeBytes)
+        assertEquals(20 * ARCHIVE_GIB, f.service.settings().maxBytes)
+    }
+
+    @Test fun `below five continues past five until fifteen and exact five does not clean`() {
+        f.service.updateSettings(ArchiveSettingsRequest(0, true, 40 * ARCHIVE_GIB, 5 * ARCHIVE_GIB))
+        ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2); ArchiveMysqlFixture.task(3, "RUNNING")
+        val first = f.body(f.paper("first", 1), f.pdf())
+        val second = f.body(f.paper("second", 2), f.pdf(1024, 66))
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, 5 * ARCHIVE_GIB) }
+        f.service.beginScope(3, "OPENALEX", "exact", f.mapper.readTree("""{"schemaVersion":1}"""))!!.let { f.service.endScope(it) }
+        assertTrue(Files.exists(path(first)))
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+            when { Files.exists(path(first)) -> 4 * ARCHIVE_GIB
+                Files.exists(path(second)) -> 6 * ARCHIVE_GIB
+                else -> 15 * ARCHIVE_GIB }) }
+        f.service.beginScope(3, "OPENALEX", "recovered", f.mapper.readTree("""{"schemaVersion":1}"""))!!.let { f.service.endScope(it) }
+        assertFalse(Files.exists(path(first))); assertFalse(Files.exists(path(second)))
+    }
+
+    @Test fun `partial recovery remains blocked on next entry above trigger`() {
+        f.service.updateSettings(ArchiveSettingsRequest(0, true, 40 * ARCHIVE_GIB, 5 * ARCHIVE_GIB))
+        ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val first = f.body(f.paper("first", 1), f.pdf())
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+            if (Files.exists(path(first))) 4 * ARCHIVE_GIB else 6 * ARCHIVE_GIB) }
+        repeat(2) {
+            code("ARCHIVE_STORAGE_BLOCKED") {
+                f.service.beginScope(2, "OPENALEX", "blocked", f.mapper.readTree("""{"schemaVersion":1}"""))
+            }
+        }
+    }
+
+    @Test fun `recovery targets preserve independent quota and scale small quotas`() {
+        assertEquals(38 * ARCHIVE_GIB, ArchiveSetting(maxBytes = 40 * ARCHIVE_GIB).recoveryMaxBytes)
+        assertEquals(ARCHIVE_GIB - ARCHIVE_GIB / 20, ArchiveSetting(maxBytes = ARCHIVE_GIB).recoveryMaxBytes)
+        assertEquals(30 * ARCHIVE_GIB, ArchiveSetting(minFreeBytes = 20 * ARCHIVE_GIB).recoveryFreeBytes)
+    }
+
+    @Test fun `cancel during cleanup preserves remaining files and execution bound progress`() {
+        val progress = com.weibo.talentintroduction.task.service.TaskProgressStore(
+            Mockito.mock(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java), f.mapper)
+        f.service = DiscoveryPaperArchiveService(f.repository, f.props, f.sampleProps, f.mapper, progress)
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, 70 * ARCHIVE_GIB) }
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2); ArchiveMysqlFixture.task(3, "RUNNING")
+        val first = f.body(f.paper("first", 1), f.pdf())
+        val second = f.body(f.paper("second", 2), f.pdf(1024, 66))
+        progress.setCurrentExecutionId("EXPERT_DISCOVERY", 3)
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, 0) }
+        f.service.failpoint = { if (it == "AFTER_UNLINK") progress.requestCancel("EXPERT_DISCOVERY") }
+        code("ARCHIVE_CLEANUP_CANCELLED") { f.service.ensureCapacity(3) }
+        assertFalse(Files.exists(path(first))); assertTrue(Files.exists(path(second)))
+        val cleanup = progress.peek("EXPERT_DISCOVERY")!!.details!!["archiveCleanup"] as Map<*, *>
+        assertEquals(3L, cleanup["executionId"]); assertEquals(1024L, cleanup["reclaimedBytes"])
+        assertEquals("CANCELLED", cleanup["phase"])
+        // A stale execution may not change the new task's progress or inherit its cancel flag.
+        progress.clear("EXPERT_DISCOVERY"); progress.setCurrentExecutionId("EXPERT_DISCOVERY", 99)
+        progress.requestCancel("EXPERT_DISCOVERY")
+        val replacement = progress.peek("EXPERT_DISCOVERY")
+        f.service.failpoint = {}
+        code("ARCHIVE_STORAGE_BLOCKED") { f.service.ensureCapacity(3) }
+        assertEquals(replacement, progress.peek("EXPERT_DISCOVERY"))
+    }
+
+    @Test fun `active scope in an otherwise completed execution survives automatic cleanup`() {
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val scope = f.service.beginScope(1, "OPENALEX", "active", f.mapper.readTree("""{"schemaVersion":1}"""))!!
+        val old = f.body(f.repository.record(scope.recordId)!!, f.pdf())
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+            if (Files.exists(path(old))) 0 else 15 * ARCHIVE_GIB) }
+        code("ARCHIVE_STORAGE_BLOCKED") { f.service.ensureCapacity(2) }
+        assertTrue(Files.exists(path(old)))
+        f.service.endScope(scope)
+        f.service.ensureCapacity(2)
+        assertFalse(Files.exists(path(old)))
+    }
+
+    @Test fun `preflight cancellation and interruption never unlink a file`() {
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val old = f.body(f.paper("old", 1), f.pdf())
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, 0) }
+        Thread.currentThread().interrupt()
+        try { code("ARCHIVE_CLEANUP_CANCELLED") { f.service.ensureCapacity(2) } }
+        finally { Thread.interrupted() }
+        assertTrue(Files.exists(path(old)))
+    }
+
+    @Test fun `concurrent capacity entries complete one cleanup before either download admission`() {
+        f.enable(); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
+        val old = f.body(f.paper("old", 1), f.pdf())
+        f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+            if (Files.exists(path(old))) 0 else 15 * ARCHIVE_GIB) }
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val deletions = java.util.concurrent.atomic.AtomicInteger()
+        f.service.failpoint = { if (it == "AFTER_UNLINK") {
+            deletions.incrementAndGet(); entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
+        } }
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val first = pool.submit { f.service.ensureCapacity(2) }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val second = pool.submit { f.service.ensureCapacity(2) }
+            assertFalse(second.isDone)
+            release.countDown(); first.get(10, TimeUnit.SECONDS); second.get(10, TimeUnit.SECONDS)
+            assertEquals(1, deletions.get())
+        } finally { release.countDown(); pool.shutdownNow() }
+    }
+
     private fun diskCapacity(bytes: Long) {
+        val initialUsed = Files.walk(f.root.resolve("blobs")).use { paths ->
+            paths.filter { Files.isRegularFile(it) }.mapToLong { Files.size(it) }.sum()
+        }
         f.service.diskProbe = {
             val used = Files.walk(f.root.resolve("blobs")).use { paths ->
                 paths.filter { Files.isRegularFile(it) }.mapToLong { Files.size(it) }.sum()
             }
-            ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, ARCHIVE_GIB + bytes - used)
+            ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB,
+                (if (used == initialUsed) ARCHIVE_GIB else 15 * ARCHIVE_GIB) + bytes - used)
         }
     }
 
@@ -97,14 +211,15 @@ class DiscoveryPaperArchiveServiceTest {
 
     @Test fun `cleanup also makes archive quota headroom without touching unrelated files`() {
         f.enable(ARCHIVE_GIB); ArchiveMysqlFixture.task(1); ArchiveMysqlFixture.task(2, "RUNNING")
-        val old = f.body(f.paper("old", 1), f.pdf())
+        val oldBytes = 64 * 1024 * 1024
+        val old = f.body(f.paper("old", 1), f.pdf(oldBytes))
         val filler = f.root.resolve("blobs/filler.bin")
         FileChannel.open(filler, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
-            it.position(ARCHIVE_GIB - 1024 - 1); it.write(ByteBuffer.wrap(byteArrayOf(0)))
+            it.position(ARCHIVE_GIB - oldBytes - 1); it.write(ByteBuffer.wrap(byteArrayOf(0)))
         }
         f.body(f.paper("incoming", 2), f.pdf(512, 66))
         assertFalse(Files.exists(path(old))); assertTrue(Files.exists(filler))
-        assertEquals(ARCHIVE_GIB - 512, f.service.stats().storage.archiveUsedBytes)
+        assertEquals(ARCHIVE_GIB - oldBytes + 512, f.service.stats().storage.archiveUsedBytes)
     }
 
     @Test fun `exhausted cleanup stays blocked without deleting current task`() {
@@ -215,7 +330,7 @@ class DiscoveryPaperArchiveServiceTest {
         f.service.diskProbe={ ArchiveDisk(100*ARCHIVE_GIB,80*ARCHIVE_GIB,ARCHIVE_GIB+1023) }
         code("ARCHIVE_STORAGE_BLOCKED") { f.service.saveBody(attempt.id,bytes,"application/pdf") }
         assertEquals(0L,f.service.stats().counts.savedAttempts)
-        f.service.diskProbe={ ArchiveDisk(100*ARCHIVE_GIB,80*ARCHIVE_GIB,ARCHIVE_GIB+1024) }
+        f.service.diskProbe={ ArchiveDisk(100*ARCHIVE_GIB,80*ARCHIVE_GIB,15*ARCHIVE_GIB+1024) }
         f.service.saveBody(attempt.id,bytes,"application/pdf")
         assertEquals(1L,f.service.stats().counts.savedAttempts)
         f.service.diskProbe={ throw java.io.IOException("fixture") }

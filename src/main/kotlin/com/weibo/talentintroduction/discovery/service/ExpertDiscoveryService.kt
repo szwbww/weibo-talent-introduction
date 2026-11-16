@@ -426,10 +426,24 @@ class ExpertDiscoveryService(
         executionId: Long?,
         includeRawScan: Boolean = discoveryProperties.includeRawScan
     ): DiscoveryResult {
+        try {
+            ensureArchiveCapacity(executionId, resolveEnabledSources(criteria).map { it.sourceName })
+        } catch (e: PaperArchiveBlockedException) {
+            val cancelled = e.code == "ARCHIVE_CLEANUP_CANCELLED"
+            progressStore.update("EXPERT_DISCOVERY", TaskProgress("EXPERT_DISCOVERY",
+                if (cancelled) "CANCELLED" else "FAILED", 0, 0, 0, e.message,
+                details = progressStore.peek("EXPERT_DISCOVERY")?.takeIf { it.executionId == executionId }?.details), executionId)
+            if (cancelled) return DiscoveryResult(triggeredBy, DiscoveryStats(), wasCancelled = true, summaryText = "原文清理已取消，本页未消费")
+            throw e
+        }
         val deadline = timeSource.now().plus(discoveryProperties.timeBudget)
         return DiscoveryEsRetry.withContext(timeSource, { requestStop(deadline) != null }) {
             discoverWithEsRetry(criteria, triggeredBy, executionId, includeRawScan, deadline)
         }
+    }
+
+    fun ensureArchiveCapacity(executionId: Long?, sources: Collection<String>, checkContinue: () -> Unit = {}) {
+        archiveCapture?.ensureCapacity(executionId, sources, checkContinue)
     }
 
     private fun discoverWithEsRetry(
@@ -568,20 +582,28 @@ class ExpertDiscoveryService(
                 details = details, errors = snapshotErrors(stats)
             ), execId)
         } catch (e: Exception) {
-            stats.refreshGlobalCounts()
-            // I-5：异常结束同样清空「仍待执行」的计划时间，避免页面一直显示已过期的等待。
-            clearRetryWait(stats)
-            val totalElapsed = System.currentTimeMillis() - startTime
-            val details = buildProgressDetails(stats).toMutableMap()
-            details["traffic"] = trafficSession.snapshot()
-            details["summaryText"] = buildSummaryText(stats, totalElapsed, DiscoveryTerminalStatus.FAILED)
-            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
-                taskType = "EXPERT_DISCOVERY", status = "FAILED",
-                batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
-                message = "失败: ${e.message}",
-                details = details, errors = snapshotErrors(stats)
-            ), execId)
-            throw e
+            if (e is PaperArchiveBlockedException && e.code == "ARCHIVE_CLEANUP_CANCELLED") {
+                terminalStatusOfRun = DiscoveryTerminalStatus.CANCELLED
+                clearRetryWait(stats)
+                progressStore.update("EXPERT_DISCOVERY", TaskProgress("EXPERT_DISCOVERY", "CANCELLED", -1,
+                    stats.totalPapers.toLong(), 0, "原文清理已取消，本页未消费",
+                    details = progressStore.peek("EXPERT_DISCOVERY")?.takeIf { it.executionId == execId }?.details), execId)
+            } else {
+                stats.refreshGlobalCounts()
+                // I-5：异常结束同样清空「仍待执行」的计划时间，避免页面一直显示已过期的等待。
+                clearRetryWait(stats)
+                val totalElapsed = System.currentTimeMillis() - startTime
+                val details = buildProgressDetails(stats).toMutableMap()
+                details["traffic"] = trafficSession.snapshot()
+                details["summaryText"] = buildSummaryText(stats, totalElapsed, DiscoveryTerminalStatus.FAILED)
+                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+                    taskType = "EXPERT_DISCOVERY", status = "FAILED",
+                    batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
+                    message = "失败: ${e.message}",
+                    details = details, errors = snapshotErrors(stats)
+                ), execId)
+                throw e
+            }
         } finally {
             verificationRegistration?.closeInput(verification)
         }
@@ -589,6 +611,7 @@ class ExpertDiscoveryService(
         val finalElapsed = System.currentTimeMillis() - startTime
         return DiscoveryResult(
             triggeredBy, stats,
+            wasCancelled = terminalStatusOfRun == DiscoveryTerminalStatus.CANCELLED,
             summaryText = buildSummaryText(stats, finalElapsed, terminalStatusOfRun),
             traffic = trafficSession.snapshot()
         )
@@ -877,6 +900,7 @@ class ExpertDiscoveryService(
                 break
             }
 
+            ensureArchiveCapacity(execId, listOf(source.sourceName))
             if (supportsSearchRecovery(source)) openAlexPageAttempts++
             sourceStats.apiRequests++
 

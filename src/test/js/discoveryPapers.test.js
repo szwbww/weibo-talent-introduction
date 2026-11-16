@@ -91,7 +91,11 @@ test('exact approved HTML/CSS contract, real IDs and asset keys', () => {
     const insertion = paperBlock.indexOf('  <div class="dp-selection">');
     assert.ok(html.includes(paperBlock.slice(0, insertion)));
     assert.ok(html.includes(paperBlock.slice(insertion)));
-    for (const i of [3, 5]) assert.ok(html.includes(blocks[i]));
+    // The capacity recovery contract supersedes only the settings label and policy copy.
+    const capacityPolicy = html.match(/<p class="dp-warning">磁盘可用低于[^<]*<\/p>/)[0];
+    for (const i of [3, 5]) assert.ok(html.includes(blocks[i]
+        .replace('磁盘最低可用空间（GiB）', '磁盘清理触发空间（GiB）')
+        .replace(/<p class="dp-warning">达到阈值[^<]*<\/p>/, capacityPolicy)));
     assert.ok(app.includes(blocks[1]));
     const assets = [...html.matchAll(/(?:src|href)="([^"]+)\?v=([^"]+)"/g)];
     const coordinated = new Set(['styles.css', 'trust-reply-workbench.js', 'app.js', 'discovery-paper-reprocess.js', 'discovery-papers.js', 'discovery-recheck.js']);
@@ -299,3 +303,10 @@ test('reprocess record references reuse the read-only reader, select exact attem
     assert.equal(h.calls.filter(call => call.options.method === 'POST').length, 0);
     h.view.dispose();
 });
+
+ test('capacity policy describes automatic recovery and preserved metadata', () => {
+    assert.match(html, /低于.*5 GiB.*15 GiB/);
+    assert.doesNotMatch(html, /不会自动删除已有原文/);
+    assert.match(source, /recoveryFreeBytes/);
+    assert.match(source, /recoveryMaxBytes/);
+ });

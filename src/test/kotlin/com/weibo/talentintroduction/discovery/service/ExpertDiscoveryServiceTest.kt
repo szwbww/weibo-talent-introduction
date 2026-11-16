@@ -994,7 +994,9 @@ class ExpertDiscoveryServiceTest {
                 Mockito.anyString(), Mockito.anyString(), Mockito.any(Any::class.java) ?: emptyMap<String, Any>(),
                 Mockito.any(), Mockito.any(), Mockito.any<() -> PipelineWindowResult>() ?: { error("unused") })
             val settings = discoveryProperties.copy(pipelineEnabled = true, timeBudget = Duration.ofSeconds(10))
-            val pipeline = DiscoveryPipelineService(store, discovery, task, progressStore, settings,
+            val pipelineProgress = TaskProgressStore(
+                Mockito.mock(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java), objectMapper)
+            val pipeline = DiscoveryPipelineService(store, discovery, task, pipelineProgress, settings,
                 objectMapper, com.weibo.talentintroduction.config.OpenAlexRequestPolicy(OpenAlexProperties(enabled = false)),
                 Executor { it.run() }, Executor { it.run() }, Executor { it.run() },
                 object : PipelineTimeSource { override fun now(): Instant = now })
