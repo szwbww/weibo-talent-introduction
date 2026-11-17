@@ -21239,6 +21239,17 @@ function initLayoutResizer() {
     if (!resizer || !container || !listPanel) return;
 
     let isDragging = false;
+    let isListCollapsed = false;
+    const toggleListButton = document.getElementById("toggleContactsListBtn");
+    toggleListButton?.addEventListener("click", () => {
+        if (window.innerWidth <= 1024) return;
+        endDrag({});
+        isListCollapsed = !isListCollapsed;
+        container.classList.toggle("is-list-collapsed", isListCollapsed);
+        toggleListButton.textContent = isListCollapsed ? "展开列表" : "收起列表";
+        toggleListButton.title = isListCollapsed ? "展开左侧专家列表" : "收起左侧专家列表";
+        toggleListButton.setAttribute("aria-expanded", String(!isListCollapsed));
+    });
 
     // Load saved layout width or default
     function setListWidth(width, updateStorage = true) {

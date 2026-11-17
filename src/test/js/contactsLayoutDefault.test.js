@@ -17,6 +17,8 @@ function extractFn(name) {
 function createElement(listeners) {
     return {
         style: {},
+        attributes: {},
+        setAttribute(key, value) { this.attributes[key] = value; },
         classList: { add() {}, remove() {} },
         addEventListener(type, listener) { listeners[type] = listener; },
         setPointerCapture() {},
@@ -31,11 +33,14 @@ function initLayout(savedWidth, width = 1440) {
     const defaultListeners = {};
     const wideListeners = {};
     const splitListeners = {};
-    const container = { style: {}, getBoundingClientRect: () => ({ left: 0, width: 1200 }) };
+    const toggleListeners = {};
+    const classes = new Set();
+    const container = { classList: { toggle(name, on) { on ? classes.add(name) : classes.delete(name); } }, style: {}, getBoundingClientRect: () => ({ left: 0, width: 1200 }) };
     const listPanel = { style: {} };
     const resizer = createElement(resizerListeners);
     const elements = {
         contactsLayoutResizer: resizer,
+        toggleContactsListBtn: createElement(toggleListeners),
         btnLayoutDefault: createElement(defaultListeners),
         btnLayoutWideList: createElement(wideListeners),
         btnLayoutSplit: createElement(splitListeners)
@@ -57,7 +62,7 @@ function initLayout(savedWidth, width = 1440) {
     vm.createContext(sandbox);
     vm.runInContext(extractFn("initLayoutResizer"), sandbox);
     sandbox.initLayoutResizer();
-    return { container, writes, resizerListeners, defaultListeners, wideListeners, splitListeners, resize(nextWidth) { sandbox.window.innerWidth = nextWidth; viewportListeners.forEach(listener => listener()); } };
+    return { container, writes, classes, toggleListeners, toggleButton: elements.toggleContactsListBtn, resizerListeners, defaultListeners, wideListeners, splitListeners, resize(nextWidth) { sandbox.window.innerWidth = nextWidth; viewportListeners.forEach(listener => listener()); } };
 }
 
 describe("contacts layout default", () => {
@@ -114,3 +119,22 @@ for (const width of [390, 760, 761, 1024]) {
         });
     }
 }
+
+ it("collapses and restores the list without overwriting the saved width", () => {
+    const result = initLayout("620");
+    assert.match(indexSource, /id="toggleContactsListBtn"[^>]*aria-controls="contactsListPanel"/);
+    assert.match(indexSource, /id="contactsListPanel"/);
+    result.toggleListeners.click();
+    assert.ok(result.classes.has("is-list-collapsed"));
+    assert.strictEqual(result.toggleButton.attributes["aria-expanded"], "false");
+    assert.strictEqual(result.toggleButton.textContent, "展开列表");
+    result.resize(760);
+    result.toggleListeners.click();
+    result.resize(1440);
+    assert.ok(result.classes.has("is-list-collapsed"));
+    result.toggleListeners.click();
+    assert.ok(!result.classes.has("is-list-collapsed"));
+    assert.strictEqual(result.toggleButton.attributes["aria-expanded"], "true");
+    assert.strictEqual(result.container.style.gridTemplateColumns, "620px 6px minmax(0, 1fr)");
+    assert.deepStrictEqual(result.writes, []);
+});
