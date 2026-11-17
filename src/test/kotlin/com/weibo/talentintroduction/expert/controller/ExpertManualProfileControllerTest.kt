@@ -323,4 +323,23 @@ class ExpertManualProfileControllerTest {
         assertEquals("专家不存在", tree.get("message").asText())
         assertTrue(tree.get("detail").isTextual)
     }
+    @Test
+    fun `unified name command requires exact version and admin without changing legacy profile permission`() {
+        val node = jackson.readTree(identityBody()) as com.fasterxml.jackson.databind.node.ObjectNode
+        node.set<JsonNode>("nameChange", jackson.readTree("""{"expectedVersion":7,"value":"Correct Name"}"""))
+        val command = identityCommand().copy(nameChange = com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange(7, "Correct Name"))
+        Mockito.`when`(service.patch(command, "admin")).thenReturn(fullDto.copy(
+            nameOverride = com.weibo.talentintroduction.expert.domain.ExpertProfileNameOverride(8, "Correct Name")))
+        mvc.perform(patch("/api/experts/manual-profile").session(session()).contentType(MediaType.APPLICATION_JSON).content(node.toString()))
+            .andExpect(status().isOk).andExpect(jsonPath("$.nameOverride.value").value("Correct Name"))
+            .andExpect(jsonPath("$.nameEditable").value(true))
+        mvc.perform(patch("/api/experts/manual-profile").session(session("userA")).contentType(MediaType.APPLICATION_JSON).content(node.toString()))
+            .andExpect(status().isForbidden)
+        for (invalid in listOf("7.5", "9223372036854775808", "\"7\"")) {
+            node.set<JsonNode>("nameChange", jackson.readTree("""{"expectedVersion":$invalid,"value":"New"}"""))
+            mvc.perform(patch("/api/experts/manual-profile").session(session()).contentType(MediaType.APPLICATION_JSON).content(node.toString()))
+                .andExpect(status().isBadRequest)
+        }
+    }
+
 }

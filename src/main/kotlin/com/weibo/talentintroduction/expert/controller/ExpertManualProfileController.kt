@@ -56,7 +56,7 @@ class ExpertManualProfileController(
     ): ResponseEntity<Any> {
         val username = sessionUsername(request) ?: return unauthorized()
         requireFullProfile(username, expertId, level ?: ExpertIndexLevel.RAW)
-        return ResponseEntity.ok(service.get(expertId, level ?: ExpertIndexLevel.RAW))
+        return ResponseEntity.ok(withNamePermission(service.get(expertId, level ?: ExpertIndexLevel.RAW), username))
     }
 
     @PatchMapping
@@ -68,8 +68,12 @@ class ExpertManualProfileController(
         val payload = body ?: throw ExpertManualProfileInvalidRequestException("请求体无效")
         val command = payload.toCommand()
         requireFullProfile(username, command.expertId, command.level)
-        return ResponseEntity.ok(service.patch(command, username))
+        if (command.nameChange != null) MailReadOnlyPolicy.requireAdmin(username)
+        return ResponseEntity.ok(withNamePermission(service.patch(command, username), username))
     }
+
+    private fun withNamePermission(dto: com.weibo.talentintroduction.expert.domain.ExpertManualProfileDto, username: String) =
+        if (dto.nameOverride == null) dto else dto.copy(nameEditable = MailReadOnlyPolicy.isAdmin(username))
 
     private fun requireFullProfile(username: String, expertId: String?, level: ExpertIndexLevel) {
         if (!MailReadOnlyPolicy.isReader(username)) return
@@ -148,7 +152,8 @@ data class ExpertManualProfilePatchRequest(
     val level: String? = null,
     val group: String? = null,
     val expectedVersion: Long? = null,
-    val values: Map<String, Any?>? = null
+    val values: Map<String, Any?>? = null,
+    val nameChange: com.fasterxml.jackson.databind.JsonNode? = null
 ) {
     fun toCommand(): ExpertManualProfilePatch {
         val parsedGroup = ExpertManualProfileGroup.fromWire(group)
@@ -162,8 +167,20 @@ data class ExpertManualProfilePatchRequest(
             level = parseLevel(level),
             group = parsedGroup,
             expectedVersion = expected,
-            values = values
+            values = values,
+            nameChange = parseNameChange()
         )
+    }
+
+    private fun parseNameChange(): com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange? {
+        val node = nameChange ?: return null
+        if (!node.isObject || node.fieldNames().asSequence().toSet() != setOf("expectedVersion", "value") ||
+            !node.path("expectedVersion").isIntegralNumber || !node.path("expectedVersion").canConvertToLong() ||
+            !(node.path("value").isNull || node.path("value").isTextual)) {
+            throw ExpertManualProfileInvalidRequestException("姓名修改须包含整数版本和文本姓名")
+        }
+        return com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange(
+            node.path("expectedVersion").longValue(), node.path("value").takeUnless { it.isNull }?.textValue())
     }
 
     private fun parseLevel(raw: String?): ExpertIndexLevel {

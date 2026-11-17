@@ -862,4 +862,20 @@ class MailVariableServiceTest {
 
         assertEquals(emptyList<String>(), service.validatePlaceholders("\${pendingExpertMaterials}"))
     }
+    @Test
+    fun `name override is shared by preview plain HTML and profileless rendering`() {
+        val overrides = Mockito.mock(ExpertTemplateOverrideService::class.java)
+        val key = expert.orcidId
+        Mockito.`when`(overrides.read(key)).thenReturn(ExpertTemplateOverrides(2, mapOf("expertName" to "Correct & Name")))
+        val variables = MailVariableService(expertSearchService, mailComposeTemplateService, templateOverrides = overrides)
+        val contact = ExpertContact(id = 3, campaignId = 1, orcidId = key, expertEmail = "expert@test.org", expertName = "Old")
+        Mockito.`when`(expertSearchService.findByOrcidId(key, ExpertIndexLevel.CANDIDATE)).thenReturn(expert)
+        assertEquals("Correct & Name", variables.buildVariables(account, expert)["expertName"])
+        assertEquals("Correct & Name", variables.buildVariables(account, null, contact = contact)["expertName"])
+        assertEquals("Dear Correct & Name", variables.renderForContact("Dear \${expertName}", account, contact))
+        assertEquals("Dear Correct & Name", variables.renderPreview("Dear \${expertName}", account, contact).rendered)
+        assertEquals("<p>Correct &amp; Name</p>", variables.renderHtmlForContact("<p>\${expertName}</p>", account, contact))
+        assertEquals(expert.familyNames, variables.buildVariables(account, expert)["expertFamilyName"])
+    }
+
 }

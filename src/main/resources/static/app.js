@@ -11568,7 +11568,8 @@ function activateDetailSubTab(btn) {
 async function loadTemplatePreview(panel, orcidId) {
     if (!orcidId) { panel.textContent = "无专家标识，无法编辑变量"; return; }
     const level = $("#expertIndexLevel")?.value || "CANDIDATE";
-    return window.ExpertMailSettings.mountVariables(panel, orcidId, level, api, showStatus, EXPERT_VAR_KEY_SET);
+    return window.ExpertMailSettings.mountVariables(panel, orcidId, level, api, showStatus, EXPERT_VAR_KEY_SET,
+        (snapshot) => expertManualProfileVariablesChanged(orcidId, snapshot));
 }
 
 function calculateExpertVariableCoverage(vars) {
@@ -11743,8 +11744,53 @@ function expertManualProfileCompanyList(value) {
 
 function expertManualProfileReadonlyValue(session, name) {
     const facts = session.facts || {};
+    if (name === "expertName") return expertManualProfileText(expertManualProfileName(session));
     // 关键词沿用现有专家响应原串（逗号/分号分隔），只读，不重新解释也不做成可点标签。
     return expertManualProfileText(facts[name]);
+}
+
+/** 姓名覆盖单源；空字符串覆盖也必须显示为空，不能回退原名。 */
+function expertManualProfileName(session) {
+    const override = session.nameSnapshot || (session.profile && session.profile.nameOverride);
+    return override && override.value != null ? override.value : (session.facts.expertName || "");
+}
+
+function expertManualProfileAcceptName(session, snapshot) {
+    if (snapshot && (!session.nameSnapshot || snapshot.version >= session.nameSnapshot.version)) {
+        session.nameSnapshot = snapshot;
+    }
+    if (session.profile && session.nameSnapshot) session.profile.nameOverride = session.nameSnapshot;
+}
+
+function expertManualProfileRefreshName(session) {
+    if (session.isStale() || !session.root) return;
+    const name = expertManualProfileText(expertManualProfileName(session));
+    const header = session.root.querySelector(".expert-header-info");
+    const title = header && header.querySelector("h2");
+    const avatar = session.root.querySelector(".expert-avatar");
+    if (title) title.textContent = name;
+    if (avatar) avatar.textContent = name === EXPERT_MANUAL_PROFILE_EMPTY_TEXT ? "?" : Array.from(name)[0];
+}
+
+function expertManualProfileInvalidatePreviews(session) {
+    if (!session.root || session.isStale()) return;
+    session.root.querySelectorAll('[data-panel="template"], [data-panel="mail-preview"]').forEach((panel) => {
+        delete panel.dataset.loaded;
+        panel.mailSettingsOwner = null;
+        panel.mailPreviewOwner = null;
+    });
+    if (typeof expertMailPreviewRequestId !== "undefined") ++expertMailPreviewRequestId;
+}
+
+function expertManualProfileVariablesChanged(expertId, snapshot) {
+    expertManualProfileSessions.forEach((session) => {
+        if (session.isStale() || session.expertId !== expertId) return;
+        expertManualProfileAcceptName(session, { version: snapshot.version,
+            value: Object.prototype.hasOwnProperty.call(snapshot.values, "expertName") ? snapshot.values.expertName : null });
+        // 不重填正在编辑的弹窗；它仍持有打开时版本，保存时由服务端判定冲突。
+        expertManualProfileRenderValues(session);
+        expertManualProfileRefreshName(session);
+    });
 }
 
 /** 只读展示值：分组 DTO + 字段元数据决定文案，全部由 textContent 写入。 */
@@ -11809,10 +11855,13 @@ function expertManualProfileEditorTemplate(group) {
         }
         return `<label${labelClass}>${field.label}${control}</label>`;
     }).join("");
+    const nameControl = group.key === "identity"
+        ? '<label class="ec-span">姓名<input name="expertName" disabled><span class="ec-message">保存后同步顶部姓名和邮件模板变量 expertName；姓氏变量保持不变。</span></label>'
+        : "";
     return `<dialog class="em-upload-dialog ec-editor" data-ec-editor="${group.key}" aria-label="编辑${group.label}">` +
         `<form>` +
         `<header class="em-upload-head"><div class="em-upload-title"><h3>${group.label}</h3><span class="em-upload-subtitle">保存后同步到当前专家</span></div><button class="modal-close-btn" type="button" aria-label="关闭">×</button></header>` +
-        `<div class="em-upload-body"><div class="ec-edit-grid">${controls}</div><span class="ec-error" role="alert" hidden></span></div>` +
+        `<div class="em-upload-body"><div class="ec-edit-grid">${nameControl}${controls}</div><span class="ec-error" role="alert" hidden></span></div>` +
         `<footer class="em-upload-actions"><span class="em-upload-summary" role="status"></span><button class="button" type="button" data-ec-cancel>取消</button><button class="button primary" type="submit">保存</button></footer>` +
         `</form>` +
         `</dialog>`;
@@ -12024,9 +12073,11 @@ async function loadExpertManualProfile(session) {
         return;
     }
     session.profile = data;
+    expertManualProfileAcceptName(session, data.nameOverride);
     session.version = data.version;
     session.loaded = true;
     expertManualProfileRenderValues(session);
+    expertManualProfileRefreshName(session);
     session.editors.forEach((editor) => {
         expertManualProfileSetSectionMessage(editor.section, "");
         expertManualProfileSetSectionError(session, editor.section, "");
@@ -12048,6 +12099,15 @@ function expertManualProfileFocus(element) {
 }
 
 function expertManualProfileFillEditor(session, editor) {
+    if (editor.group.key === "identity") {
+        const name = editor.dialog.querySelector('[name="expertName"]');
+        if (name) {
+            name.value = expertManualProfileName(session);
+            name.disabled = !session.profile || session.profile.nameEditable !== true;
+            editor.initialName = String(name.value).trim();
+            editor.nameVersion = session.profile && session.profile.nameOverride ? session.profile.nameOverride.version : null;
+        }
+    }
     const groupData = session.profile && typeof session.profile === "object" ? session.profile[editor.group.key] : null;
     editor.group.fields.forEach((field) => {
         const control = editor.dialog.querySelector(`[name="${field.name}"]`);
@@ -12191,6 +12251,18 @@ async function expertManualProfileSubmit(session, editor) {
     }
     const body = { expertId: session.expertId, group: editor.group.key, expectedVersion: session.version, values };
     if (session.level) body.level = session.level;
+    if (editor.group.key === "identity" && session.profile.nameEditable === true) {
+        const control = editor.dialog.querySelector('[name="expertName"]');
+        const rawName = control ? control.value : "";
+        const name = rawName.trim();
+        if (name !== editor.initialName) {
+            if (!name || expertManualProfileCodePointLength(rawName) > 200 || /[\u0000-\u001f\u007f-\u009f]/.test(rawName) || rawName.includes("${")) {
+                expertManualProfileSetEditorError(editor, "姓名须为1–200个字符，不含控制字符或模板占位符");
+                return;
+            }
+            body.nameChange = { expectedVersion: editor.nameVersion, value: name };
+        }
+    }
     session.saving = true;
     expertManualProfileSetEditorBusy(editor, true);
     let data = null;
@@ -12217,8 +12289,11 @@ async function expertManualProfileSubmit(session, editor) {
         return;
     }
     session.profile = data;
+    expertManualProfileAcceptName(session, data.nameOverride);
     session.version = data.version;
     expertManualProfileRenderValues(session);
+    expertManualProfileRefreshName(session);
+    if (body.nameChange) expertManualProfileInvalidatePreviews(session);
     expertManualProfileFillEditor(session, editor);
     expertManualProfileSetEditorError(editor, "");
     expertManualProfileSetSectionError(session, editor.section, "");
@@ -12290,6 +12365,7 @@ function mountExpertManualProfile(rootEl, context) {
     if (!host) return null;
     unmountExpertManualProfilePanels(rootEl);
     const session = createExpertManualProfileSession(host, context || {});
+    session.root = rootEl;
     expertManualProfileSessions.add(session);
     host.innerHTML = expertManualProfileShellTemplate(context);
     expertManualProfileBind(session);
@@ -15977,11 +16053,15 @@ async function loadExpertMailPreview(panel, orcidId) {
         panel.innerHTML = `<div class="tpl-var-empty">无 ORCID，无法预览邮件。</div>`;
         return;
     }
+    const owner = {};
+    panel.mailPreviewOwner = owner;
+    const current = () => panel.mailPreviewOwner === owner && panel.isConnected !== false;
     panel.innerHTML = `<div class="tpl-var-loading">加载邮件预览中...</div>`;
     panel.dataset.loaded = "true";
     try {
         await ensureComposeTemplatesLoaded();
         await ensureReplySnippetsLoaded();
+        if (!current()) return;
         const templates = state.composeTemplates || [];
         const preferred = templates.find((t) => t.enabled) || templates[0];
         panel.innerHTML = `
@@ -16005,6 +16085,7 @@ async function loadExpertMailPreview(panel, orcidId) {
         `;
         await renderExpertMailPreview(panel, orcidId);
     } catch (e) {
+        if (!current()) return;
         panel.innerHTML = `<div class="tpl-var-empty">加载失败: ${escapeHtml(e.message)}</div>`;
         panel.dataset.loaded = "";
     }
@@ -16037,12 +16118,13 @@ async function renderExpertMailPreview(panel, orcidId) {
         senderAccountCode: null
     };
     const requestId = ++expertMailPreviewRequestId;
+    const owner = panel.mailPreviewOwner;
     try {
         const result = await api("/api/compose-templates/preview-draft", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-        if (requestId !== expertMailPreviewRequestId) return;
+        if (requestId !== expertMailPreviewRequestId || panel.mailPreviewOwner !== owner || panel.isConnected === false) return;
         const subjectEl = panel.querySelector(".expert-mail-preview-subject");
         if (subjectEl) subjectEl.textContent = result.subject || "";
         const bodyEl = panel.querySelector('[data-role="mail-preview-body"]');
@@ -16070,7 +16152,7 @@ async function renderExpertMailPreview(panel, orcidId) {
             });
         }
     } catch (error) {
-        if (requestId !== expertMailPreviewRequestId) return;
+        if (requestId !== expertMailPreviewRequestId || panel.mailPreviewOwner !== owner || panel.isConnected === false) return;
         throw error;
     }
 }

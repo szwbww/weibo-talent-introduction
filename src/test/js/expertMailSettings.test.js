@@ -58,3 +58,18 @@ test('alias rows exclude primary duplicates and submit compare-and-set target',a
     assert.deepEqual(calls,[{email:'b@example.org',expectedEmail:'a@example.org'}]);
     assert.match(panel.innerHTML,/data-primary-display>b@example.org/);
 });
+
+test('variable editor notifies current detail after save, but never after owner changes',async()=>{
+    const {mod,panel}=setup(); const changes=[]; let finish;
+    const api=async(url,options)=> options ? new Promise(resolve=>{finish=resolve;}) :
+        url.includes('template-variables?') ? [{key:'expertName',label:'姓名',value:'Raw'}] : {version:1,values:{},original:{expertName:'Raw'}};
+    await mod.mountVariables(panel,'expert','CANDIDATE',api,()=>{},['expertName'],result=>changes.push(result));
+    await panel.onclick({target:button('data-variable-edit')});
+    const saving=panel.onclick({target:button('data-variable-save')});
+    finish({version:2,values:{expertName:'New'}}); await saving;
+    assert.equal(changes.length,1); assert.equal(changes[0].values.expertName,'New');
+    await panel.onclick({target:button('data-variable-edit')});
+    const late=panel.onclick({target:button('data-variable-save')});
+    panel.mailSettingsOwner={}; finish({version:3,values:{expertName:'Late'}}); await late;
+    assert.equal(changes.length,1);
+});

@@ -140,8 +140,13 @@ data class ExpertManualProfilePatch(
     val level: ExpertIndexLevel,
     val group: ExpertManualProfileGroup,
     val expectedVersion: Long,
-    val values: Map<String, Any?>?
+    val values: Map<String, Any?>?,
+    val nameChange: ExpertProfileNameChange? = null
 )
+
+/** 姓名覆盖独立版本；null value 表示恢复原始姓名，不修改 ES 身份。 */
+data class ExpertProfileNameChange(val expectedVersion: Long, val value: String?)
+data class ExpertProfileNameOverride(val version: Long, val value: String?)
 
 /**
  * GET/PATCH 的完整响应；键名与 02 前端契约一致：`{expertId,version,identity,education,technology,matching,updatedBy,updatedAt}`。
@@ -158,7 +163,11 @@ data class ExpertManualProfileDto(
     val technology: Technology,
     val matching: Matching,
     val updatedBy: String?,
-    val updatedAt: String?
+    val updatedAt: String?,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val nameOverride: ExpertProfileNameOverride? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val nameEditable: Boolean? = null
 ) {
     data class Identity(
         val talentCode: String?,

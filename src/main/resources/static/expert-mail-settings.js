@@ -9,7 +9,7 @@
         const hint = emails.length > 1 ? `该专家有 ${emails.length} 个邮箱\n${emails.map(e => e + (e === normalize(email) ? '（主邮箱）' : '')).join('\n')}` : '';
         return `<span class="expert-email-line"><span class="expert-email-address" title="${escape(email)}">${escape(email)}</span>${hint ? `<span class="expert-email-alert" tabindex="0" role="img" aria-label="${escape(hint)}" data-email-hint="${escape(hint)}">!</span>` : ''}</span>`;
     }
-    async function mountVariables(panel, expertId, level, api, notify, keys) {
+    async function mountVariables(panel, expertId, level, api, notify, keys, onChanged) {
         const owner = {}; panel.mailSettingsOwner = owner;
         const current = () => panel.isConnected && panel.mailSettingsOwner === owner;
         panel.innerHTML = '<div class="tpl-var-loading">加载模板变量中…</div>';
@@ -46,7 +46,8 @@
                         if (!current()) return;
                         snapshot.version = result.version; overrides = result.values; editing = false; render();
                         const detail = panel.closest('.detail');
-                        if (detail) detail.querySelectorAll('[data-panel="mail-preview"]').forEach(el => { delete el.dataset.loaded; });
+                        if (detail) detail.querySelectorAll('[data-panel="mail-preview"]').forEach(el => { delete el.dataset.loaded; el.mailPreviewOwner = null; });
+                        if (onChanged) onChanged(result);
                         notify('专家模板变量已保存','ok');
                     } catch (err) { if (current()) notify(err.message,'error'); }
                     finally { busy = false; if(current()) panel.querySelectorAll('button,textarea').forEach(el => el.disabled = false); }

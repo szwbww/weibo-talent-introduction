@@ -760,4 +760,81 @@ class ExpertManualProfileServiceTest {
         assertFalse(params.values.keys.contains("researchAbility"))
         assertFalse(params.values.keys.contains("matchedCompanies"))
     }
+    @Test
+    fun `unified identity save preserves other variables and commits both versions`() {
+        identity(); updatesReturn(1); persistedRows(listOf(mapOf("company_match_status" to "NOT_MATCHED")))
+        val overrides = Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertTemplateOverrideService::class.java)
+        val before = com.weibo.talentintroduction.mail.service.ExpertTemplateOverrides(7, mapOf("institution" to "University", "expertName" to "Old"))
+        val after = before.copy(version = 8, values = before.values + ("expertName" to "Correct Name"))
+        Mockito.`when`(overrides.read("0000-0001")).thenReturn(before, after)
+        Mockito.`when`(overrides.save("0000-0001", 7, after.values, "admin")).thenReturn(after)
+        val manager = Mockito.mock(PlatformTransactionManager::class.java)
+        val status = org.springframework.transaction.support.SimpleTransactionStatus()
+        Mockito.`when`(manager.getTransaction(Mockito.any())).thenReturn(status)
+        val unified = ExpertManualProfileService(jdbc, resolver, TransactionTemplate(manager), overrides)
+        val result = unified.patch(ExpertManualProfilePatch("0000-0001", ExpertIndexLevel.RAW,
+            ExpertManualProfileGroup.IDENTITY, 5, identityValues(),
+            com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange(7, " Correct Name ")), "admin")
+        assertEquals("Correct Name", result.nameOverride?.value)
+        assertEquals(8L, result.nameOverride?.version)
+        Mockito.verify(overrides).save("0000-0001", 7, after.values, "admin")
+        Mockito.verify(manager).commit(status)
+        Mockito.verify(manager, Mockito.never()).rollback(Mockito.any())
+    }
+
+    @Test
+    fun `name version conflict and override save failure roll back the profile transaction`() {
+        identity(); updatesReturn(1); persistedRows(listOf(mapOf("company_match_status" to "NOT_MATCHED")))
+        for (failure in listOf("stale", "race", "store")) {
+            val overrides = Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertTemplateOverrideService::class.java)
+            Mockito.`when`(overrides.read("0000-0001")).thenReturn(
+                com.weibo.talentintroduction.mail.service.ExpertTemplateOverrides(if (failure == "stale") 8 else 7))
+            if (failure != "stale") Mockito.`when`(overrides.save("0000-0001", 7, mapOf("expertName" to "New"), "admin"))
+                .thenThrow(if (failure == "race") org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT)
+                    else DataAccessResourceFailureException("store failure"))
+            val manager = Mockito.mock(PlatformTransactionManager::class.java)
+            val status = org.springframework.transaction.support.SimpleTransactionStatus()
+            Mockito.`when`(manager.getTransaction(Mockito.any())).thenReturn(status)
+            val unified = ExpertManualProfileService(jdbc, resolver, TransactionTemplate(manager), overrides)
+            val expected = if (failure == "store") ExpertProfileStoreException::class.java else ExpertProfileConflictException::class.java
+            assertThrows(expected) { unified.patch(ExpertManualProfilePatch("0000-0001", ExpertIndexLevel.RAW,
+                ExpertManualProfileGroup.IDENTITY, 5, identityValues(),
+                com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange(7, "New")), "admin") }
+            Mockito.verify(manager).rollback(status)
+            Mockito.verify(manager, Mockito.never()).commit(Mockito.any())
+        }
+    }
+
+    @Test
+    fun `invalid name is rejected before profile writes and unchanged legacy requests still work`() {
+        identity()
+        listOf("", " ", "A\nB", "A\u0000B", "\${expertName}", "x".repeat(201)).forEach { name ->
+            assertThrows(ExpertManualProfileInvalidRequestException::class.java) {
+                service.patch(ExpertManualProfilePatch("0000-0001", ExpertIndexLevel.RAW,
+                    ExpertManualProfileGroup.IDENTITY, 0, identityValues(),
+                    com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange(0, name)), "admin")
+            }
+        }
+        assertTrue(updates().isEmpty())
+    }
+
+    @Test
+    fun `profile conflict prevents override writes and restoring name preserves other keys`() {
+        identity(); updatesReturn(0)
+        val overrides = Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertTemplateOverrideService::class.java)
+        val unified = ExpertManualProfileService(jdbc, resolver, TransactionTemplate(Mockito.mock(PlatformTransactionManager::class.java)), overrides)
+        val command = ExpertManualProfilePatch("0000-0001", ExpertIndexLevel.RAW,
+            ExpertManualProfileGroup.IDENTITY, 5, identityValues(),
+            com.weibo.talentintroduction.expert.domain.ExpertProfileNameChange(7, null))
+        assertThrows(ExpertProfileConflictException::class.java) { unified.patch(command, "admin") }
+        Mockito.verifyNoInteractions(overrides)
+        updatesReturn(1); persistedRows(listOf(mapOf("company_match_status" to "NOT_MATCHED")))
+        val original = com.weibo.talentintroduction.mail.service.ExpertTemplateOverrides(7, mapOf("expertName" to "New", "institution" to "Keep"))
+        val restored = original.copy(version = 8, values = mapOf("institution" to "Keep"))
+        Mockito.`when`(overrides.read("0000-0001")).thenReturn(original, restored)
+        Mockito.`when`(overrides.save("0000-0001", 7, restored.values, "admin")).thenReturn(restored)
+        assertNull(unified.patch(command, "admin").nameOverride?.value)
+        Mockito.verify(overrides).save("0000-0001", 7, restored.values, "admin")
+    }
+
 }

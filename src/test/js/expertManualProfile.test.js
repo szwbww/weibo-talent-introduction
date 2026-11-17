@@ -1055,8 +1055,8 @@ describe("contact profile 02 — S-1 宿主与骨架", () => {
         for (const name of READONLY_FIELDS) {
             assert.ok(cellOf(harness, name), `read-only cell for ${name} must exist`);
             assert.strictEqual(
-                profile.querySelectorAll(`.ec-editor [name="${name}"]`).length, 0,
-                `read-only field ${name} must never be editable`
+                profile.querySelectorAll(`.ec-editor [name="${name}"]`).length, name === "expertName" ? 1 : 0,
+                `姓名复用身份弹窗，其他只读字段 ${name} 不新增输入`
             );
             const card = profile.querySelector(`[data-ec-readonly="${name}"]`);
             assert.ok(card && card.classList.contains("metadata-card"), `${name} must reuse the metadata-card component read-only`);
@@ -1833,5 +1833,89 @@ describe("07 delegated manual profile — shared fields without whole-page consu
         assert.strictEqual(video.unmount, 0);
         assert.strictEqual(video.records, 0);
         assert.strictEqual(session.closed, true);
+    });
+});
+
+describe('统一身份编辑与姓名覆盖', () => {
+    it('姓名与其他身份字段一次提交，覆盖名用于详情且冻结变量版本', async () => {
+        const h = createHarness();
+        let stored = profileDto({nameEditable: true, nameOverride: {version: 7, value: 'Correct Name'}});
+        h.router.route('GET', '/api/experts/manual-profile', () => ({status: 200, body: stored}));
+        h.router.route('PATCH', '/api/experts/manual-profile', request => {
+            const body = JSON.parse(request.body);
+            stored = profileDto({version: 4, identity: body.values, nameEditable: true,
+                nameOverride: {version: 8, value: body.nameChange.value}});
+            return {status: 200, body: stored};
+        });
+        const session = h.mount({expertId: stored.expertId, generation: 1, name: 'Raw Name'});
+        await session.ready;
+        assert.equal(cellOf(h, 'expertName').textContent, 'Correct Name');
+        const editor = openEditor(session, 'identity');
+        setField(editor, 'expertName', 'New Name');
+        setField(editor, 'chineseName', '新译名');
+        submitEditor(editor); await flush();
+        const payload = lastPatchPayload(h);
+        assert.deepEqual(payload.nameChange, {expectedVersion: 7, value: 'New Name'});
+        assert.equal(payload.values.chineseName, '新译名');
+        assert.equal(payload.values.expertName, undefined);
+        assert.equal(patchRequests(h).length, 1);
+        assert.equal(cellOf(h, 'expertName').textContent, 'New Name');
+        assert.equal(cellOf(h, 'chineseName').textContent, '新译名');
+    });
+});
+
+describe('姓名版本、权限和异步边界', () => {
+    it('资料初次读取迟到，不能覆盖变量页刚保存的新姓名', async () => {
+        const h = createHarness();
+        const slow = deferred();
+        const stored = profileDto({nameEditable: true, nameOverride: {version: 7, value: 'Old'}});
+        h.router.route('GET', '/api/experts/manual-profile', () => slow.promise);
+        const session = h.mount({expertId: stored.expertId, generation: 1, name: 'Raw'});
+        await flush();
+        h.sandbox.expertManualProfileVariablesChanged(stored.expertId, {version: 8, values: {expertName: 'Latest'}});
+        slow.resolve({status: 200, body: stored}); await session.ready;
+        assert.equal(cellOf(h, 'expertName').textContent, 'Latest');
+        h.sandbox.expertManualProfileVariablesChanged(stored.expertId, {version: 6, values: {expertName: 'Stale'}});
+        const editor = openEditor(session, 'identity');
+        assert.equal(editor.dialog.querySelector('[name="expertName"]').value, 'Latest');
+        assert.equal(editor.nameVersion, 8);
+    });
+    it('变量页更名刷新标题；已打开的资料草稿保持原版本，恢复覆盖回到原名', async () => {
+        const h = createHarness();
+        const stored = profileDto({nameEditable: true, nameOverride: {version: 7, value: 'Correct'}});
+        h.router.route('GET', '/api/experts/manual-profile', () => ({status: 200, body: stored}));
+        h.router.route('PATCH', '/api/experts/manual-profile', () => ({status: 409, body: {code: 'PROFILE_CONFLICT'}}));
+        const session = h.mount({expertId: stored.expertId, generation: 1, name: 'Raw'});
+        const header = h.fixture.doc.createElement('div');
+        header.innerHTML = '<div class="expert-header-info"><h2>Raw</h2></div><div class="expert-avatar">R</div>';
+        h.fixture.contactDetail.appendChild(header);
+        await session.ready;
+        assert.equal(header.querySelector('h2').textContent, 'Correct');
+        const editor = openEditor(session, 'identity');
+        setField(editor, 'expertName', 'My Draft');
+        h.sandbox.expertManualProfileVariablesChanged(stored.expertId, {version: 8, values: {expertName: 'Other Editor'}});
+        assert.equal(header.querySelector('h2').textContent, 'Other Editor');
+        assert.equal(editor.dialog.querySelector('[name="expertName"]').value, 'My Draft');
+        submitEditor(editor); await flush();
+        assert.equal(lastPatchPayload(h).nameChange.expectedVersion, 7);
+        assert.equal(editor.dialog.querySelector('[name="expertName"]').value, 'My Draft');
+        assert.equal(header.querySelector('h2').textContent, 'Other Editor');
+        h.sandbox.expertManualProfileVariablesChanged(stored.expertId, {version: 9, values: {expertName: ''}});
+        assert.equal(header.querySelector('h2').textContent, '未填写');
+        h.sandbox.expertManualProfileVariablesChanged(stored.expertId, {version: 10, values: {}});
+        assert.equal(header.querySelector('h2').textContent, 'Raw');
+    });
+    it('无更名权限仍可编辑原有资料，姓名变更不进入请求', async () => {
+        const h = createHarness();
+        const stored = profileDto({nameEditable: false, nameOverride: {version: 2, value: 'Override'}});
+        h.router.route('GET', '/api/experts/manual-profile', () => ({status: 200, body: stored}));
+        h.router.route('PATCH', '/api/experts/manual-profile', () => ({status: 200, body: stored}));
+        const session = h.mount({expertId: stored.expertId, generation: 1, name: 'Raw'}); await session.ready;
+        const editor = openEditor(session, 'identity');
+        assert.equal(editor.dialog.querySelector('[name="expertName"]').disabled, true);
+        setField(editor, 'expertName', 'Forged'); setField(editor, 'chineseName', '允许编辑');
+        submitEditor(editor); await flush();
+        assert.equal(lastPatchPayload(h).nameChange, undefined);
+        assert.equal(lastPatchPayload(h).values.chineseName, '允许编辑');
     });
 });

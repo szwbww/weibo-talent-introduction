@@ -12,6 +12,11 @@ import com.weibo.talentintroduction.expert.domain.ExpertManualProfilePatch
 import com.weibo.talentintroduction.expert.domain.ExpertProfileConflictException
 import com.weibo.talentintroduction.expert.domain.ExpertProfileStoreException
 import com.weibo.talentintroduction.expert.domain.ResearchAbility
+import com.weibo.talentintroduction.expert.domain.ExpertProfileNameOverride
+import com.weibo.talentintroduction.mail.service.ExpertTemplateOverrideService
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
+import org.springframework.web.server.ResponseStatusException
+import org.springframework.http.HttpStatus
 import org.springframework.dao.DataAccessException
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.dao.PessimisticLockingFailureException
@@ -42,12 +47,13 @@ import java.util.LinkedHashSet
 class ExpertManualProfileService(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
     private val identityResolver: ExpertProfileIdentityResolver,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val templateOverrides: ExpertTemplateOverrideService? = null
 ) {
     /** GET：无行返回默认 DTO（version=0）且不插入（I-3）。 */
     fun get(expertId: String?, level: ExpertIndexLevel): ExpertManualProfileDto {
         val expertKey = identityResolver.requireKnown(expertId, level)
-        return read(expertKey) ?: ExpertManualProfileDto.empty(expertKey)
+        return withName(read(expertKey) ?: ExpertManualProfileDto.empty(expertKey))
     }
 
     /** PATCH：只更新指定组全部字段，expectedVersion CAS，成功 version+1 并返回完整最新 DTO。 */
@@ -58,6 +64,19 @@ class ExpertManualProfileService(
             throw ExpertManualProfileInvalidRequestException("expectedVersion 必须为非负整数")
         }
         val values = validatedGroupValues(command.group, command.values)
+        val nameChange = command.nameChange
+        if (nameChange != null) {
+            MailReadOnlyPolicy.requireAdmin(username)
+            if (command.group != ExpertManualProfileGroup.IDENTITY || nameChange.expectedVersion < 0) {
+                throw ExpertManualProfileInvalidRequestException("姓名只能随身份基本信息修改，版本必须为非负整数")
+            }
+            nameChange.value?.let { name ->
+                if (name.trim().isEmpty() || name.codePointCount(0, name.length) > 200 ||
+                    name.any { Character.isISOControl(it) } || name.contains("\${")) {
+                    throw ExpertManualProfileInvalidRequestException("姓名须为1–200个字符，不含控制字符或模板占位符")
+                }
+            }
+        }
         val now = LocalDateTime.now(BEIJING).truncatedTo(ChronoUnit.MILLIS)
 
         val result = try {
@@ -70,14 +89,35 @@ class ExpertManualProfileService(
                     if (command.expectedVersion != 0L) throw profileConflict()
                     insertFirstRow(expertKey, values, username, now)
                 }
-                read(expertKey) ?: throw ExpertProfileStoreException(STORE_FAILED_MESSAGE)
+                if (nameChange != null) {
+                    val overrides = templateOverrides ?: throw ExpertProfileStoreException(STORE_FAILED_MESSAGE)
+                    val snapshot = overrides.read(expertKey)
+                    if (snapshot.version != nameChange.expectedVersion) throw profileConflict()
+                    val next = snapshot.values.toMutableMap()
+                    if (nameChange.value == null) next.remove("expertName")
+                    else next["expertName"] = nameChange.value.trim()
+                    // 与人工档案 UPDATE 共用当前事务；冲突/审计失败必须一起回滚。
+                    overrides.save(expertKey, snapshot.version, next, username)
+                }
+                withName(read(expertKey) ?: throw ExpertProfileStoreException(STORE_FAILED_MESSAGE))
             }
         } catch (ex: ExpertManualProfileException) {
             throw ex
+        } catch (ex: ResponseStatusException) {
+            if (ex.status == HttpStatus.CONFLICT) throw profileConflict()
+            throw ExpertProfileStoreException(STORE_FAILED_MESSAGE, ex)
+        } catch (ex: IllegalArgumentException) {
+            throw ExpertManualProfileInvalidRequestException("姓名与已有变量的总长度超限，请检查模板变量")
         } catch (ex: DataAccessException) {
             throw ExpertProfileStoreException(STORE_FAILED_MESSAGE, ex)
         }
         return result ?: throw ExpertProfileStoreException(STORE_FAILED_MESSAGE)
+    }
+
+    private fun withName(dto: ExpertManualProfileDto): ExpertManualProfileDto {
+        val overrides = templateOverrides ?: return dto
+        val snapshot = overrides.read(dto.expertId)
+        return dto.copy(nameOverride = ExpertProfileNameOverride(snapshot.version, snapshot.values["expertName"]))
     }
 
     private fun insertFirstRow(expertKey: String, values: Map<String, Any?>, username: String, now: LocalDateTime) {
