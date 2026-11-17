@@ -612,6 +612,7 @@ class AuthInterceptorTest {
                 "UnmatchedInboundMailController#cancelResolved:POST",
                 "UnmatchedInboundMailController#getUnmatchedDetail:GET",
                 "UnmatchedInboundMailController#markResolved:POST",
+                "UnmatchedInboundMailController#restoreAutoResponseToPending:POST",
                 "UnmatchedInboundMailController#sendManualRichReply:POST"
             ),
             allowed.toList()

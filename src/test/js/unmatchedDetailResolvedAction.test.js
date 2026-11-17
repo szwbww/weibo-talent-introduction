@@ -246,8 +246,78 @@ describe("inbound cancel-resolved event routing", () => {
         assert.ok(listener.includes('"cancel-unmatched-resolved"'), "whitelist must include the cancel action");
         assert.match(
             listener,
-            /\["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched", "cancel-unmatched-resolved"\]\.includes\(target\.dataset\.action\)/,
+            /\["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched", "cancel-unmatched-resolved", "restore-unmatched-pending"\]\.includes\(target\.dataset\.action\)/,
             "cancel must flow into the shared handleUnmatchedAction catch(showStatus) path"
         );
+    });
+});
+
+
+describe("automatic reply misclassification recovery", () => {
+    it("shows restore only for unconfirmed auto responses and requires a linked expert", () => {
+        const source = detailFunctionSource();
+        const start = source.indexOf("    const restorePendingActionHtml =");
+        const end = source.indexOf("\n\n    panel.innerHTML", start);
+        assert.ok(start >= 0 && end > start);
+        const render = (record) => {
+            const ctx = { record, id: 1069 };
+            vm.createContext(ctx);
+            vm.runInContext(source.slice(start, end) + "\nthis.html = restorePendingActionHtml", ctx);
+            return ctx.html;
+        };
+        const record = { processStatus: "PROCESSED", reasonType: "AUTO_RESPONSE", expertContactId: 14985, resolvedAt: null };
+        assert.match(render(record), /data-action="restore-unmatched-pending"/);
+        assert.ok(!render(record).includes("disabled"));
+        assert.match(render({ ...record, expertContactId: null }), /disabled title="请先绑定专家/);
+        for (const patch of [{ processStatus: "MANUAL_REVIEW" }, { reasonType: "MANUAL_RESOLVED" }, { resolvedAt: "2026-11-17" }]) {
+            assert.equal(render({ ...record, ...patch }), "");
+        }
+    });
+
+    function setup(apiImpl = async () => ({})) {
+        const calls = { api: [], status: [], refresh: 0, unmount: 0 };
+        const panel = { hidden: false };
+        const ctx = {
+            api: async (url, options) => { calls.api.push({ url, options }); return apiImpl(); },
+            showStatus: (text) => calls.status.push(text),
+            unmountMailboxTrustReplyHosts: () => { calls.unmount++; },
+            $: () => panel,
+            state: { mailbox: { detailContext: { id: 1069 } } },
+            refreshMailboxAfterPendingAction: async () => { calls.refresh++; }
+        };
+        vm.createContext(ctx);
+        vm.runInContext(extractFn("handleUnmatchedAction"), ctx);
+        const button = { dataset: { action: "restore-unmatched-pending", id: "1069" }, disabled: false };
+        return { ctx, button, calls, panel };
+    }
+
+    it("posts once while busy and refreshes queue and badge through shared refresh", async () => {
+        let finish;
+        const h = setup(() => new Promise(resolve => { finish = resolve; }));
+        const pending = h.ctx.handleUnmatchedAction(h.button);
+        assert.equal(h.button.disabled, true);
+        await h.ctx.handleUnmatchedAction(h.button);
+        assert.equal(h.calls.api.length, 1);
+        assert.equal(h.calls.api[0].url, "/api/mail/unmatched-inbound/1069/restore-pending");
+        assert.equal(h.calls.api[0].options.method, "POST");
+        assert.deepEqual(JSON.parse(h.calls.api[0].options.body), { note: "人工确认自动回信误判" });
+        finish({});
+        await pending;
+        assert.equal(h.button.disabled, false);
+        assert.equal(h.panel.hidden, true);
+        assert.equal(h.ctx.state.mailbox.detailContext, null);
+        assert.equal(h.calls.unmount, 1);
+        assert.equal(h.calls.refresh, 1);
+        assert.deepEqual(h.calls.status, ["已转为待处理"]);
+    });
+
+    it("keeps detail on failure and releases the busy button", async () => {
+        const h = setup(async () => { throw new Error("409 Conflict"); });
+        await assert.rejects(h.ctx.handleUnmatchedAction(h.button), /409/);
+        assert.equal(h.button.disabled, false);
+        assert.equal(h.panel.hidden, false);
+        assert.equal(h.calls.refresh, 0);
+        assert.equal(h.calls.unmount, 0);
+        assert.deepEqual(h.calls.status, []);
     });
 });

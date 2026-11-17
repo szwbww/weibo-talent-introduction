@@ -279,4 +279,42 @@ class InboundMailProcessingRepositoryTest {
         assertEquals("MANUAL_RESOLVED", row.processReason)
         assertEquals("AUTO_NOOP", row.reasonType)
     }
+    @Test
+    fun `restore auto response preserves message identity changes queue and rejects repeat`() {
+        val contactId = seedBoundContact()
+        val id = insertRow(500, processStatus = "PROCESSED", processReason = "AUTO_RESPONSE_FAST_5M",
+            reasonType = "AUTO_RESPONSE", expertContactId = contactId)
+        assertEquals(1L, repository.countUnmatchedManualReviewQueue(listOf("sender-1"), null))
+        jdbc.update("UPDATE inbound_mail_processing SET pending_owner_username='user1',body='Original body',mailbox_owner_code='physical',uid_validity=7 WHERE id=?", id)
+        val before = repository.findById(id).get()
+        val now = LocalDateTime.of(2026, 11, 17, 18, 0)
+        assertEquals(1, repository.restoreAutoResponseToPending(id, contactId, now))
+        val after = repository.findById(id).get()
+        assertEquals(before.copy(processStatus = "MANUAL_REVIEW", processReason = "MANUAL_AUTO_RESPONSE_CORRECTED",
+            reasonType = null, pendingOwnerUsername = "admin", updatedAt = now), after)
+        assertEquals(0L, repository.countUnmatchedManualReviewQueue(listOf("sender-1"), null))
+        assertEquals(1L, repository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW"))
+        assertEquals(0, repository.restoreAutoResponseToPending(id, contactId, now))
+        jdbc.update("UPDATE expert_contact SET needs_manual_attention=FALSE,expert_name='Latest name' WHERE id=?", contactId)
+        repository.flagPendingContactAttention(contactId)
+        assertEquals(true, jdbc.queryForObject("SELECT needs_manual_attention FROM expert_contact WHERE id=?", Boolean::class.java, contactId))
+        assertEquals("Latest name", jdbc.queryForObject("SELECT expert_name FROM expert_contact WHERE id=?", String::class.java, contactId))
+        assertEquals("NEW", jdbc.queryForObject("SELECT current_status FROM expert_contact WHERE id=?", String::class.java, contactId))
+    }
+
+    @Test
+    fun `restore requires exact unresolved automatic classification and contact`() {
+        val contactId = seedBoundContact()
+        val id = insertRow(501, processStatus = "PROCESSED", processReason = "AUTO_RESPONSE_HEADER",
+            reasonType = "AUTO_RESPONSE", expertContactId = contactId)
+        val now = LocalDateTime.of(2026, 11, 17, 18, 0)
+        assertEquals(0, repository.restoreAutoResponseToPending(id, contactId + 1, now))
+        jdbc.update("UPDATE inbound_mail_processing SET resolved_at=? WHERE id=?", now, id)
+        assertEquals(0, repository.restoreAutoResponseToPending(id, contactId, now))
+        jdbc.update("UPDATE inbound_mail_processing SET resolved_at=NULL,reason_type='MANUAL_RESOLVED' WHERE id=?", id)
+        assertEquals(0, repository.restoreAutoResponseToPending(id, contactId, now))
+        jdbc.update("UPDATE inbound_mail_processing SET reason_type='AUTO_RESPONSE',process_status='MANUAL_REVIEW' WHERE id=?", id)
+        assertEquals(0, repository.restoreAutoResponseToPending(id, contactId, now))
+    }
+
 }

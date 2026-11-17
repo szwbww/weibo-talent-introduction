@@ -60,6 +60,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.InOrder
 import org.mockito.Mockito
 import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional
@@ -2694,4 +2695,70 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     private companion object {
         const val ATTACHMENT_ID = "3f7c1a52-90de-4a1b-8b0e-6c2f5d4a1e77"
     }
+    private fun autoResponseInbound() = resolvedInbound().copy(
+        processReason = "AUTO_RESPONSE_FAST_5M", reasonType = "AUTO_RESPONSE", resolvedBy = null, resolvedAt = null
+    )
+
+    @Test
+    fun `restore auto response moves existing mail to pending and audits original classification without sending`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(autoResponseInbound()))
+        Mockito.`when`(inboundMailProcessingRepository.restoreAutoResponseToPending(
+            Mockito.eq(100L), Mockito.eq(1L), anyValue(LocalDateTime.now()))).thenReturn(1)
+        service.restoreAutoResponseToPending(100, "admin", "误判")
+        Mockito.verify(inboundMailProcessingRepository).flagPendingContactAttention(1L)
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verify(operatorActionLogService).record(
+            eqValue("INBOUND_MAIL_PROCESSING"), eqValue(100L),
+            eqValue(OperatorActionType.RESTORE_AUTO_RESPONSE_TO_PENDING), eqValue(1L), eqValue(100L),
+            eqValue(mapOf("processStatus" to "PROCESSED", "processReason" to "AUTO_RESPONSE_FAST_5M", "reasonType" to "AUTO_RESPONSE")),
+            eqValue(mapOf("processStatus" to "MANUAL_REVIEW", "processReason" to "MANUAL_AUTO_RESPONSE_CORRECTED", "reasonType" to null)),
+            eqValue("admin"), eqValue("误判"), Mockito.isNull())
+        Mockito.verifyNoInteractions(mailDeliveryService, manualReplySendAttemptService)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never()).save(anyValue(autoResponseInbound()))
+    }
+
+    @Test
+    fun `restore rejects other states confirmed mail and unbound mail without writes`() {
+        val source = autoResponseInbound()
+        listOf(source.copy(processStatus = "MANUAL_REVIEW"), source.copy(reasonType = "MANUAL_RESOLVED"),
+            source.copy(resolvedAt = LocalDateTime.now()), source.copy(expertContactId = null)).forEach { invalid ->
+            Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(invalid))
+            val ex = assertThrows(ResponseStatusException::class.java) {
+                service.restoreAutoResponseToPending(100, "admin", null)
+            }
+            assertEquals(HttpStatus.CONFLICT, ex.status)
+        }
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never()).restoreAutoResponseToPending(
+            Mockito.anyLong(), Mockito.anyLong(), anyValue(LocalDateTime.now()))
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never()).flagPendingContactAttention(Mockito.anyLong())
+        Mockito.verifyNoInteractions(operatorActionLogService, mailDeliveryService)
+    }
+
+    @Test
+    fun `restore rejects missing record and concurrent state change without audit or attention writes`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.empty())
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ResponseStatusException::class.java) {
+            service.restoreAutoResponseToPending(100, "admin", null)
+        }.status)
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(autoResponseInbound()))
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException::class.java) {
+            service.restoreAutoResponseToPending(100, "admin", null)
+        }.status)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never()).flagPendingContactAttention(Mockito.anyLong())
+        Mockito.verifyNoInteractions(operatorActionLogService, mailDeliveryService)
+    }
+
+    @Test
+    fun `restore rechecks current permission under contact lock before writing`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(autoResponseInbound()))
+        Mockito.`when`(inboundMailProcessingRepository.currentPendingAccessLevel(1L)).thenReturn("READ")
+        assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) {
+            service.restoreAutoResponseToPending(100, "user1", null)
+        }
+        Mockito.verify(inboundMailProcessingRepository).lockPendingContact(1L)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never()).restoreAutoResponseToPending(
+            Mockito.anyLong(), Mockito.anyLong(), anyValue(LocalDateTime.now()))
+        Mockito.verifyNoInteractions(operatorActionLogService, mailDeliveryService)
+    }
+
 }

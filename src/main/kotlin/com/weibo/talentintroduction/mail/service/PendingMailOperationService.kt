@@ -2,6 +2,8 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
@@ -2084,6 +2086,42 @@ class PendingMailOperationService(
                 "resolvedAt" to null
             ),
             operatorName = actualOperator,
+            note = note
+        )
+    }
+
+    /** Correct the queue classification only; never replay ingestion or send mail. */
+    @Transactional
+    fun restoreAutoResponseToPending(inboundProcessingId: Long, operatorName: String, note: String?) {
+        require(operatorName.isNotBlank()) { "未登录" }
+        val record = inboundMailProcessingRepository.findById(inboundProcessingId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "来信不存在")
+        }
+        if (record.processStatus != "PROCESSED" || record.reasonType != "AUTO_RESPONSE" || record.resolvedAt != null) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "来信已不在自动回信待确认状态，请刷新")
+        }
+        val contactId = record.expertContactId
+            ?: throw ResponseStatusException(HttpStatus.CONFLICT, "请先绑定专家，再转为待处理")
+        check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) { "关联专家不存在" }
+        expertMailPermissionGuard.requireFull(operatorName, contactId)
+        if (MailReadOnlyPolicy.isReader(operatorName) && inboundMailProcessingRepository.currentPendingAccessLevel(contactId) != "FULL") {
+            throw MailReadAccessDeniedException(ExpertMailPermissionGuard.MAIL_WRITE_FORBIDDEN, "无权操作该专家的邮件资源")
+        }
+        if (inboundMailProcessingRepository.restoreAutoResponseToPending(inboundProcessingId, contactId, LocalDateTime.now()) != 1) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "来信状态已变更，请刷新")
+        }
+        inboundMailProcessingRepository.flagPendingContactAttention(contactId)
+        operatorActionLogService.record(
+            targetType = "INBOUND_MAIL_PROCESSING",
+            targetId = inboundProcessingId,
+            actionType = OperatorActionType.RESTORE_AUTO_RESPONSE_TO_PENDING,
+            expertContactId = contactId,
+            inboundProcessingId = inboundProcessingId,
+            before = mapOf("processStatus" to record.processStatus, "processReason" to record.processReason,
+                "reasonType" to record.reasonType),
+            after = mapOf("processStatus" to "MANUAL_REVIEW", "processReason" to "MANUAL_AUTO_RESPONSE_CORRECTED",
+                "reasonType" to null),
+            operatorName = operatorName,
             note = note
         )
     }

@@ -72,6 +72,7 @@ class UnmatchedInboundMarkResolvedIdentityTest {
     )
 
     private val objectMapper: ObjectMapper = ObjectMapper().registerKotlinModule()
+        .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 
     /** 无 advice：401 由 ResponseStatusExceptionResolver 解析，成功回包走 Jackson。 */
     private val mockMvc: MockMvc = MockMvcBuilders
@@ -224,4 +225,16 @@ class UnmatchedInboundMarkResolvedIdentityTest {
             Mockito.eq("x")
         )
     }
+    @Test
+    fun `restore pending requires session and ignores forged operator identity`() {
+        val url = "/api/mail/unmatched-inbound/1069/restore-pending"
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isUnauthorized)
+        Mockito.verifyNoInteractions(pendingMailOperationService)
+        mockMvc.perform(post(url).session(session("admin")).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"operatorName":"forged","note":"误判"}"""))
+            .andExpect(status().isOk)
+        Mockito.verify(pendingMailOperationService).restoreAutoResponseToPending(1069, "admin", "误判")
+    }
+
 }

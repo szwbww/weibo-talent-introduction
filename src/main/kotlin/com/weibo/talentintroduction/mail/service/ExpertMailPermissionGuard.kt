@@ -57,6 +57,7 @@ class ExpertMailPermissionGuard(
             route(unmatched, "sendManualRichReply", "POST", Target.PROCESSING)
             route(unmatched, "markResolved", "POST", Target.PROCESSING)
             route(unmatched, "cancelResolved", "POST", Target.PROCESSING)
+            route(unmatched, "restoreAutoResponseToPending", "POST", Target.PROCESSING)
             route(MailboxAttachmentController::class.java, "listAttachments", "GET", Target.MESSAGE)
             route(MailboxAttachmentController::class.java, "download", "GET", Target.ATTACHMENT)
             route(OutboundAttachmentController::class.java, "upload", "POST", Target.CONTACT)

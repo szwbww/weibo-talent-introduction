@@ -212,6 +212,17 @@ class UnmatchedInboundMailController(
         )
     }
 
+    @PostMapping("/unmatched-inbound/{id}/restore-pending")
+    fun restoreAutoResponseToPending(
+        @PathVariable id: Long,
+        @RequestBody request: RestorePendingRequest,
+        servletRequest: HttpServletRequest
+    ) {
+        val username = servletRequest.sessionUsernameOrNull()?.takeIf { it.isNotBlank() }
+            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录")
+        pendingMailOperationService.restoreAutoResponseToPending(id, username, request.note)
+    }
+
     @GetMapping("/unmatched-inbound/search-contacts")
     fun searchContacts(@RequestParam query: String): List<CandidateResponse> {
         val contacts = unmatchedInboundMailService.searchContacts(query)
@@ -928,6 +939,8 @@ data class MarkResolvedResponse(
     val processStatus: String,
     val resolvedBy: String
 )
+
+data class RestorePendingRequest(val note: String? = null)
 
 data class CancelResolvedRequest(
     val operatorName: String? = null,

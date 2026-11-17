@@ -128,6 +128,30 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     """)
     fun reopenManualResolved(id: Long, now: LocalDateTime): Int
 
+    @Modifying
+    @Query("""
+        UPDATE inbound_mail_processing
+           SET process_status = 'MANUAL_REVIEW',
+               process_reason = 'MANUAL_AUTO_RESPONSE_CORRECTED', reason_type = NULL,
+               resolved_at = NULL, resolved_by = NULL,
+               pending_owner_username = CASE
+                   WHEN pending_owner_username = 'user1' AND NOT EXISTS (
+                       SELECT 1 FROM expert_mail_read_access a
+                        WHERE a.expert_contact_id = inbound_mail_processing.expert_contact_id
+                          AND a.username = 'user1' AND a.access_level = 'FULL'
+                   ) THEN 'admin' ELSE pending_owner_username END,
+               updated_at = :now
+         WHERE id = :id AND expert_contact_id = :contactId
+           AND process_status = 'PROCESSED' AND reason_type = 'AUTO_RESPONSE'
+           AND resolved_at IS NULL
+    """)
+    fun restoreAutoResponseToPending(id: Long, contactId: Long, now: LocalDateTime): Int
+
+    /** Caller holds lockPendingContact; a narrow write cannot overwrite concurrent profile/status edits. */
+    @Modifying
+    @Query("UPDATE expert_contact SET needs_manual_attention = TRUE WHERE id = :contactId")
+    fun flagPendingContactAttention(contactId: Long): Int
+
     fun findAllByProcessStatusOrderByReceivedAtDesc(processStatus: String): List<InboundMailProcessing>
 
     fun findAllByProcessStatusAndExpertContactIdIsNullOrderByReceivedAtDesc(processStatus: String): List<InboundMailProcessing>

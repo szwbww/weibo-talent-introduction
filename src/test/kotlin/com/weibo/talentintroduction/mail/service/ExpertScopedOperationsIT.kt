@@ -409,8 +409,13 @@ class ExpertScopedOperationsIT {
         mvc.perform(post("/api/mail/unmatched-inbound/1/cancel-resolved").session(session()).contentType(MediaType.APPLICATION_JSON)
             .content("""{"operatorName":"admin","note":"undo"}""")).andExpect(status().isOk)
         Mockito.verify(pending).cancelResolved(1, "user1", "undo")
+        mvc.perform(post("/api/mail/unmatched-inbound/1/restore-pending").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"operatorName":"admin","note":"误判"}""")).andExpect(status().isOk)
+        Mockito.verify(pending).restoreAutoResponseToPending(1, "user1", "误判")
         jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
         Mockito.clearInvocations(unmatched, logs, pending)
+        mvc.perform(post("/api/mail/unmatched-inbound/1/restore-pending").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("{}")).andExpect(status().isForbidden)
         mvc.perform(get("/api/mail/unmatched-inbound/1").session(session())).andExpect(status().isForbidden)
         Mockito.verifyNoInteractions(unmatched, logs, pending)
     }

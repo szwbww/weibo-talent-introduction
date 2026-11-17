@@ -15680,6 +15680,7 @@ function renderLogDetail(log) {
             </div>`;
         }
         case "MARK_INBOUND_RESOLVED":
+        case "RESTORE_AUTO_RESPONSE_TO_PENDING":
         case "CANCEL_INBOUND_RESOLVED": {
             return `<div class="log-transition">
                 ${labelStatus(before?.processStatus) || "?"} → ${labelStatus(after?.processStatus) || "?"}
@@ -15736,7 +15737,8 @@ function actionTypeLabel(type) {
         SEND_MANUAL_RICH_REPLY: "人工回复邮件",
         SEND_MANUAL_COMPOSED_REPLY: "组装 QA 回复",
         MARK_INBOUND_RESOLVED: "标记已处理",
-        CANCEL_INBOUND_RESOLVED: "取消处理"
+        CANCEL_INBOUND_RESOLVED: "取消处理",
+        RESTORE_AUTO_RESPONSE_TO_PENDING: "自动回信误判转为待处理"
     };
     return map[type] || type;
 }
@@ -18085,12 +18087,16 @@ async function showUnmatchedDetail(id) {
         || (record.processStatus === "PROCESSED" && record.reasonType === "AUTO_RESPONSE" && !record.resolvedAt))
         ? `<button class="button primary" data-action="mark-unmatched-resolved" data-id="${id}">标记已处理</button>`
         : "";
+    const restorePendingActionHtml = record.processStatus === "PROCESSED" && record.reasonType === "AUTO_RESPONSE" && !record.resolvedAt
+        ? `<button class="button secondary" data-action="restore-unmatched-pending" data-id="${id}"${record.expertContactId ? "" : ' disabled title="请先绑定专家，再转为待处理"'}>转为待处理</button>`
+        : "";
 
     panel.innerHTML = `
         <div class="panel-head">
             <h2>来信详情与处理</h2>
             <div class="panel-head-actions">
                 ${resolvedActionHtml}
+                ${restorePendingActionHtml}
                 <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
             </div>
         </div>
@@ -18239,6 +18245,24 @@ async function handleUnmatchedAction(element) {
         });
         showStatus("已取消处理，可重新处理");
         await refreshMailboxAfterPendingAction();
+        return;
+    }
+    if (action === "restore-unmatched-pending") {
+        if (element.disabled) return;
+        element.disabled = true;
+        try {
+            await api(`/api/mail/unmatched-inbound/${id}/restore-pending`, {
+                method: "POST",
+                body: JSON.stringify({ note: "人工确认自动回信误判" })
+            });
+            showStatus("已转为待处理");
+            unmountMailboxTrustReplyHosts();
+            $("#unmatchedDetailPanel").hidden = true;
+            state.mailbox.detailContext = null;
+            await refreshMailboxAfterPendingAction();
+        } finally {
+            element.disabled = false;
+        }
         return;
     }
     if (action === "bind-candidate") {
@@ -21149,7 +21173,7 @@ function initBulkAutoReply() {
             await showMailDetail(target.dataset.source, target.dataset.id);
             return;
         }
-        if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched", "cancel-unmatched-resolved"].includes(target.dataset.action)) {
+        if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched", "cancel-unmatched-resolved", "restore-unmatched-pending"].includes(target.dataset.action)) {
             handleUnmatchedAction(target).catch((error) => showStatus(error.message, "error"));
         }
     });
@@ -21335,7 +21359,7 @@ function isMailReadOnlyRequestAllowed(path, options) {
         ["GET", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/suspension$/],
         ["PATCH", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/suspension\/reason$/],
         ["GET", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*$/],
-        ["POST", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*\/(manual-rich-reply|mark-resolved|cancel-resolved)$/],
+        ["POST", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*\/(manual-rich-reply|mark-resolved|cancel-resolved|restore-pending)$/],
         ["GET", /^\/api\/mail\/mailbox\/(INBOUND_PROCESSING|MAIL_RECORD)\/[1-9][0-9]*\/attachments$/],
         ["GET", /^\/api\/mail\/mailbox\/attachments\/[1-9][0-9]*\/download$/],
         ["POST", /^\/api\/mail\/conversations\/[1-9][0-9]*\/outbound-attachments$/],
