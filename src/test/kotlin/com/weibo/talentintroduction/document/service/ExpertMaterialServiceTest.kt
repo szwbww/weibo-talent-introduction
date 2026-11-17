@@ -96,6 +96,31 @@ class ExpertMaterialServiceTest {
         )
     }
 
+    @Test
+    fun `file modes tags notes and trash are derived from file metadata`() {
+        val metadata = Mockito.mock(com.weibo.talentintroduction.document.repository.MaterialFileRepository::class.java)
+        val enhanced = ExpertMaterialService(properties, expertDocumentRepository, mailAttachmentRepository,
+            mailRecordRepository, inboundMailProcessingRepository, mailAttachmentTransferRepository,
+            attachmentTransferService, mailAttachmentService, jdbc, fileMetadata = metadata)
+        val now = LocalDateTime.now()
+        val rows = listOf(1L, 2L, 3L).map { id -> legacyRow(id,id,writeFile("file$id.pdf").toString(),now,"message$id",id) }
+        Mockito.`when`(metadata.forContact(1)).thenReturn(mapOf(
+            1L to com.weibo.talentintroduction.document.repository.MaterialFileMetadata(1,displayName="原件.zip",tags=listOf("证明")),
+            2L to com.weibo.talentintroduction.document.repository.MaterialFileMetadata(2,parentAttachmentId=1,entryPath="目录/证明.pdf",contentNote="博士学位",tags=listOf("学历")),
+            3L to com.weibo.talentintroduction.document.repository.MaterialFileMetadata(3,deleted=true)))
+        val original = enhanced.assemblePage(1,rows,emptyList(),0,10,null,null,null,null)
+        assertEquals(listOf(1L),original.items.map { it.attachmentId })
+        assertEquals("原件.zip",original.items.single().fileName)
+        val parsed = enhanced.assemblePage(1,rows,emptyList(),0,10,"博士",null,null,null,"PARSED","学历")
+        assertEquals(listOf(2L),parsed.items.map { it.attachmentId })
+        assertEquals("目录/证明.pdf",parsed.items.single().entryPath)
+        assertEquals(listOf("学历"),parsed.availableTags)
+        val trash = enhanced.assemblePage(1,rows,emptyList(),0,10,null,null,null,null,"TRASH")
+        assertEquals(listOf(3L),trash.items.map { it.attachmentId })
+        assertFalse(trash.items.single().canDownload)
+        assertFalse(trash.items.single().canAnalyze)
+    }
+
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------

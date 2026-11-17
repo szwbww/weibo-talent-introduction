@@ -85,7 +85,7 @@ function harness(handler = () => undefined, openPaper) {
 
  test('byte exact CSS and DOM contract, untouched preceding CSS, real selectors and triad', () => {
     const expected = plan.split('```css\n')[1].split('```')[0];
-    const actual = css.slice(css.indexOf('/* paper-reprocess-contract:start */'));
+    const actual = css.slice(css.indexOf('/* paper-reprocess-contract:start */'), css.indexOf('/* paper-reprocess-contract:end */') + '/* paper-reprocess-contract:end */'.length) + '\n';
     assert.equal(actual, expected);
     const domBlock = plan.split('```html\n')[1].split('```')[0];
     for (const block of domBlock.split(/<!-- S-[\s\S]*?-->\n/).filter(Boolean)) assert.ok(html.includes(block.trimEnd()), 'exact S-6 block');

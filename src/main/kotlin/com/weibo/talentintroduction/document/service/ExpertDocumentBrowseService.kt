@@ -47,6 +47,7 @@ class ExpertDocumentBrowseService(
         val documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
 
         return documents.mapNotNull { doc ->
+            if (materialService.isDeletedAttachment(doc.mailAttachmentId)) return@mapNotNull null
             val attachment = mailAttachmentRepository.findById(doc.mailAttachmentId)
                 .orElseThrow { error("Attachment not found: ${doc.mailAttachmentId}") }
 

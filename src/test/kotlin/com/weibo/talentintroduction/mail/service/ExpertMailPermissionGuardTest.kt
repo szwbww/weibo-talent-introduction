@@ -151,6 +151,25 @@ class ExpertMailPermissionGuardTest {
     @AfterEach fun close() { context.close() }
     private fun session(user: String = "user1") = MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, user) }
 
+    @Test fun `file metadata mutations require writable expert access`() {
+        val type = ExpertMaterialController::class.java
+        val controller = Mockito.mock(type)
+        for ((name, verb) in listOf("editFile" to "PUT", "deleteFile" to "DELETE", "restoreFile" to "POST", "parseFile" to "POST")) {
+            val handler = org.springframework.web.method.HandlerMethod(controller, type.declaredMethods.single { it.name == name })
+            assertTrue(com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy.isReaderAllowed(handler, verb))
+            for (contact in 1L..3L) {
+                val request = org.springframework.mock.web.MockHttpServletRequest(verb, "/").apply {
+                    setAttribute(org.springframework.web.servlet.HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
+                        mapOf("contactId" to contact.toString(), "attachmentId" to "301"))
+                }
+                if (contact == 1L) assertDoesNotThrow { guard.authorize("user1", handler, request) }
+                else assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) {
+                    guard.authorize("user1", handler, request)
+                }
+            }
+        }
+    }
+
     @Test fun `persisted actor must still exist and cannot use null identity bypass`() {
         assertDoesNotThrow { guard.requireDelayedActor("admin") }
         assertDoesNotThrow { guard.requireDelayedActor("user1") }

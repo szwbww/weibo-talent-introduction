@@ -173,6 +173,10 @@
             total: 0,               // 当前筛选下 total（服务器返回）
             summary: null,          // 全专家 summary（不受筛选影响）
             q: "",
+            fileMode: "ORIGINAL",
+            tag: "",
+            availableTags: [],
+            fileBusy: null,
             sourceKey: "",          // "type:id" 或 ""
             state: "",              // 存储状态筛选或 ""
             seenSources: new Map(), // "type:id" -> { type, id, subject }
@@ -223,6 +227,7 @@
         view.disposed = true;
         // 上传 dialog 挂在 host 上（section 之外），释放视图时必须同时清掉它的 DOM 与 File 引用。
         cleanupManualUpload(view, view.upload);
+        if (view.fileDialog) view.fileDialog.remove();
         view.handlers.forEach(([target, type, fn]) => {
             try { target.removeEventListener(type, fn); } catch (e) { /* noop */ }
         });
@@ -283,6 +288,8 @@
         const query = new URLSearchParams();
         query.set("page", String(page));
         query.set("size", String(PAGE_SIZE));
+        query.set("mode", store.fileMode || "ORIGINAL");
+        if (store.tag) query.set("tag", store.tag);
         const q = store.q.trim();
         if (q) query.set("q", q);
         if (store.sourceKey) {
@@ -327,6 +334,7 @@
         store.page = page;
         store.total = Number.isFinite(Number(data && data.total)) ? Number(data.total) : items.length;
         store.summary = (data && data.summary) || store.summary;
+        store.availableTags = (data && data.availableTags) || [];
         store.loadedOnce = true;
         store.loadError = null;
         store.actionError = null;
@@ -854,9 +862,17 @@
             statSpans.push({ key, strong });
         });
         section.appendChild(stats);
+        const modes = el("div", "em-modes", { "aria-label": "文件模式" });
+        [["ORIGINAL", "原始文件"], ["PARSED", "解析后文件"], ["TRASH", "回收站"]].forEach(([value, label]) => {
+            const button = el("button", "button small", {type:"button", "data-action":"file-mode", "data-mode":value});
+            text(button, label); modes.appendChild(button);
+        });
+        section.appendChild(modes);
+        elements.modes = modes;
+
 
         const filters = el("div", "em-filters");
-        const search = el("input", null, { type: "search", "aria-label": "搜索文件名", placeholder: "搜索文件名" });
+        const search = el("input", null, { type: "search", "aria-label": "搜索文件名、内容说明或标签", placeholder: "搜索文件名、内容说明或标签" });
         const sourceSelect = el("select", null, { "aria-label": "材料来源" });
         const stateSelect = el("select", null, { "aria-label": "存储状态" });
         rebuildSourceOptions(store, sourceSelect);
@@ -864,13 +880,16 @@
         filters.appendChild(search);
         filters.appendChild(sourceSelect);
         filters.appendChild(stateSelect);
+        const tagSelect = el("select", null, {"aria-label":"文件标签"});
+        filters.appendChild(tagSelect);
+        elements.tagSelect = tagSelect;
         section.appendChild(filters);
 
         const tableHead = el("div", "em-table-head");
         const pageCheckbox = el("input", null, { type: "checkbox", "aria-label": "选择本页" });
         pageCheckbox.checked = false;
         const col1 = el("span");
-        text(col1, "文件 / 类型 / 来源");
+        text(col1, "文件 / 标签 / 来源");
         const col2 = el("span");
         text(col2, "存储状态 / 操作");
         tableHead.appendChild(pageCheckbox);
@@ -994,10 +1013,9 @@
     // ------------------------------------------------------------------
 
     function fileInfoLabel(store, item) {
-        const type = cfg.labels.documentType(item.documentType) || item.documentType || "";
         const status = cfg.labels.documentStatus(item.documentStatus) || item.documentStatus || "";
         const size = sizeLabel(item);
-        return [type, status, size].filter(Boolean).join(" · ");
+        return [status, size].filter(Boolean).join(" · ");
     }
 
     function sizeLabel(item) {
@@ -1034,7 +1052,7 @@
 
     /** selectionOnly（AI 选件）：分析能力来自服务端 analysisSupported，不能按扩展名伪装。 */
     function rowSelectableForAnalysis(view, item) {
-        return view.mode !== "selectionOnly" || item.analysisSupported !== false;
+        return !!item && !item.deleted && (view.mode !== "selectionOnly" || item.analysisSupported !== false);
     }
 
     /** 不可分析行的可见原因：图片给 OCR 说明，其它格式给支持范围说明。 */
@@ -1107,7 +1125,40 @@
             text(block, analysisBlockReason(item));
             cell.appendChild(block);
         }
+        if (view.mode !== "selectionOnly") {
+            const action = (key, label) => {
+                const button = el("button", "em-link", {type:"button", "data-action":key, "data-attachment-id":String(item.attachmentId)});
+                button.disabled = !!store.fileBusy; text(button, label); cell.appendChild(button);
+            };
+            if (item.deleted) action("file-restore", "恢复");
+            else {
+                action("file-edit", "编辑信息");
+                if (!item.parentAttachmentId && item.canDownload) {
+                    if (item.extractionState === "DONE") { const done = el("small"); text(done, "已解析 · 查看解析后文件"); cell.appendChild(done); }
+                    else action("file-parse", store.fileBusy === item.attachmentId ? "正在解析…" : item.extractionState === "FAILED" ? "重试解析" : "解析文件");
+                }
+                action("file-delete", "删除");
+            }
+            if (item.extractionError) { const error = el("small"); text(error, item.extractionError); cell.appendChild(error); }
+        }
         return cell;
+    }
+
+    function buildFileCell(store, item) {
+        const file = el("div", "em-file");
+        const name = el("strong", null, {title:item.originalFileName || item.fileName}); text(name, item.fileName); file.appendChild(name);
+        const info = el("small"); text(info, fileInfoLabel(store,item)); file.appendChild(info);
+        const source = el("small"); text(source,sourceLabel(item)); file.appendChild(source);
+        const note = el("small"); text(note, item.contentNote || "尚未填写内容说明"); file.appendChild(note);
+        const tags = el("div", "em-file-tags");
+        (item.tags || []).forEach(label => { const tag = el("span"); text(tag,label); tags.appendChild(tag); });
+        if (!tags.children.length) text(tags,"未添加标签");
+        file.appendChild(tags);
+
+        if (item.parentAttachmentId) {
+            const path = el("small"); text(path, `来源原件：${item.parentFileName || item.parentAttachmentId} / ${item.entryPath || ""}`); file.appendChild(path);
+        }
+        return file;
     }
 
     function buildRow(store, view, item) {
@@ -1124,17 +1175,7 @@
         if (!selectable) checkbox.disabled = true;
         row.appendChild(checkbox);
 
-        const file = el("div", "em-file");
-        const nameEl = el("strong", null, { title: fileName });
-        text(nameEl, fileName);
-        const meta1 = el("small");
-        text(meta1, fileInfoLabel(store, item));
-        const meta2 = el("small");
-        text(meta2, sourceLabel(item));
-        file.appendChild(nameEl);
-        file.appendChild(meta1);
-        file.appendChild(meta2);
-        row.appendChild(file);
+        row.appendChild(buildFileCell(store, item));
 
         row.appendChild(buildStateCell(store, view, item));
         return row;
@@ -1142,6 +1183,7 @@
 
     function itemSnapshot(item) {
         return JSON.stringify([
+            item && item.tags, item && item.contentNote, item && item.extractionState, item && item.extractionError, item && item.deleted,
             item && item.storageState,
             item && item.bytesDownloaded,
             item && item.actualSize,
@@ -1163,16 +1205,13 @@
 
     /** 页面内容一致时只局部更新行（状态列/文件信息），绝不重建输入框与选择控件。 */
     function updateRowInPlace(row, store, view, item) {
-        const current = itemSnapshot(item);
+        const current = itemSnapshot(item) + String(store.fileBusy);
         const prior = row.dataset.emSnapshot || "";
         if (current === prior) return;
         row.dataset.emSnapshot = current;
         // 文件信息第一行（类型/审核/大小）
         const file = row.querySelector ? row.querySelector(".em-file") : null;
-        if (file) {
-            const smalls = file.querySelectorAll ? file.querySelectorAll("small") : [];
-            if (smalls && smalls.length > 0) text(smalls[0], fileInfoLabel(store, item));
-        }
+        if (file && file.parentNode) file.parentNode.replaceChild(buildFileCell(store,item),file);
         // 状态列整体替换（该列不含输入框；复选框在列外，保持不动）
         const oldState = row.querySelector ? row.querySelector(".em-state") : null;
         if (oldState && oldState.parentNode) {
@@ -1191,7 +1230,8 @@
         const checkbox = row.querySelector ? row.querySelector("input[type=checkbox]") : null;
         if (checkbox) {
             checkbox.checked = selected;
-            if (!selectable) checkbox.disabled = true;
+            checkbox.disabled = !selectable;
+            checkbox.setAttribute("aria-label", `选择 ${current && current.fileName || "?"}`);
         }
     }
 
@@ -1278,6 +1318,20 @@
         if (!store) return;
         const elements = view.elements;
         const loading = store.loading && !store.loadedOnce;
+        Array.from(elements.modes.children).forEach(button => {
+            if (button.getAttribute("data-mode") === store.fileMode) button.classList.add("primary"); else button.classList.remove("primary");
+            button.setAttribute("aria-pressed", String(button.getAttribute("data-mode") === store.fileMode));
+            button.disabled = !!store.fileBusy;
+        });
+        const tagKey = JSON.stringify([store.availableTags, store.tag]);
+        if (elements.tagSelect.dataset.optionsKey !== tagKey) {
+            elements.tagSelect.textContent = "";
+            [["", "全部标签"], ["__untagged__", "未添加标签"], ...store.availableTags.map(tag => [tag,tag])].forEach(([value,label]) => {
+                const option = el("option",null,{value}); text(option,label); elements.tagSelect.appendChild(option);
+            });
+            elements.tagSelect.value = store.tag;
+            elements.tagSelect.dataset.optionsKey = tagKey;
+        }
         elements.section.setAttribute("aria-busy", loading ? "true" : "false");
 
         if (store.loadError) {
@@ -1364,11 +1418,7 @@
         elements.nextBtn.disabled = store.page >= totalPages - 1 || store.submitting;
 
         // 表头勾选框 = 只选本页（selectionOnly：只统计/操作可分析行）
-        const pageIds = store.pageOrder.filter((id) => {
-            if (view.mode !== "selectionOnly") return true;
-            const item = byId(store, id);
-            return !item || item.analysisSupported !== false;
-        });
+        const pageIds = store.pageOrder.filter(id => rowSelectableForAnalysis(view, byId(store, id)));
         const selectedOnPage = pageIds.filter((id) => store.selection.has(id)).length;
         if (pageIds.length === 0) {
             elements.pageCheckbox.checked = false;
@@ -1412,6 +1462,76 @@
         view.handlers.push([elTarget, type, fn]);
     }
 
+    async function fileMutation(store, view, item, action, payload) {
+        if (store.fileBusy || view.disposed) return;
+        store.fileBusy = item.attachmentId;
+        store.views.forEach(v => syncView(v,"file-action"));
+        let failure = null;
+        try {
+            const base = `/api/expert-contacts/${store.contactId}/materials/${item.attachmentId}`;
+            const url = action === "delete" ? `${base}?cascade=${!!(payload && payload.cascade)}` : `${base}/${action}`;
+            await cfg.api(url, {timeoutMs:90000, method:action === "info" ? "PUT" : action === "delete" ? "DELETE" : "POST",
+                ...(action === "info" ? {body:JSON.stringify(payload)} : {})});
+            store.selection.delete(Number(item.attachmentId));
+        } catch (err) { failure = err.message || "操作失败，请重试"; }
+        finally {
+            store.fileBusy = null;
+            if (store.views.size) {
+                await fetchPage(store,{page:store.page,reason:"file-action"});
+                if (failure) { store.actionError = failure; store.views.forEach(v => syncView(v,"file-error")); }
+            }
+        }
+        return !failure;
+    }
+
+    function openFileDialog(store, view, item, action) {
+        if (view.fileDialog) view.fileDialog.remove();
+        const dialog = el("dialog", "em-upload-dialog em-file-dialog", {"aria-label":action === "file-edit" ? "编辑文件信息" : "删除文件"});
+        view.fileDialog = dialog;
+        const form = el("form");
+        const head = el("div", "em-upload-head"); const title = el("h3");
+        text(title, action === "file-edit" ? "编辑文件信息" : "删除文件"); head.appendChild(title); form.appendChild(head);
+        const body = el("div", "em-upload-body");
+        const source = el("p"); text(source, `原始文件：${item.originalFileName || item.fileName}`); body.appendChild(source);
+        function field(label, tag, value, max) {
+            const wrap = el("label"); text(wrap,label);
+            const input = el(tag,null,{"aria-label":label,maxlength:String(max)}); input.value = value;
+            wrap.appendChild(input); body.appendChild(wrap); return input;
+        }
+        let name, note, tags, cascade;
+        if (action === "file-edit") {
+            name = field("显示名称", "input", item.fileName,255); name.required = true;
+            note = field("文件包含什么内容", "textarea", item.contentNote || "",4000);
+            tags = field("文件标签（逗号分隔）", "input", (item.tags || []).join("，"),819);
+        } else {
+            const hint = el("p"); text(hint,"移入回收站，可恢复。默认保留关联文件及来源记录。"); body.appendChild(hint);
+            if (!item.parentAttachmentId) {
+                const label = el("label"); cascade = el("input",null,{type:"checkbox"});
+                label.appendChild(cascade); label.appendChild(document.createTextNode("同时删除关联的解析后文件")); body.appendChild(label);
+            }
+        }
+        const error = el("p", "em-upload-error",{role:"alert"}); body.appendChild(error); form.appendChild(body);
+        const foot = el("div", "em-upload-actions");
+        const cancel = el("button","button",{type:"button"}); text(cancel,"取消");
+        const save = el("button","button primary",{type:"submit"}); text(save,action === "file-edit" ? "保存" : "移入回收站");
+        foot.appendChild(cancel); foot.appendChild(save); form.appendChild(foot); dialog.appendChild(form);
+        const close = () => { dialog.close(); dialog.remove(); if (view.fileDialog === dialog) view.fileDialog = null; };
+        cancel.addEventListener("click",close);
+        form.addEventListener("submit", async event => {
+            event.preventDefault(); if (save.disabled) return;
+            const payload = action === "file-edit" ? {displayName:name.value.trim(),contentNote:note.value,
+                tags:[...new Set(tags.value.split(/[,，;；]/).map(t=>t.trim()).filter(Boolean))]} : {cascade:!!(cascade && cascade.checked)};
+            if (action === "file-edit" && (!payload.displayName || payload.tags.length > 20 || payload.tags.some(t=>t.length>40))) { text(error,"填写名称；最多 20 个标签，每个不超过 40 字符。"); return; }
+            save.disabled = cancel.disabled = true;
+            const ok = await fileMutation(store,view,item,action === "file-edit" ? "info" : "delete",payload);
+            if (view.disposed) return;
+            if (ok) close(); else { text(error,store.actionError || "操作失败"); save.disabled = cancel.disabled = false; }
+        });
+        dialog.addEventListener("cancel",event=>{ if (save.disabled) event.preventDefault(); });
+        dialog.addEventListener("close",()=>{dialog.remove(); if(view.fileDialog===dialog) view.fileDialog=null;});
+        view.host.appendChild(dialog); dialog.showModal();
+    }
+
     function bindEvents(store, view) {
         const section = view.root;
         const elements = view.elements;
@@ -1424,6 +1544,19 @@
             const actionEl = target.closest("[data-action]");
             if (!actionEl) return;
             const action = actionEl.getAttribute("data-action");
+            if (action === "file-mode") {
+                if (store.fileBusy) return;
+                store.fileMode = actionEl.getAttribute("data-mode"); store.tag = ""; store.selection.clear(); store.items.clear(); store.pageOrder = [];
+                fetchPage(store, {page:0, reason:"file-mode"}); return;
+            }
+            if (["file-edit","file-delete","file-restore","file-parse"].includes(action)) {
+                event.stopPropagation();
+                const item = byId(store, actionEl.getAttribute("data-attachment-id"));
+                if (!item || store.fileBusy) return;
+                if (action === "file-edit" || action === "file-delete") openFileDialog(store,view,item,action);
+                else fileMutation(store,view,item,action === "file-parse" ? "parse" : "restore");
+                return;
+            }
             if (action === "manual-upload") {
                 // 由本组件消费：阻止事件继续冒泡到宿主（app.js 只处理 open-ai-analysis）。
                 event.stopPropagation();
@@ -1477,6 +1610,7 @@
                 const rowEl = target.closest(".em-row");
                 const id = Number(rowEl && rowEl.dataset && rowEl.dataset.attachmentId);
                 if (!Number.isFinite(id)) return;
+                if (!rowSelectableForAnalysis(view, byId(store, id))) return;
                 if (target.checked) {
                     store.selection.add(id);
                 } else {
@@ -1488,11 +1622,7 @@
                 return;
             }
             if (target === elements.pageCheckbox) {
-                const pageIds = store.pageOrder.filter((id) => {
-                    if (view.mode !== "selectionOnly") return true;
-                    const item = byId(store, id);
-                    return !item || item.analysisSupported !== false;
-                });
+                const pageIds = store.pageOrder.filter(id => rowSelectableForAnalysis(view, byId(store, id)));
                 if (target.checked) {
                     pageIds.forEach((id) => store.selection.add(id));
                 } else {
@@ -1508,6 +1638,9 @@
                 store.page = 0;
                 fetchPage(store, { page: 0, reason: "state" });
                 return;
+            }
+            if (target === elements.tagSelect) {
+                store.tag = target.value; fetchPage(store,{page:0,reason:"tag"}); return;
             }
             if (target === elements.sourceSelect) {
                 store.sourceKey = target.value;

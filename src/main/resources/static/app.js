@@ -14974,7 +14974,7 @@ function renderExpertDocuments(documents, contactId) {
                 <div class="document-row">
                     <div>
                         <strong>${escapeHtml(doc.fileName || "?")}</strong>
-                        <span>${escapeHtml(labelDocumentType(doc.documentType))}&nbsp;·&nbsp;${escapeHtml(labelDocumentStatus(doc.documentStatus))}&nbsp;·&nbsp;${formatFileSize(doc.fileSize)}</span>
+                        <span>${escapeHtml(labelDocumentStatus(doc.documentStatus))}&nbsp;·&nbsp;${formatFileSize(doc.fileSize)}</span>
                         ${doc.createdAt ? `<span style="font-size:11px">${escapeHtml(doc.createdAt)}</span>` : ""}
                     </div>
                     <div class="document-actions">
@@ -21345,6 +21345,9 @@ function isMailReadOnlyRequestAllowed(path, options) {
         ["GET", /^\/api\/expert-contacts\/[1-9][0-9]*$/],
         ["POST", /^\/api\/expert-contacts\/[1-9][0-9]*\/(operator-status|index-level)$/],
         ["GET", /^\/api\/expert-contacts\/[1-9][0-9]*\/(materials|documents)$/],
+        ["PUT", /^\/api\/expert-contacts\/[1-9][0-9]*\/materials\/[1-9][0-9]*\/info$/],
+        ["DELETE", /^\/api\/expert-contacts\/[1-9][0-9]*\/materials\/[1-9][0-9]*$/],
+        ["POST", /^\/api\/expert-contacts\/[1-9][0-9]*\/materials\/[1-9][0-9]*\/(restore|parse)$/],
         ["GET", /^\/api\/expert-contacts\/[1-9][0-9]*\/attachments\/[1-9][0-9]*\/(download|preview)$/],
         ["POST", /^\/api\/expert-contacts\/[1-9][0-9]*\/materials\/(transfers|uploads|download-zip|reconcile)$/],
         ["GET", /^\/api\/mail\/contact-(notes|locations)\/[1-9][0-9]*$/],

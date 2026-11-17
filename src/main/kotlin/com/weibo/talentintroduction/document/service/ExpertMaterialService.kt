@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.document.service
 
 import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
+import com.weibo.talentintroduction.document.repository.MaterialFileRepository
 import com.weibo.talentintroduction.document.domain.DocumentStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
@@ -60,7 +61,8 @@ class ExpertMaterialService(
     // 手动材料 owner 解析（V130）：manual_upload_id → manual_expert_material_upload.expert_contact_id。
     // 可空默认值只让既有 9 参直接构造的单元测试零改动；Spring 运行时完整注入，
     // 材料列表的来源/上传者走 SQL 投影而不是本仓库。
-    private val manualUploadRepository: ManualExpertMaterialUploadRepository? = null
+    private val manualUploadRepository: ManualExpertMaterialUploadRepository? = null,
+    private val fileMetadata: MaterialFileRepository? = null
 ) {
 
     // ------------------------------------------------------------------
@@ -104,6 +106,8 @@ class ExpertMaterialService(
      * realpath/基目录/就绪。未就绪抛 [MaterialNotReadyException]（HTTP 409）；
      * 不存在抛 NoSuchElement（404）；归属/路径越权抛 IllegalArgumentException。
      */
+    fun isDeletedAttachment(id: Long): Boolean = fileMetadata?.isDeleted(id) == true
+
     fun resolveReadyFile(contactId: Long, attachmentId: Long): ReadyFile {
         val attachment = mailAttachmentRepository.findById(attachmentId)
             .orElseThrow { NoSuchElementException("Attachment not found: $attachmentId") }
@@ -138,6 +142,7 @@ class ExpertMaterialService(
 
     private fun resolveFileReady(attachment: MailAttachment): ReadyFile {
         val attachmentId = attachment.id ?: error("Attachment id is required")
+        require(fileMetadata?.isDeleted(attachmentId) != true) { "附件已移入回收站" }
         val transfer = mailAttachmentTransferRepository.findByAttachmentId(attachmentId)
         val notReadyState = transfer?.state ?: STATE_SOURCE_UNAVAILABLE
 
@@ -279,8 +284,11 @@ class ExpertMaterialService(
         q: String?,
         source: String?,
         sourceId: Long?,
-        state: String?
+        state: String?,
+        mode: String = "ORIGINAL",
+        tag: String? = null
     ): ExpertMaterialPage {
+        require(mode in setOf("ORIGINAL", "PARSED", "TRASH")) { "Unknown material mode" }
         require(page >= 0) { "page must be >= 0" }
         require(size in 1..MAX_PAGE_SIZE) { "size must be between 1 and $MAX_PAGE_SIZE" }
         val normalizedState = state?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
@@ -299,7 +307,7 @@ class ExpertMaterialService(
         }
         val rows = loadMaterialRows(contactId)
         val candidates = loadProcessingCandidates(contactId)
-        return assemblePage(contactId, rows, candidates, page, size, q, source, sourceId, normalizedState)
+        return assemblePage(contactId, rows, candidates, page, size, q, source, sourceId, normalizedState, mode, tag)
     }
 
     /** 纯装配/过滤/分页/统计（同一快照内完成；summary 恒为该专家全体材料）。 */
@@ -312,15 +320,37 @@ class ExpertMaterialService(
         q: String?,
         source: String?,
         sourceId: Long?,
-        state: String?
+        state: String?,
+        mode: String = "ORIGINAL",
+        tag: String? = null
     ): ExpertMaterialPage {
-        val eligibleRows = rows.filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
-        val resolved = eligibleRows.map { row -> resolveItem(contactId, row, candidates) }
+        val meta = fileMetadata?.forContact(contactId).orEmpty()
+        val eligibleRows = rows.filter { row ->
+            ExpertMaterialEligibility.isMaterial(row.fileName, row.contentType) &&
+                if (mode == "TRASH") meta[row.attachmentId]?.deleted == true
+                else meta[row.attachmentId]?.deleted != true && (if (mode == "PARSED") meta[row.attachmentId]?.parentAttachmentId != null else meta[row.attachmentId]?.parentAttachmentId == null)
+        }
+        val resolved = eligibleRows.map { row ->
+            val entry = resolveItem(contactId, row, candidates)
+            val info = meta[row.attachmentId]
+            val deleted = info?.deleted == true
+            entry.copy(item = entry.item.copy(
+                fileName = info?.displayName ?: entry.item.fileName,
+                originalFileName = row.fileName, contentNote = info?.contentNote.orEmpty(), tags = info?.tags.orEmpty(),
+                parentAttachmentId = info?.parentAttachmentId, entryPath = info?.entryPath,
+                source = info?.parentAttachmentId?.let { parent -> rows.find { it.attachmentId == parent }?.let { resolveItem(contactId, it, candidates).item.source } } ?: entry.item.source,
+                parentFileName = rows.find { it.attachmentId == info?.parentAttachmentId }?.fileName,
+                deleted = deleted, extractionState = info?.extractionState ?: "PENDING", extractionError = info?.extractionError,
+                canDownload = !deleted && entry.item.canDownload, canPreview = !deleted && entry.item.canPreview,
+                canFetch = !deleted && entry.item.canFetch, canAnalyze = !deleted && entry.item.canAnalyze
+            ))
+        }
 
         val query = q?.trim()?.takeIf { it.isNotEmpty() }?.lowercase(Locale.ROOT)
         val filtered = resolved.filter { entry ->
             val item = entry.item
-            (query == null || item.fileName.lowercase(Locale.ROOT).contains(query)) &&
+            (query == null || (listOf(item.fileName, item.contentNote) + item.tags).any { it.lowercase(Locale.ROOT).contains(query) }) &&
+                (tag.isNullOrBlank() || (if (tag == "__untagged__") item.tags.isEmpty() else tag in item.tags)) &&
                 (source == null || (item.source?.type == source && item.source.id == sourceId)) &&
                 (state == null || item.storageState == state)
         }.sortedWith(
@@ -329,14 +359,15 @@ class ExpertMaterialService(
         )
 
         val total = filtered.size.toLong()
-        val fromIndex = (page.toLong() * size).toInt().coerceAtMost(filtered.size)
+        val fromIndex = (page.toLong() * size).coerceAtMost(filtered.size.toLong()).toInt()
         val pageItems = filtered.drop(fromIndex).take(size).map { it.item }
         return ExpertMaterialPage(
             items = pageItems,
             total = total,
             page = page,
             size = size,
-            summary = summarize(resolved.map { it.row })
+            summary = summarize(resolved.map { it.row }),
+            availableTags = resolved.flatMap { it.item.tags }.distinct().sorted()
         )
     }
 
@@ -611,7 +642,7 @@ class ExpertMaterialService(
         }
         val foreignIds = distinct.filter { attachmentId ->
             val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
-            document == null || document.expertContactId != contactId
+            document == null || document.expertContactId != contactId || fileMetadata?.isDeleted(attachmentId) == true
         }
         require(foreignIds.isEmpty()) {
             "Attachments ${foreignIds.sorted()} are not materials of expert contact $contactId"
@@ -721,7 +752,7 @@ class ExpertMaterialService(
      */
     fun resolveMessageAttachments(source: String, id: Long): List<MailAttachment> {
         return resolveRawMessageAttachments(source, id)
-            .filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) }
+            .filter { ExpertMaterialEligibility.isMaterial(it.fileName, it.contentType) && fileMetadata?.isDeleted(it.id!!) != true && fileMetadata?.isDerived(it.id!!) != true }
     }
 
     private fun resolveRawMessageAttachments(source: String, id: Long): List<MailAttachment> {
@@ -966,7 +997,16 @@ data class ExpertMaterialItem(
     val analysisSupported: Boolean,
     val canAnalyze: Boolean,
     val downloadUrl: String?,
-    val previewUrl: String?
+    val previewUrl: String?,
+    val originalFileName: String = fileName,
+    val contentNote: String = "",
+    val tags: List<String> = emptyList(),
+    val parentAttachmentId: Long? = null,
+    val parentFileName: String? = null,
+    val entryPath: String? = null,
+    val deleted: Boolean = false,
+    val extractionState: String = "PENDING",
+    val extractionError: String? = null
 )
 
 /** summary 统计该专家全体材料（不受当前筛选影响）；默认候选完整返回（不静默截断）。 */
@@ -985,7 +1025,8 @@ data class ExpertMaterialPage(
     val total: Long,
     val page: Int,
     val size: Int,
-    val summary: ExpertMaterialSummary
+    val summary: ExpertMaterialSummary,
+    val availableTags: List<String> = emptyList()
 )
 
 data class MaterialTransferItem(

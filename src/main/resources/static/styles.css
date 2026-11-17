@@ -13717,3 +13717,16 @@ body[data-mail-read-only="true"] #view-mailbox.mc-refined #mailboxList{padding:1
 .rp-batch[hidden],.rp-log[hidden],.rp-dialog [hidden],.rp-log [hidden]{display:none!important}
 @media(max-width:760px){.rp-batch{align-items:flex-start;flex-direction:column}.rp-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.rp-process{justify-content:flex-start}.rp-scope{grid-template-columns:70px 1fr}.rp-dialog .dp-dialog-foot{align-items:flex-start;flex-direction:column}.rp-log-head{align-items:flex-start;flex-wrap:wrap}.rp-pager{flex-wrap:wrap}}
 /* paper-reprocess-contract:end */
+
+
+/* Original / parsed files share the same contact store and opaque editor. */
+.expert-materials .em-modes{display:flex;gap:8px;padding:0 14px 12px}
+.console-ui .expert-materials .em-filters{grid-template-columns:minmax(140px,1fr) 140px 110px 120px}
+.expert-materials .em-file-tags{display:flex;flex-wrap:wrap;gap:5px;font-size:11px;color:#64748b}
+.expert-materials .em-file-tags span{background:#eaf0fa;border:1px solid #d2ddf0;border-radius:5px;padding:1px 6px;color:#42649a}
+.em-file-dialog{background:#f8faff;color:#334155;max-height:90vh;overflow:auto}
+.em-file-dialog .em-upload-body{display:grid;gap:14px}
+.em-file-dialog label{display:grid;gap:6px;font-size:12px}
+.em-file-dialog input:not([type=checkbox]),.em-file-dialog textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155}
+.em-file-dialog textarea{min-height:100px;resize:vertical}
+@media(max-width:1100px){.console-ui .expert-materials .em-filters{grid-template-columns:1fr 1fr}.expert-materials .em-filters input{grid-column:1/-1}}

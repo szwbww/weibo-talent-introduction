@@ -1886,3 +1886,60 @@ describe("expert-materials: ZIP 下载", () => {
         assert.strictEqual(auth.length, 6);
     });
 });
+
+// File-management contract: both hosts share modes, tag filters and mutation refresh.
+describe("文件标签与双模式", () => {
+    it("回收站不能通过全选或行选择进入下载集合", async () => {
+        const server = new FakeServer({count:1});
+        const originalGet = server.handleGet.bind(server);
+        server.handleGet = url => {
+            const result = originalGet(url);
+            result.items = result.items.map(item => ({...item, deleted:true, canDownload:false, canFetch:false}));
+            return result;
+        };
+        const sandbox = loadComponent(server);
+        const host = sandbox.document.createElement("div"); sandbox.document.root.appendChild(host);
+        const view = sandbox.ExpertMaterials.mount({host,contactId:1,mode:"inline"});
+        try {
+            await flush();
+            click(host.querySelector('[data-mode="TRASH"]')); await flush();
+            const all = host.querySelector('[aria-label="选择本页"]');
+            const row = host.querySelector('.em-row input[type="checkbox"]');
+            assert.equal(all.disabled,true); assert.equal(row.disabled,true);
+            all.checked=true; change(all); row.checked=true; change(row);
+            assert.ok(host.textContent.includes('已选 0 份'));
+            assert.ok(host.querySelector('[data-action="file-restore"]'));
+            assert.equal(host.querySelector('[data-action="file-edit"]'),null);
+        } finally { view.unmount(); }
+    });
+
+    it("inline 与 drawer 同步模式、标签请求；类型不再渲染", async () => {
+        const server = new FakeServer({count:3});
+        const originalGet = server.handleGet.bind(server);
+        server.handleGet = url => {
+            const result = originalGet(url);
+            result.availableTags = ["代表作"];
+            result.items = result.items.map(item => ({...item, tags:["代表作"], contentNote:"研究内容说明"}));
+            return result;
+        };
+        const sandbox = loadComponent(server);
+        const a = sandbox.document.createElement("div"), b = sandbox.document.createElement("div");
+        sandbox.document.root.appendChild(a); sandbox.document.root.appendChild(b);
+        const inline = sandbox.ExpertMaterials.mount({host:a,contactId:1,mode:"inline"});
+        const drawer = sandbox.ExpertMaterials.mount({host:b,contactId:1,mode:"drawer"});
+        try {
+            await flush();
+            click(a.querySelector('[data-mode="PARSED"]')); await flush();
+            assert.ok(server.lastGet().url.includes('mode=PARSED'));
+            assert.equal(b.querySelector('[data-mode="PARSED"]').getAttribute('aria-pressed'),'true');
+            const tags = a.querySelector('[aria-label="文件标签"]'); tags.value='代表作'; tags.fire('change'); await flush();
+            assert.equal(new URLSearchParams(server.lastGet().url.split('?')[1]).get('tag'),'代表作');
+            assert.ok(a.querySelector('.em-file-tags').textContent.includes('代表作'));
+            assert.ok(a.querySelector('.em-file').textContent.includes('研究内容说明'));
+            assert.ok(!a.querySelector('.em-file').textContent.includes('OTHER'));
+            assert.ok(!a.querySelector('.em-file').textContent.includes('CV'));
+            click(a.querySelector('[data-mode="TRASH"]')); await flush();
+            assert.ok(server.lastGet().url.includes('mode=TRASH'));
+        } finally { inline.unmount(); drawer.unmount(); }
+    });
+});

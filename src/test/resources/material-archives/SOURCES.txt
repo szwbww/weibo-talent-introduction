@@ -1,0 +1,5 @@
+RAR4/RAR5 extraction fixtures from the upstream 7-Zip-JBinding test suite:
+https://github.com/borisbrodski/sevenzipjbinding/tree/master/test/JavaTests/testdata/multiple-files
+sample-rar4.rar = rar/archive2.zip.0.rar
+sample-rar5.rar = rar5/archive2.zip.0.rar
+Retrieved 2026-11-17. Fixtures contain upstream synthetic test data, not expert documents.

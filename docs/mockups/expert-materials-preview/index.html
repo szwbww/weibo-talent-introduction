@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN" data-console-theme="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>专家附件 · 原始文件 / 解析后文件</title>
+<link rel="stylesheet" href="/assets/styles.css"><link rel="stylesheet" href="/assets/console-theme.css"><link rel="stylesheet" href="/preview.css"></head>
+<body class="console-ui">
+<aside class="rail" aria-label="导航"><div class="brand-icon">♙</div><span>◫</span><span>⌁</span><span>✉</span><span>▤</span><span class="rail-active">♙</span><span>▣</span><span>◇</span><span class="rail-bottom">◷</span></aside>
+<main class="workspace">
+  <header class="page-header"><div><h1>专家列表</h1><p>查看联系状态、邮件时间线和人工处理。</p></div><div class="page-tools"><span class="preview-label">前端交互预览 · 演示数据</span><button class="button" id="theme" aria-label="切换主题">☼</button><button class="button" id="reset">重置演示</button></div></header>
+  <div class="filter-bar"><span class="filter-chip">▽ 筛选 <b>2</b></span><span class="filter-chip">有效 · 已邀约</span><span class="filter-spacer"></span><span class="subtle">沿用项目真实样式 · 修改仅保存在本机预览</span></div>
+  <div class="split">
+    <section class="people-panel"><header><h2>专家列表</h2><span class="layout-icon">▯ ▣ ▯</span></header><p class="list-hint">当前展示截图中的 4 位专家</p><div class="people">
+      <article class="person"><h3>Uwem Okon Edet <span>已邀约</span></h3><p>科研能力 <b>未评估</b>　匹配进度 <b>未匹配</b></p><p>备注　CV；论文 5；项目经历 1；护照</p><div>账号：LuKai <i>已补充</i><em>学术科研</em><em>专业合适</em></div></article>
+      <article class="person"><h3>Dr. ASHWATH NARAYANA <span>已邀约</span></h3><p>科研能力 <b>未评估</b>　匹配进度 <b>未匹配</b></p><p>备注　暂无备注</p><div>账号：LiLei <i>已补充</i><em>学术科研</em><em>印度</em></div></article>
+      <article class="person"><h3>Cagatay Basdogan <span>已邀约</span></h3><p>科研能力 <b>未评估</b>　匹配进度 <b>未匹配</b></p><p>备注　CV；论文 12；本硕博证；专利 3</p><div>账号：LuKai <i>已补充</i><em>学术科研</em><em>专业合适</em></div></article>
+      <article class="person selected"><h3>Aziza A. Aboulila <span>已邀约</span></h3><p>科研能力 <b>未评估</b>　匹配进度 <b>未匹配</b></p><p>备注　CV；论文 25；护照；本硕博证；工作证明</p><div>账号：LiLei <i>已补充</i><em>医学越界</em><em>专业合适</em><em>埃及</em></div></article>
+    </div><footer>50 条/页 <span>第 1 / 1 页</span></footer></section>
+    <section class="detail-panel">
+      <header class="contact-head"><div class="avatar">A</div><div><h2>Aziza A. Aboulila</h2><p>账号 LiLei <span class="dot">●</span>　已邀约</p></div><span class="contact-badge">附件资料</span></header>
+      <nav class="detail-tabs" aria-label="详情位置"><span>联系详情</span><span>邮件时间线</span><span class="active">附件资料</span><span>跟进记录</span></nav>
+      <section class="materials">
+        <header class="material-title"><div><h2>专家附件</h2><p>保留原件，按独立文件整理材料。</p></div><button class="button primary" id="upload">＋ 上传附件</button></header>
+        <div class="mode-tabs" role="tablist" aria-label="文件模式"><button role="tab" id="tab-original" aria-selected="true" aria-controls="file-panel" data-mode="original">原始文件 <b id="original-count">3</b></button><button role="tab" id="tab-parsed" aria-selected="false" aria-controls="file-panel" data-mode="parsed">解析后文件 <b id="parsed-count">5</b></button><button class="trash-tab" id="trash">回收站 <span id="trash-count">0</span></button></div>
+        <div id="file-panel" role="tabpanel" aria-labelledby="tab-original"><div class="mode-summary"><span id="mode-description"></span><span>按文件标签分类</span></div>
+        <div class="filters"><input id="search" aria-label="搜索文件" placeholder="搜索文件名、内容说明、标签"><select id="tag-filter" aria-label="筛选文件标签"><option value="">全部标签</option></select><select id="source-filter" aria-label="筛选文件来源"><option value="">全部来源</option></select></div>
+        <div class="list-columns"><span>文件 / 内容说明 / 标签</span><span>操作</span></div><div id="rows" class="file-rows"></div>
+        <footer class="material-footer"><span id="list-count"></span><span id="footer-detail"></span></footer></div>
+      </section>
+      <div class="source-legend"><span class="legend-line"></span><span>原始文件 → 解压或整理 → 解析后文件 → 内容说明 / 标签</span></div>
+    </section>
+  </div>
+</main>
+<dialog id="editor" aria-labelledby="editor-title"><form id="editor-form"><header class="dialog-head"><div><p class="eyebrow" id="editor-eyebrow">原始文件</p><h2 id="editor-title">编辑文件信息</h2></div><button class="close-button" type="button" data-close aria-label="关闭编辑">×</button></header><div class="dialog-body"><div class="file-summary" id="editor-source"></div><label>显示名称<input id="edit-name" required maxlength="180"></label><label>审核状态<select id="edit-status"><option>待审核</option><option>已通过</option><option>已驳回</option></select></label><label>文件包含什么内容<textarea id="edit-note" rows="4" maxlength="1200" placeholder="例如：包含 3 篇论文全文，研究方向为植物抗逆；不含论文清单。"></textarea></label><label>标签<input id="edit-tags" maxlength="240" placeholder="输入标签，用逗号分隔，如：代表作，植物抗逆"></label><p class="field-hint">用标签判断文件内容，可添加多个；内容说明补充具体信息。</p><p class="field-hint">修改显示信息，保留原始文件名与来源记录。</p></div><footer class="dialog-footer"><button type="button" class="button" data-close>取消</button><button type="submit" class="button primary">保存修改</button></footer></form></dialog>
+<dialog id="delete-dialog" aria-labelledby="delete-title"><form id="delete-form"><header class="dialog-head"><h2 id="delete-title">删除文件</h2><button type="button" class="close-button" data-close aria-label="关闭删除">×</button></header><div class="dialog-body"><p id="delete-name"></p><div class="delete-warning" id="delete-warning"></div><label class="check-label" id="cascade-label"><input id="cascade" type="checkbox">同时删除关联的解析后文件</label><p class="field-hint">移入回收站，可随时恢复。来源信息保留。</p></div><footer class="dialog-footer"><button type="button" class="button" data-close>取消</button><button class="button danger" type="submit">移入回收站</button></footer></form></dialog>
+<dialog id="upload-dialog" aria-labelledby="upload-title"><form id="upload-form"><header class="dialog-head"><div><p class="eyebrow">原始文件</p><h2 id="upload-title">上传附件</h2></div><button type="button" class="close-button" data-close aria-label="关闭上传">×</button></header><div class="dialog-body"><label class="dropzone" id="dropzone"><strong>＋ 选择文件或拖拽到此处</strong><span>支持多文件；压缩包作为一个原始文件保留</span><input type="file" id="upload-input" multiple></label><div id="upload-files"></div><label>内容说明<textarea id="upload-note" rows="3" maxlength="1200" placeholder="说明本次上传文件包含哪些内容"></textarea></label><label>标签<input id="upload-tags" maxlength="240" placeholder="多个标签用逗号分隔"></label><p class="field-hint">预览仅保存文件信息，不上传文件内容、不执行真实解压。</p><p class="field-hint" id="upload-error" role="alert"></p></div><footer class="dialog-footer"><button type="button" class="button" data-close>取消</button><button type="submit" class="button primary">添加到原始文件</button></footer></form></dialog>
+<dialog id="info-dialog" aria-labelledby="info-title"><header class="dialog-head"><h2 id="info-title"></h2><button class="close-button" data-close aria-label="关闭详情">×</button></header><div class="dialog-body" id="info-body"></div></dialog>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/preview.js"></script></body></html>

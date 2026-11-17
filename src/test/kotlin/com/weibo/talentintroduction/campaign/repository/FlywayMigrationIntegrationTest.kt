@@ -200,12 +200,13 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh empty database reaches V176 and creates the reprocess tables without seeded rows`() {
+    fun `fresh empty database reaches V177 and creates the reprocess tables without seeded rows`() {
         val flyway = flyway()
         flyway.clean()
         val result = flyway.migrate()
-        assertEquals("176", result.targetSchemaVersion)
+        assertEquals("177", result.targetSchemaVersion)
         connection().use { c ->
+            assertTrue(c.tableExists("expert_material_file"))
             assertTrue(c.tableExists("expert_template_override"))
             assertTrue(c.tableExists("delayed_manual_reply"))
             assertTrue(c.tableExists("discovery_paper_reprocess_run"))
@@ -233,7 +234,7 @@ class FlywayMigrationIntegrationTest {
             previous.clean(); previous.migrate()
             connection().use { c -> c.createStatement().use { it.executeUpdate(
                 "INSERT INTO discovery_paper_archive_setting VALUES (1,1,42949672960,${oldGiB * 1073741824},7,CURRENT_TIMESTAMP(3))") } }
-            val result = flyway().migrate()
+            val result = flyway(MigrationVersion.fromVersion("176")).migrate()
             assertEquals("176", result.targetSchemaVersion); assertEquals(1, result.migrationsExecuted)
             connection().use { c ->
                 assertEquals((if (oldGiB == 10L) 5L else oldGiB) * 1073741824, c.queryLong("SELECT min_free_bytes FROM discovery_paper_archive_setting WHERE id=1"))

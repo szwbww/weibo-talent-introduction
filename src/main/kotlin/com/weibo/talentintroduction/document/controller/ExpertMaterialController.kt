@@ -21,6 +21,10 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.DeleteMapping
+import com.weibo.talentintroduction.document.service.MaterialFileService
+import com.weibo.talentintroduction.document.service.MaterialFileEdit
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -42,7 +46,8 @@ class ExpertMaterialController(
     // 零改动；Spring 运行时按主构造器完整注入，端点入口显式拒绝未接线的情况，
     // 绝不静默放行（与 OutboundAttachmentController 同款先例）。
     private val uploadService: ManualExpertMaterialUploadService? = null,
-    private val archiveService: ExpertMaterialArchiveService? = null
+    private val archiveService: ExpertMaterialArchiveService? = null,
+    private val fileService: MaterialFileService? = null
 ) {
     @PostMapping("/download-zip")
     fun downloadZip(
@@ -82,8 +87,28 @@ class ExpertMaterialController(
         @RequestParam(required = false) q: String?,
         @RequestParam(required = false) source: String?,
         @RequestParam(required = false) sourceId: Long?,
-        @RequestParam(required = false) state: String?
-    ): ExpertMaterialPage = service.listMaterials(contactId, page, size, q, source, sourceId, state)
+        @RequestParam(required = false) state: String?,
+        @RequestParam(defaultValue = "ORIGINAL") mode: String = "ORIGINAL",
+        @RequestParam(required = false) tag: String? = null
+    ): ExpertMaterialPage = service.listMaterials(contactId, page, size, q, source, sourceId, state, mode, tag)
+
+    @PutMapping("/{attachmentId}/info")
+    fun editFile(@PathVariable contactId: Long, @PathVariable attachmentId: Long, @RequestBody request: MaterialFileEdit): Map<String, Boolean> {
+        requireNotNull(fileService).edit(contactId, attachmentId, request)
+        return mapOf("saved" to true)
+    }
+    @DeleteMapping("/{attachmentId}")
+    fun deleteFile(@PathVariable contactId: Long, @PathVariable attachmentId: Long, @RequestParam(defaultValue = "false") cascade: Boolean): Map<String, Boolean> {
+        requireNotNull(fileService).delete(contactId, attachmentId, cascade)
+        return mapOf("deleted" to true)
+    }
+    @PostMapping("/{attachmentId}/restore")
+    fun restoreFile(@PathVariable contactId: Long, @PathVariable attachmentId: Long): Map<String, Boolean> {
+        requireNotNull(fileService).restore(contactId, attachmentId)
+        return mapOf("restored" to true)
+    }
+    @PostMapping("/{attachmentId}/parse")
+    fun parseFile(@PathVariable contactId: Long, @PathVariable attachmentId: Long): Map<String, Int> = requireNotNull(fileService).parse(contactId, attachmentId)
 
     /**
      * 显式请求下载：Session 登录（AuthInterceptor 之外再取 username 作 requested_by）

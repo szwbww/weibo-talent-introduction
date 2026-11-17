@@ -71,6 +71,10 @@ class ExpertMailPermissionGuard(
             route(materials, "uploadMaterial", "POST", Target.CONTACT)
             route(materials, "downloadZip", "POST", Target.CONTACT)
             route(materials, "reconcile", "POST", Target.CONTACT)
+            route(materials, "editFile", "PUT", Target.CONTACT)
+            route(materials, "deleteFile", "DELETE", Target.CONTACT)
+            route(materials, "restoreFile", "POST", Target.CONTACT)
+            route(materials, "parseFile", "POST", Target.CONTACT)
             val documents = ExpertDocumentBrowseController::class.java
             route(documents, "listDocuments", "GET", Target.CONTACT)
             route(documents, "download", "GET", Target.DOCUMENT)
