@@ -30,6 +30,19 @@
 **为什么不能只发 HTML**：08–10 的新组件在 11 才统一注册并启用默认值。若把新 `index.html`
 发给不含前置代码的版本，浏览器会拿到新脚本引用的缺失函数/布局（I-1 后果）。
 
+### 材料文件管理发布回归（2026-11-17）
+
+- 新增材料文件 handler 后，同步 `AuthInterceptorTest` 的精确白名单断言；编辑、删除、恢复和解析仍由 `ExpertMailPermissionGuard` 校验专家的 FULL 权限，不能通过放宽生产授权来消除测试失败。
+- `ExpertMaterialService.listMaterials` 的 HTTP 测试夹具必须包含 `mode` 和 `tag`。固定请求优先使用完整的具体实参；若使用 Mockito matcher，所有实参（包括 Kotlin 默认参数）均须使用 matcher，避免 `InvalidUseOfMatchersException`。
+- 发布前用 `.multi-ai-kit.yaml` 指定的 JDK 11 执行针对性测试及完整构建，不得跳过失败测试：
+
+```bash
+JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home \
+  mvn test -Dtest=AuthInterceptorTest,ExpertMaterialControllerHttpTest,ExpertMailPermissionGuardTest
+JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home \
+  mvn clean package
+```
+
 ---
 
 ## 2. 发布步骤（顺序执行；每步记录证据，不满足即停）

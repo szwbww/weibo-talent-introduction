@@ -1150,13 +1150,15 @@ class ExpertMaterialControllerHttpTest {
     @org.junit.jupiter.api.Test
     fun `GET materials returns the fixed item fields and never leaks storagePath or workerToken`() {
         Mockito.`when`(materialService.listMaterials(
-            Mockito.eq(1L),
-            Mockito.anyInt(),
-            Mockito.anyInt(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull()
+            contactId = 1L,
+            page = 0,
+            size = 10,
+            q = null,
+            source = null,
+            sourceId = null,
+            state = null,
+            mode = "ORIGINAL",
+            tag = null
         )).thenReturn(pageFixture)
 
         mockMvc.perform(
