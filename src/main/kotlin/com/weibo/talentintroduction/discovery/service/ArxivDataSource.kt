@@ -14,6 +14,13 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import java.io.StringReader
 import java.net.URLEncoder
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import org.w3c.dom.Element
+import org.w3c.dom.NodeList
 import javax.xml.parsers.DocumentBuilderFactory
 
 @Service
@@ -49,14 +56,59 @@ class ArxivDataSource(
             }
         }
 
-        val start = criteria.cursor?.toIntOrNull() ?: 0
-        val url = "$baseUrl/query?" +
-            "search_query=$keywordQuery" +
-            "&start=$start" +
-            "&max_results=${criteria.pageSize}" +
-            "&sortBy=submittedDate" +
-            "&sortOrder=descending"
+        var position = Position.decode(criteria.cursor)
+        if (position.offset >= RESULT_WINDOW) {
+            // Old numeric checkpoints refer to the unrestricted query. Recover its last readable
+            // timestamp, including for older offsets beyond the window (conservative replay).
+            val anchor = fetchPage(keywordQuery, RESULT_WINDOW - 1, 1)
+            val upper = if (anchor.entries.length == 0) yearEnd(criteria) else upperAfter(anchor, criteria)
+            if (upper < yearStart(criteria)) return PaperSearchResult(emptyList(), null, anchor.total)
+            position = Position(upper, 0)
+        }
+        val query = position.upper?.let { upper ->
+            "($keywordQuery)+AND+submittedDate:[${MINUTE.format(yearStart(criteria))}+TO+${MINUTE.format(upper)}]"
+        } ?: keywordQuery
+        val limit = minOf(criteria.pageSize, RESULT_WINDOW - position.offset, MAX_PAGE_SIZE)
+        require(limit > 0) { "ARXIV_INVALID_PAGE_SIZE" }
+        return result(fetchPage(query, position.offset, limit), criteria, position)
+    }
 
+    // A null upper bound retains the exact meaning of legacy numeric checkpoints.
+    private data class Position(val upper: LocalDateTime?, val offset: Int) {
+        fun encode(): String = upper?.let { "t1:${MINUTE.format(it)}:$offset" } ?: offset.toString()
+
+        companion object {
+            fun decode(cursor: String?): Position {
+                if (cursor == null) return Position(null, 0)
+                cursor.toIntOrNull()?.takeIf { it >= 0 }?.let { return Position(null, it) }
+                val parts = cursor.split(':')
+                require(parts.size == 3 && parts[0] == "t1") { "ARXIV_INVALID_CURSOR" }
+                val offset = parts[2].toIntOrNull()
+                require(offset != null && offset in 0 until RESULT_WINDOW) { "ARXIV_INVALID_CURSOR" }
+                return Position(LocalDateTime.parse(parts[1], MINUTE), offset)
+            }
+        }
+    }
+
+    private data class AtomPage(val entries: NodeList, val total: Long)
+
+    private fun yearStart(criteria: PaperSearchCriteria) = LocalDateTime.of(criteria.publicationYearFrom, 1, 1, 0, 0)
+
+    private fun yearEnd(criteria: PaperSearchCriteria) = LocalDateTime.of(criteria.publicationYearTo, 12, 31, 23, 59).plusMinutes(1)
+
+    private fun upperAfter(page: AtomPage, criteria: PaperSearchCriteria): LocalDateTime {
+        val last = page.entries.item(page.entries.length - 1) as Element
+        val published = last.getElementsByTagName("published").item(0)?.textContent?.trim()
+            ?: throw IllegalStateException("ARXIV_MISSING_BOUNDARY_DATE")
+        // arXiv interprets minute precision as :00. Rounding up replays ties at the boundary.
+        val minuteAfter = LocalDateTime.ofInstant(Instant.parse(published), ZoneOffset.UTC)
+            .truncatedTo(ChronoUnit.MINUTES).plusMinutes(1)
+        return minOf(minuteAfter, yearEnd(criteria))
+    }
+
+    private fun fetchPage(query: String, start: Int, limit: Int): AtomPage {
+        val url = "$baseUrl/query?search_query=$query&start=$start&max_results=$limit" +
+            "&sortBy=submittedDate&sortOrder=descending"
         val response = try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
             restTemplate.exchange(url, HttpMethod.GET, null, String::class.java)
@@ -70,7 +122,7 @@ class ArxivDataSource(
             throw IllegalStateException("ARXIV_EMPTY_OR_REDIRECT")
         }
 
-        return parseAtomResponse(response.body, criteria)
+        return readPage(response.body, start)
     }
 
     override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
@@ -84,6 +136,11 @@ class ArxivDataSource(
     }
 
     fun parseAtomResponse(xml: String?, criteria: PaperSearchCriteria): PaperSearchResult {
+        val position = Position.decode(criteria.cursor)
+        return result(readPage(xml, position.offset), criteria, position)
+    }
+
+    private fun readPage(xml: String?, start: Int): AtomPage {
         // I-2: 空体属于故障（301 空体 / 空 200），不是「零结果」。
         if (xml.isNullOrBlank()) throw IllegalStateException("ARXIV_EMPTY_OR_REDIRECT")
 
@@ -108,16 +165,22 @@ class ArxivDataSource(
         for (i in 0 until entries.length) {
             val entryId = (entries.item(i) as? org.w3c.dom.Element)
                 ?.getElementsByTagName("id")?.item(0)?.textContent
-            if (entryId != null && entryId.contains("/api/errors#")) {
+            if (entryId != null && entryId.substringBefore('#').endsWith("/api/errors")) {
                 throw IllegalStateException("ARXIV_ERROR_ENTRY")
             }
         }
 
-        val totalResultsNodes = doc.getElementsByTagName("opensearch:totalResults")
-        val totalResults = if (totalResultsNodes.length > 0) {
-            totalResultsNodes.item(0).textContent.trim().toLongOrNull() ?: 0L
-        } else 0L
+        val total = doc.getElementsByTagName("opensearch:totalResults").item(0)?.textContent?.trim()?.toLongOrNull()
+            ?: throw IllegalStateException("ARXIV_MISSING_TOTAL")
+        check(total >= 0 && (entries.length == 0 || total >= start.toLong() + entries.length)) { "ARXIV_INCONSISTENT_TOTAL" }
+        val reportedStart = doc.getElementsByTagName("opensearch:startIndex").item(0)?.textContent?.trim()
+        check(reportedStart == null || reportedStart.toIntOrNull() == start) { "ARXIV_UNEXPECTED_START" }
+        check(entries.length > 0 || start >= total) { "ARXIV_UNEXPECTED_EMPTY_PAGE" }
+        return AtomPage(entries, total)
+    }
 
+    private fun result(page: AtomPage, criteria: PaperSearchCriteria, position: Position): PaperSearchResult {
+        val entries = page.entries
         val rawEntryCount = entries.length
         val papers = mutableListOf<PaperMetadata>()
 
@@ -163,11 +226,23 @@ class ArxivDataSource(
         }
 
         // c2 契约：nextCursor 由原始条目数推导，年份过滤把整页清空时也必须继续翻页。
-        val start = criteria.cursor?.toIntOrNull() ?: 0
-        val nextCursor = if (rawEntryCount > 0 && start + rawEntryCount < totalResults) {
-            (start + rawEntryCount).toString()
-        } else null
+        val nextOffset = position.offset + rawEntryCount
+        val nextCursor = when {
+            rawEntryCount == 0 || nextOffset >= page.total -> null
+            nextOffset < RESULT_WINDOW -> position.copy(offset = nextOffset).encode()
+            else -> {
+                val upper = upperAfter(page, criteria)
+                check(position.upper == null || upper < position.upper) { "ARXIV_TIME_WINDOW_STALLED" }
+                if (upper < yearStart(criteria)) null else Position(upper, 0).encode()
+            }
+        }
+        return PaperSearchResult(papers, nextCursor, page.total)
+    }
 
-        return PaperSearchResult(papers, nextCursor, totalResults)
+    private companion object {
+        const val RESULT_WINDOW = 10_000
+        const val MAX_PAGE_SIZE = 2_000
+        val MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("uuuuMMddHHmm")
+            .withResolverStyle(java.time.format.ResolverStyle.STRICT)
     }
 }

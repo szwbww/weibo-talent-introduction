@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=173"])
+@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=178"])
 @Import(DiscoveryVerificationRepository::class)
 class DiscoveryVerificationRepositoryIT {
     companion object {
@@ -72,6 +72,7 @@ class DiscoveryVerificationRepositoryIT {
 
     @BeforeEach fun clean() {
         // These tables exist only in this test's disposable container.
+        jdbc.update("DELETE FROM discovery_registration_conflict")
         jdbc.update("DELETE FROM discovery_verification_step")
         jdbc.update("DELETE FROM discovery_verification_attempt")
         jdbc.update("DELETE FROM discovery_verification_item")
@@ -110,6 +111,23 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(original.id, replay.id); assertEquals(1001L, replay.ownerExecutionId)
         assertEquals("source-doc-1", replay.sourceItemKey); assertEquals(1, replay.batchNumber)
         return replay
+    }
+
+    @Test fun `concurrent conflict receipts deduplicate per frozen author and paper and leave the reservation intact`() {
+        run()
+        val original = repository.reserveItem(reservation(), NOW)
+        val evidence = """{"differingFields":["institution"]}"""
+        parallel(8) { repository.recordRegistrationConflict(original.id, 1001L, "RESERVED_FACTS_CONFLICT", evidence, NOW) }
+        val other = repository.reserveItem(reservation("doc-2").copy(sourceItemKey = original.sourceItemKey), NOW)
+        repository.recordRegistrationConflict(other.id, 1001L, "RESERVED_FACTS_CONFLICT", evidence, NOW)
+        run(1002L)
+        repository.recordRegistrationConflict(original.id, 1002L, "RESERVED_FACTS_CONFLICT", evidence, NOW)
+        val laterEvidence = """{"differingFields":["employment"]}"""
+        repeat(2) { repository.recordRegistrationConflict(original.id, 1001L, "RESERVED_FACTS_CONFLICT", laterEvidence, NOW.plusSeconds(1)) }
+        assertEquals(4L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_registration_conflict", Long::class.java))
+        assertEquals(setOf("institution", "employment"), jdbc.queryForList("""SELECT JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.differingFields[0]'))
+            FROM discovery_registration_conflict WHERE observed_execution_id=1001 AND item_id=?""", String::class.java, original.id).toSet())
+        assertEquals(original, repository.findItem(original.id))
     }
 
     @Test fun `twenty reserves and cross run replay keep first ownership`() {

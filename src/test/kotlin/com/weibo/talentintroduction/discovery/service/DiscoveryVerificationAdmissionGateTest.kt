@@ -60,6 +60,22 @@ class AdmissionGateFixture {
 }
 
 class DiscoveryVerificationAdmissionGateTest {
+    @Test fun `unavailable Apollo cannot admit using partial search evidence during gate replay`() {
+        val f = AdmissionGateFixture()
+        val candidate = ApolloCandidate("person", "Ada", "Lee", null, "Ada Lee", "Professor",
+            VerificationInstitution("Example University"))
+        val query = ApolloSearchQuery("Ada Lee")
+        val page = ApolloSearchPage(listOf(candidate), 1, 1)
+        val search = ApolloSearchEvidence(candidates = listOf(candidate), matchingVersion = 2, freeSearchOnly = true,
+            firstPages = listOf(ApolloQueryResult(query, page)))
+        val original = f.item(facts = emptyList())
+        val snapshot = DiscoveryVerificationAdmissionGate.snapshot(f.docId, f.profile, f.config)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.rules.evaluate(snapshot, emptyList(), search, ruleVersion = 4).outcome)
+        val reason = "APOLLO_API_INACCESSIBLE"
+        val payload = VerificationAdmissionEvidence(emptyList(), search, ruleVersion = 4, apolloAccessFailure = reason)
+        f.load(original.copy(evidenceJson = f.mapper.writeValueAsString(payload)))
+        assertTrue(f.policy.evaluate(f.docId, f.profile).blockingReasons.any { it.code == reason })
+    }
     @Test fun `qualification approval cannot bypass location exclusions`() {
         val f = AdmissionGateFixture()
         for (country in listOf("CN", "IN")) {

@@ -30,7 +30,9 @@ data class VerificationWorkerEvidence(
     val institutionNormalization: InstitutionNormalization? = null,
     val ruleVersion: Int = 0,
     val diagnostics: WorkerDiagnostics? = null,
-    val executionContext: VerificationExecutionContext? = null
+    val executionContext: VerificationExecutionContext? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val apolloAccessFailure: String? = null
 ) { init { require(schemaVersion == 1) } }
 
 /** One additive payload member. Missing context deliberately retains historical clock semantics. */
@@ -65,6 +67,8 @@ class DiscoveryVerificationWorker(
     private val closed = AtomicBoolean()
     private val activeLanes = AtomicInteger()
     private val authBlocked = AtomicBoolean()
+    private val searchInaccessible = AtomicBoolean()
+    private val detailInaccessible = AtomicBoolean()
     private val heartbeat = Executors.newScheduledThreadPool(properties.concurrency) { runnable ->
         Thread(runnable, "discovery-verification-lease").apply { isDaemon = true }
     }
@@ -78,17 +82,25 @@ class DiscoveryVerificationWorker(
         }
     }
 
-    /** Process-local current latch; observing it never resumes or claims work. */
-    fun isAuthBlocked(): Boolean = authBlocked.get()
+    /** A restart permits a new probe after the key or plan has changed. */
+    fun apolloSearchBlockReason(): String? = apolloBlockReason(VerificationQueryKind.BROAD)
+
+    private fun apolloBlockReason(kind: VerificationQueryKind): String? = when {
+        properties.apolloApiKey.isBlank() -> "APOLLO_API_KEY_MISSING"
+        authBlocked.get() -> "APOLLO_AUTH_DENIED"
+        (if (kind == VerificationQueryKind.DETAIL) detailInaccessible else searchInaccessible).get() ->
+            "APOLLO_API_INACCESSIBLE"
+        else -> null
+    }
 
     @Scheduled(fixedDelayString = "\${talent-introduction.discovery-verification.poll-ms:5000}")
     fun tick() {
-        if (!properties.workerEnabled || authBlocked.get() || closed.get() || !running.compareAndSet(false, true)) return
+        if (!properties.workerEnabled || closed.get() || !running.compareAndSet(false, true)) return
         try {
             recovery.getIfAvailable()?.recoverReserved(10)
             repository.listProjectionDue(10).forEach { commits.project(it) }
             repeat(properties.concurrency) {
-                if (closed.get() || !properties.workerEnabled || authBlocked.get()) return
+                if (closed.get() || !properties.workerEnabled) return
                 if (activeLanes.incrementAndGet() > properties.concurrency) {
                     activeLanes.decrementAndGet()
                     return
@@ -97,7 +109,7 @@ class DiscoveryVerificationWorker(
                     lanes.execute {
                         try {
                             repeat(10) {
-                                if (closed.get() || !properties.workerEnabled || authBlocked.get() || Thread.currentThread().isInterrupted) return@execute
+                                if (closed.get() || !properties.workerEnabled || Thread.currentThread().isInterrupted) return@execute
                                 val lease = repository.claimDue(clock.instant(), properties.leaseSeconds) ?: return@execute
                                 try { process(lease) }
                                 catch (_: InterruptedException) {
@@ -198,11 +210,11 @@ class DiscoveryVerificationWorker(
                         route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_CONFLICT"), matchedPersonId = null)
                     ContextIssue.NONE -> return rules.evaluate(snapshot, payload.evidence, payload.search,
                         institutionNormalization = normalization, ruleVersion = payload.ruleVersion,
-                        evaluatedAt = payload.executionContext?.evaluationAt)
+                        evaluatedAt = payload.executionContext?.evaluationAt, apolloAccessFailure = payload.apolloAccessFailure)
                 }
             }
             return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion,
-                evaluatedAt = payload.executionContext?.evaluationAt)
+                evaluatedAt = payload.executionContext?.evaluationAt, apolloAccessFailure = payload.apolloAccessFailure)
         }
         val parentOwned = repository.isPaperReprocessOwned(lease.ownerExecutionId)
         fun ensureOwned() {
@@ -211,7 +223,7 @@ class DiscoveryVerificationWorker(
         }
         fun ensureDispatchAllowed() {
             ensureOwned()
-            if (closed.get() || authBlocked.get() || Thread.currentThread().isInterrupted)
+            if (closed.get() || Thread.currentThread().isInterrupted)
                 throw java.util.concurrent.CancellationException("Verification dispatch stopped")
         }
         fun save() {
@@ -296,8 +308,13 @@ class DiscoveryVerificationWorker(
                 countryRefresh?.refresh(committed, payload)
             }
         }
+        fun reserveApollo(snapshot: VerificationSnapshot, kind: VerificationQueryKind, page: Int, request: String): RequestPermit? {
+            val reason = apolloBlockReason(kind) ?: return reserve(VerificationProvider.APOLLO, kind, page, request)
+            payload = payload.copy(apolloAccessFailure = reason)
+            finish(evaluate(snapshot))
+            return null
+        }
         fun fail(code: String, transientAttempts: Int = lease.transientAttempts) {
-            if (code == "CONFIG_AUTH") authBlocked.set(true)
             val blocker = activeStepNo
             if (!activeSteps.containsKey(blocker)) startStep(blocker)
             endStep(blocker, VerificationStepState.ERROR, codes = listOf(code), blocking = true)
@@ -345,6 +362,23 @@ class DiscoveryVerificationWorker(
                 } else fail(result.code)
                 else -> error("Unexpected retry result")
             }
+        }
+        fun apolloFailure(snapshot: VerificationSnapshot, kind: VerificationQueryKind, permit: RequestPermit,
+            result: VerificationHttpResult<Nothing>) {
+            val reason = when ((result as? VerificationHttpResult.PermanentFailure)?.code) {
+                "CONFIG_AUTH" -> {
+                    authBlocked.set(true)
+                    "APOLLO_AUTH_DENIED"
+                }
+                "APOLLO_API_INACCESSIBLE" -> {
+                    (if (kind == VerificationQueryKind.DETAIL) detailInaccessible else searchInaccessible).set(true)
+                    "APOLLO_API_INACCESSIBLE"
+                }
+                else -> null
+            }
+            if (reason != null) payload = payload.copy(apolloAccessFailure = reason)
+            completed(permit, result)
+            if (reason != null) finish(evaluate(snapshot)) else retry(result)
         }
         try {
             rawPayload = lease.evidenceJson
@@ -416,9 +450,13 @@ class DiscoveryVerificationWorker(
                 require(cached.evidence.all { it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint }) {
                     "STALE_INPUT"
                 }
-                if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REUSE) payload = payload.copy(
-                    evidence = cached.evidence, search = cached.search, orcidCompleted = cached.orcidCompleted,
-                    institutionNormalization = cached.institutionNormalization)
+                if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REUSE) {
+                    val baselineId = reviewNode?.path("baselineItemId")?.takeIf { it.isIntegralNumber }?.asLong()
+                    val block = cached.apolloAccessFailure ?: baselineId?.takeIf { cached.progress.stage == "APOLLO_SEARCH" }
+                        ?.let { legacyApolloAccessFailure(it, lease) }
+                    payload = payload.copy(evidence = cached.evidence, search = cached.search, orcidCompleted = cached.orcidCompleted,
+                        institutionNormalization = cached.institutionNormalization, apolloAccessFailure = block)
+                }
             }
             if (payload.executionContext == null && lease.evidenceJson == null) {
                 val ordinary = root.get("executionContext")?.let { mapper.treeToValue(it, VerificationExecutionContext::class.java) }
@@ -504,6 +542,12 @@ class DiscoveryVerificationWorker(
             if (!snapshot.identityValid) {
                 for (number in 4..6) skipStep(number, "IDENTITY_EVIDENCE_MISSING")
                 finish(evaluate(snapshot)); return
+            }
+            if (payload.progress.stage == "APOLLO_SEARCH" && payload.apolloAccessFailure != null) {
+                // The rejection and its cursor were committed before a previous lease ended.
+                startStep(6)
+                finish(evaluate(snapshot))
+                return
             }
             if (payload.progress.stage != "LOCAL_EVIDENCE") {
                 // These stages predate this observation; do not invent elapsed time for their historical work.
@@ -649,7 +693,7 @@ class DiscoveryVerificationWorker(
                         save()
                         continue
                     }
-                    val permit = reserve(VerificationProvider.APOLLO, queryKind(index), query.page, mapper.writeValueAsString(query))
+                    val permit = reserveApollo(snapshot, queryKind(index), query.page, mapper.writeValueAsString(query)) ?: return
                     ensureDispatchAllowed()
                     val result = apollo.search(query, permit)
                     if (result !is VerificationHttpResult.Success) {
@@ -660,7 +704,8 @@ class DiscoveryVerificationWorker(
                             else -> error("Unexpected search result")
                         }
                         trace(index, "ERROR", reason, permit.attemptId)
-                        completed(permit, result); retry(result as VerificationHttpResult<Nothing>); return
+                        apolloFailure(snapshot, queryKind(index), permit, result as VerificationHttpResult<Nothing>)
+                        return
                     }
                     val page = result.value
                     val truncated = page.hasNext && query.page >= properties.maxPagesPerQuery
@@ -761,8 +806,8 @@ class DiscoveryVerificationWorker(
                             save()
                             continue
                         }
-                        val permit = reserve(VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1,
-                            mapper.writeValueAsString(mapOf("personId" to candidate.id, "matchingVersion" to 2)))
+                        val permit = reserveApollo(snapshot, VerificationQueryKind.DETAIL, 1,
+                            mapper.writeValueAsString(mapOf("personId" to candidate.id, "matchingVersion" to 2))) ?: return
                         ensureDispatchAllowed()
                         val result = apollo.detail(candidate.id, permit)
                         if (result is VerificationHttpResult.Success) {
@@ -774,8 +819,8 @@ class DiscoveryVerificationWorker(
                                 detailsCompleted = payload.search!!.detailsCompleted + candidate.id))
                             completed(permit, result)
                         } else {
-                            completed(permit, result)
-                            retry(result as VerificationHttpResult<Nothing>); return
+                            apolloFailure(snapshot, VerificationQueryKind.DETAIL, permit, result as VerificationHttpResult<Nothing>)
+                            return
                         }
                     }
                     // Academic enrichment runs independently. Freeze the fields already available at decision
@@ -846,6 +891,18 @@ class DiscoveryVerificationWorker(
                 fail(if (error.message == "STALE_INPUT") "STALE_INPUT" else "VERIFICATION_FAILED")
             }
         } finally { renewal.cancel(false) }
+    }
+
+    /** Older workers persisted CONFIG_AUTH for both providers. Only a matching Apollo attempt blocks search evidence reuse. */
+    private fun legacyApolloAccessFailure(baselineId: Long, lease: VerificationItem): String? {
+        val baseline = repository.findItem(baselineId) ?: return null
+        if (baseline.state != VerificationState.ERROR || baseline.expertDocId != lease.expertDocId ||
+            baseline.identityHash != lease.identityHash || baseline.factFingerprint != lease.factFingerprint ||
+            mapper.readTree(baseline.reasonsJson ?: "[]").none { it.asText() == "CONFIG_AUTH" }) return null
+        val attempt = repository.findAttempts(baseline.id).lastOrNull() ?: return null
+        if (attempt.provider != VerificationProvider.APOLLO || attempt.resultCode != "CONFIG_AUTH") return null
+        return if (attempt.httpStatus == 403 && VerificationDiagnostics.read(attempt.responseJson)?.providerCode == "API_INACCESSIBLE")
+            "APOLLO_API_INACCESSIBLE" else "APOLLO_AUTH_DENIED"
     }
 
     internal fun searchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,

@@ -498,11 +498,11 @@ class ExpertMailReadAccessIT {
     }
 
     @Test
-    fun `fresh database applies the complete prefix through V174`() {
+    fun `fresh database applies the complete prefix through V178`() {
         val flyway = Flyway.configure().dataSource(dataSource).placeholderReplacement(false)
             .cleanDisabled(false).load()
         flyway.clean()
-        assertEquals("177", flyway.migrate().targetSchemaVersion)
+        assertEquals("178", flyway.migrate().targetSchemaVersion)
         assertEquals(0L, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM expert_mail_read_access", Long::class.java))
     }
 

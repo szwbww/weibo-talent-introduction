@@ -200,12 +200,13 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh empty database reaches V177 and creates the reprocess tables without seeded rows`() {
+    fun `fresh empty database reaches V178 and creates the reprocess tables without seeded rows`() {
         val flyway = flyway()
         flyway.clean()
         val result = flyway.migrate()
-        assertEquals("177", result.targetSchemaVersion)
+        assertEquals("178", result.targetSchemaVersion)
         connection().use { c ->
+            assertTrue(c.tableExists("discovery_registration_conflict"))
             assertTrue(c.tableExists("expert_material_file"))
             assertTrue(c.tableExists("expert_template_override"))
             assertTrue(c.tableExists("delayed_manual_reply"))

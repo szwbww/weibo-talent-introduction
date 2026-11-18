@@ -5189,6 +5189,50 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `OpenAlex advances after a retained conflict and still writes the other author`() {
+        val source = mockOpenAlex()
+        val criteria = PaperSearchCriteria(sources = listOf("OPENALEX"), cursor = "ENTRY")
+        installInMemoryCursorStore()
+        val requested = mutableListOf<String?>()
+        Mockito.doAnswer { call ->
+            val cursor = call.getArgument<PaperSearchCriteria>(0).cursor
+            requested += cursor
+            when (cursor) {
+                "ENTRY" -> PaperSearchResult(listOf(paper("OA-1", "OpenAlex paper").copy(source = "OPENALEX")), "NEXT", 2)
+                "NEXT" -> PaperSearchResult(emptyList(), null, 2)
+                else -> error("unexpected cursor $cursor")
+            }
+        }.`when`(source).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: criteria)
+        val authors = listOf(
+            verifiedAuthorEmail("conflict@ox.ac.uk", "First", "Author", true, "Oxford", null),
+            verifiedAuthorEmail("other@ox.ac.uk", "Other", "Author", false, "Oxford", null))
+        DiscoveryMockHelper.stubExtractAuthorEmails(source, authors)
+        authors.forEach { DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(2, true)) }
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        val registrar = Mockito.mock(DiscoveryVerificationRegistrationService::class.java)
+        Mockito.doReturn(DiscoveryVerificationExecution(42L)).`when`(registrar)
+            .begin(Mockito.anyLong(), Mockito.any(PaperSearchCriteria::class.java) ?: criteria, Mockito.anyBoolean())
+        Mockito.doAnswer { call ->
+            if (call.getArgument<ExpertProfile>(2).email == authors.first().email)
+                DiscoveryRegistration(protected = true, conflictReason = "RESERVED_FACTS_CONFLICT")
+            else DiscoveryRegistration()
+        }.`when`(registrar).reserve(Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L),
+            Mockito.anyString(), anyProfile(), Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        val written = mutableListOf<Any?>()
+        Mockito.doAnswer { call ->
+            written += call.getArgument<Map<String, Any?>>(1)["email"]
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        val result = createService(timeSource = FakeTime(), verificationRegistration = registrar)
+            .discover(criteria, "TEST", 42L, false)
+        assertEquals(listOf("ENTRY", "NEXT"), requested)
+        assertEquals(listOf(authors.last().email), written)
+        assertEquals(1, result.stats.bySource.getValue("OPENALEX").failureReasons["RESERVED_FACTS_CONFLICT"])
+        assertTrue(storedCheckpointFor("OPENALEX", criteria).exhausted)
+    }
+
+    @Test
     fun `activation recovery does not repeat RAW lookup write or successful enqueue`() {
         val author = verifiedAuthorEmail("retry@ox.ac.uk", "Retry", "Author", true, "Oxford", null)
         val registration = Mockito.mock(DiscoveryVerificationRegistrationService::class.java)

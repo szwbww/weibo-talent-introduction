@@ -92,6 +92,7 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
     var detailStatus = 200
     var detailBody = """{"person":{"id":"person-1","first_name":"Ada","last_name":"Lee","name":"Ada Lee","title":"Professor of Physics","organization":{"name":"Example University"}}}"""
     var apolloStatus = 200
+    var apolloErrorBody = ""
     var apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","organization":{"name":"Example University"}}],"total_entries":1}"""
     var orcidFailEndpoint: String? = null
     val orcidBodies = mutableMapOf<String, String>()
@@ -130,7 +131,7 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
                 apolloRequests += request.uri.toString()
                 onApollo?.invoke()
                 if (apolloStatus == 200) withSuccess(apolloBody, MediaType.APPLICATION_JSON).createResponse(request)
-                else withStatus(HttpStatus.valueOf(apolloStatus)).headers(org.springframework.http.HttpHeaders().apply { set("Retry-After", "60") }).createResponse(request)
+                else withStatus(HttpStatus.valueOf(apolloStatus)).body(apolloErrorBody).headers(org.springframework.http.HttpHeaders().apply { set("Retry-After", "60") }).createResponse(request)
             } else {
                 val endpoint = request.uri.path.substringAfter("0000-0002-1825-0097/")
                 orcidRequests += endpoint
@@ -218,7 +219,7 @@ class DiscoveryVerificationFlowIT {
             check(DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required; skipping is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("173").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
@@ -687,6 +688,10 @@ class DiscoveryVerificationFlowIT {
                         assertTrue(f.candidates.isEmpty())
                         assertTrue(done.reasonsJson!!.contains("EVIDENCE_INCOMPLETE"))
                         assertTrue(done.reasonsJson!!.contains("ITEM_REQUEST_LIMIT"))
+                    } else if (scenario == "403") {
+                        assertEquals(VerificationState.COMPLETED, done.state)
+                        assertEquals(VerificationOutcome.PENDING, done.outcome)
+                        assertTrue(done.reasonsJson!!.contains("APOLLO_AUTH_DENIED"))
                     } else if (scenario == "pages") {
                         assertEquals(VerificationOutcome.PENDING, done.outcome)
                         assertTrue(done.reasonsJson!!.contains("SEARCH_INCOMPLETE"))

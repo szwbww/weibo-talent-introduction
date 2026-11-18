@@ -44,7 +44,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
         institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0,
-        evaluatedAt: Instant? = null): VerificationDecision {
+        evaluatedAt: Instant? = null, apolloAccessFailure: String? = null): VerificationDecision {
         require(ruleVersion in 0..4)
         fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
         val evaluationTime = evaluatedAt ?: clock.instant()
@@ -118,6 +118,12 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             if (doctorates.isEmpty()) missing += "completedDoctorate"
             if (age == null) missing += "reliableAge"
             if (age != null && age >= 40) missing += "currentAssociateProfessor"
+        }
+        if (apolloAccessFailure != null) {
+            require(apolloAccessFailure in setOf("APOLLO_API_INACCESSIBLE", "APOLLO_AUTH_DENIED", "APOLLO_API_KEY_MISSING"))
+            if (qualification == VerificationQualification.MET)
+                return decision(qualification, listOf("QUALIFICATION_MET"), route = VerificationRoute.DIRECT, outcome = VerificationOutcome.DIRECT_CLEAR)
+            return decision(qualification, listOf(apolloAccessFailure), missing)
         }
         if (ruleVersion >= 4 && search?.freeSearchOnly == true) {
             val result = FreeApolloVerification.evaluate(snapshot, evidence, search, this,

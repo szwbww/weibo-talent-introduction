@@ -2127,7 +2127,10 @@ class ExpertDiscoveryService(
                 deferAuthor()
                 continue
             }
-            if (registration.protected) continue
+            if (registration.protected) {
+                registration.conflictReason?.let { sourceStats.failureReasons.merge(it, 1, Int::plus) }
+                continue
+            }
             verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RESERVED")
             // I-2: eligibility, RAW and admission all consume the profile frozen by registration.
             val finalProfile = registration.preparedProfile ?: identity.profile

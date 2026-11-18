@@ -33,7 +33,7 @@ class DiscoveryVerificationQueryService(
         val reasons = mutableListOf<String>()
         if (!properties.enabled) reasons += "VERIFICATION_DISABLED"
         if (properties.apolloApiKey.isBlank()) reasons += "APOLLO_API_KEY_MISSING"
-        if (worker?.getIfAvailable()?.isAuthBlocked() == true) reasons += "CONFIG_AUTH"
+        worker?.getIfAvailable()?.apolloSearchBlockReason()?.let { if (it !in reasons) reasons += it }
         return VerificationCapabilities(properties.enabled, properties.workerEnabled, properties.mode,
             reasons.isEmpty(), properties.apolloDefault, reasons, properties.countrySupplementEnabled)
     }
@@ -317,7 +317,8 @@ class DiscoveryVerificationQueryService(
         // A damaged per-item normalization must not fail the whole list: keep the saved state and flag the field.
         val missing = if (payload == null) listOf("institutionSubject") else try {
             rules.evaluate(snapshot, payload.evidence, payload.search,
-                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion).missingFields
+                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion,
+                evaluatedAt = payload.executionContext?.evaluationAt, apolloAccessFailure = payload.apolloAccessFailure).missingFields
         } catch (_: IllegalArgumentException) {
             listOf("institutionSubject")
         }
@@ -378,6 +379,8 @@ class DiscoveryVerificationQueryService(
             "SEARCH_PAGE_LIMIT" to "查询未完成：达到单次查询页数上限",
             "ITEM_REQUEST_LIMIT" to "核验未完成：达到单档案请求上限",
             "EVIDENCE_INCOMPLETE" to "证据尚未完整", "CONFIG_AUTH" to "接口认证配置错误",
+            "APOLLO_AUTH_DENIED" to "Apollo 拒绝当前凭证", "APOLLO_API_INACCESSIBLE" to "当前 Apollo 套餐无权访问此接口",
+            "APOLLO_API_KEY_MISSING" to "未配置 Apollo API 密钥",
             "REQUEST_INVALID" to "接口请求无效", "RESPONSE_INVALID" to "接口响应无效",
             "APOLLO_CREDITS_EXHAUSTED" to "额度不足，等待恢复", "CREDITS_WAIT" to "额度不足，等待恢复",
             "PAID_DETAILS_DISABLED" to "付费详情未启用，证据仍不完整",

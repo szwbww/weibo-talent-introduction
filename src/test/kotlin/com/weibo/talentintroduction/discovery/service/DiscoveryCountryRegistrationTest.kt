@@ -330,6 +330,62 @@ class DiscoveryCountryRegistrationTest {
         }
     }
 
+    @Test fun `same OpenAlex paper retains conflicting author evidence without reopening or exposing values`() {
+        val original = openAlexProfile("Original University")
+        val old = oldReservation(original, "OPENALEX", "W1").copy(state = VerificationState.ERROR,
+            reasonsJson = "[\"REGISTRATION_RAW_MISSING\"]", completedAt = now)
+        Mockito.`when`(repository.findItemsByDocIds(listOf("EMAIL-doc"))).thenReturn(listOf(old))
+        val incoming = original.copy(institution = "Changed University",
+            identityVerification = original.identityVerification!!.copy(evidenceHash = "b".repeat(64)))
+        val result = service().reserve(context(), "EMAIL-doc", incoming, "OPENALEX", "W1")
+        assertTrue(result.protected)
+        assertEquals("RESERVED_FACTS_CONFLICT", result.conflictReason)
+        assertNull(result.item)
+        assertNull(result.preparedProfile)
+        val receipt = org.mockito.ArgumentCaptor.forClass(String::class.java)
+        Mockito.verify(repository).recordRegistrationConflict(Mockito.eq(old.id), Mockito.eq(7L),
+            Mockito.eq("RESERVED_FACTS_CONFLICT") ?: "", receipt.capture() ?: "", anyValue(now))
+        val expected = mapper.writeValueAsString(mapOf("differingFields" to listOf("identityVerification", "institution"),
+            "frozenIdentityEvidence" to "SOURCE_SHA256:" + "a".repeat(64),
+            "incomingIdentityEvidence" to "SOURCE_SHA256:" + "b".repeat(64)))
+        assertEquals(mapper.readTree(expected), mapper.readTree(receipt.value))
+        Mockito.verify(repository, Mockito.never()).reopenMissingRawReservation(Mockito.anyLong(), anyValue(""), anyValue(now))
+        Mockito.verify(admissions).findAdmission("EMAIL-doc")
+        Mockito.verifyNoMoreInteractions(admissions)
+    }
+
+    @Test fun `same OpenAlex paper with contradictory bound author identifiers stays a hard registration failure`() {
+        val original = openAlexProfile("Original University")
+        val old = oldReservation(original, "OPENALEX", "W1")
+        Mockito.`when`(repository.findItemsByDocIds(listOf("EMAIL-doc"))).thenReturn(listOf(old))
+        for ((field, value) in listOf("orcid" to "0000-0001-0000-0001", "openAlexAuthorId" to "A999")) {
+            val ids = mapper.readTree(original.externalIds) as com.fasterxml.jackson.databind.node.ObjectNode
+            ids.put(field, value)
+            val proof = original.identityVerification!!
+            val incoming = original.copy(externalIds = ids.toString(), identityVerification =
+                if (field == "orcid") proof.copy(orcid = value) else proof.copy(openAlexAuthorId = value))
+            val failure = assertThrows(DiscoveryRegistrationException::class.java) {
+                service().reserve(context(), "EMAIL-doc", incoming, "OPENALEX", "W1")
+            }
+            assertEquals("Reserved author identifier differs", failure.cause?.message)
+        }
+        Mockito.verify(repository, Mockito.never()).recordRegistrationConflict(Mockito.anyLong(), Mockito.anyLong(),
+            anyValue(""), anyValue(""), anyValue(now))
+        Mockito.verify(repository, Mockito.never()).reopenMissingRawReservation(Mockito.anyLong(), anyValue(""), anyValue(now))
+    }
+
+    @Test fun `conflict receipt write failure is a retryable registration failure`() {
+        val old = oldReservation(openAlexProfile("Original University"), "OPENALEX", "W1")
+        Mockito.`when`(repository.findItemsByDocIds(listOf("EMAIL-doc"))).thenReturn(listOf(old))
+        Mockito.doThrow(org.springframework.dao.DataAccessResourceFailureException("unavailable"))
+            .`when`(repository).recordRegistrationConflict(Mockito.anyLong(), Mockito.anyLong(), anyValue(""),
+                anyValue(""), anyValue(now))
+        val error = assertThrows(DiscoveryRegistrationException::class.java) {
+            service().reserve(context(), "EMAIL-doc", openAlexProfile("Changed University"), "OPENALEX", "W1")
+        }
+        assertTrue(error.cause is org.springframework.dao.DataAccessResourceFailureException)
+    }
+
     @Test fun `cross-paper reservation rejects conflicting bound author identifiers`() {
         val old = oldReservation()
         Mockito.`when`(repository.findItemsByDocIds(anyValue(listOf("EMAIL-doc")))).thenReturn(listOf(old))

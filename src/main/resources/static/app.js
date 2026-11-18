@@ -27980,7 +27980,11 @@ function apvCanLaunch() {
     if (!settings?.saved || settings.status !== "ready") {
         showStatus("Apollo 配置未读取成功，请恢复已保存值后重试", "error"); return false;
     }
-    if (s.capabilityStatus !== "ready" || (settings.saved.searchEnabled && (!s.capability?.enabled || !s.capability?.ready))) {
+    const reasons = s.capability?.reasonCodes;
+    const onlyApolloDenied = Array.isArray(reasons) && reasons.length > 0 &&
+        reasons.every(reason => reason === "APOLLO_API_INACCESSIBLE" || reason === "APOLLO_AUTH_DENIED");
+    if (s.capabilityStatus !== "ready" || (settings.saved.searchEnabled &&
+        (!s.capability?.enabled || (!s.capability?.ready && !onlyApolloDenied)))) {
         showStatus("资格核验能力未就绪，请重新打开弹窗检查配置", "error"); return false;
     }
     return true;

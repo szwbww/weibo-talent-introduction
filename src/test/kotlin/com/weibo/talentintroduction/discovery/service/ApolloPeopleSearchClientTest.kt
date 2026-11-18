@@ -60,6 +60,15 @@ class ApolloPeopleSearchClientTest {
         assertTrue(client.search(ApolloSearchQuery("Ada Lee"), permit()) is VerificationHttpResult.TransientFailure)
         server.verify()
     }
+    @Test fun `free plan API denial remains distinct from invalid credentials and ORCID failures`() {
+        val body = """{"error":"This endpoint is not accessible for you with a free plan","error_code":"API_INACCESSIBLE"}"""
+        server.expect(anything()).andRespond(withStatus(HttpStatus.FORBIDDEN).body(body))
+        val failed = client.search(ApolloSearchQuery("Ada Lee"), permit()) as VerificationHttpResult.PermanentFailure
+        assertEquals("APOLLO_API_INACCESSIBLE", failed.code)
+        assertEquals("API_INACCESSIBLE", failed.diagnostic!!.providerCode)
+        assertEquals("CONFIG_AUTH", VerificationDiagnostics.classify(VerificationProvider.ORCID, 403, body.toByteArray()))
+        server.verify()
+    }
     @Test fun `rate limits parse seconds dates and fallback without transient retries`() {
         listOf("120" to 120L, "Sun, 18 Oct 2026 00:03:00 GMT" to 180L, "invalid" to 60L).forEach { (header, seconds) ->
             server.expect(anything()).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).headers(org.springframework.http.HttpHeaders().apply { set("Retry-After", header) }))

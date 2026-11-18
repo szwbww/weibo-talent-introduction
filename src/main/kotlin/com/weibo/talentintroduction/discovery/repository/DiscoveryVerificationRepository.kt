@@ -965,6 +965,14 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return item
     }
 
+    /** The immutable reservation identifies the exact person and paper. Identical evidence in a retried execution keeps its first receipt. */
+    fun recordRegistrationConflict(itemId: Long, executionId: Long, reason: String, evidenceJson: String, now: Instant) {
+        jdbc.update("""INSERT INTO discovery_registration_conflict
+            (item_id, reason, observed_execution_id, evidence_sha256, evidence_json, observed_at)
+            VALUES (?,?,?,UNHEX(SHA2(?,256)),?,?) ON DUPLICATE KEY UPDATE item_id=VALUES(item_id)""",
+            itemId, reason, executionId, evidenceJson, evidenceJson, now.verificationUtc())
+    }
+
     @Transactional
     fun activateItem(itemId: Long, batchNumber: Int, now: Instant): VerificationItem {
         require(batchNumber > 0)

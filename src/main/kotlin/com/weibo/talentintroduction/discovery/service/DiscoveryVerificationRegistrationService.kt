@@ -27,7 +27,7 @@ data class DiscoveryVerificationExecution(val executionId: Long?, val run: Verif
 }
 
 data class DiscoveryRegistration(val item: VerificationItem? = null, val protected: Boolean = false,
-    val preparedProfile: ExpertProfile? = null)
+    val preparedProfile: ExpertProfile? = null, val conflictReason: String? = null)
 class DiscoveryRegistrationException(cause: Exception) : IllegalStateException("VERIFICATION_REGISTRATION_FAILED", cause)
 
 /** Existing runs alone may interpret a missing member through the historical paid-enabled contract. */
@@ -237,7 +237,7 @@ class DiscoveryVerificationRegistrationService(
             require(existing.size <= 1) { "Multiple reservations for the same identity and policy" }
             existing.firstOrNull()?.let {
                 if (context.archivedPaper?.parent != null) require(it.ownerExecutionId == run.executionId) { "FOREIGN_REGISTRATION" }
-                return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config, context.archivedPaper?.parent != null)
+                return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config, context)
             }
 
             var finalProfile = rawProfile
@@ -273,7 +273,7 @@ class DiscoveryVerificationRegistrationService(
             if (archived?.parent != null) require(item.ownerExecutionId == archived.parent.executionId) { "FOREIGN_REGISTRATION" }
             // reserveItem may return a concurrent reservation, including a previously failed RAW write.
             return resumeExisting(item, rawProfile, sourceName, sourceItemKey, config,
-                archived?.parent != null, verifyFingerprint = true)
+                context, verifyFingerprint = true)
         } catch (e: InterruptedException) {
             // I-5: cancellation must stop discovery, never become a retryable registration failure.
             Thread.currentThread().interrupt()
@@ -304,9 +304,10 @@ class DiscoveryVerificationRegistrationService(
     /** Ordinary identity reservations span papers. Their original frozen evidence remains authoritative. */
     private fun resumeExisting(item: VerificationItem, rawProfile: ExpertProfile, sourceName: String,
                                sourceItemKey: String, config: AdmissionConfigSnapshot,
-                               paperReprocess: Boolean = false,
+                               context: DiscoveryVerificationExecution,
                                verifyFingerprint: Boolean = false): DiscoveryRegistration {
         require(item.reviewEpoch == 0L) { "Ordinary reservation cannot reuse a recheck item" }
+        val paperReprocess = context.archivedPaper?.parent != null
         val sameSource = item.sourceName == sourceName && item.sourceItemKey == sourceItemKey
         // Explicit paper reprocessing can resume only its own exact source, never another parent's work.
         if (paperReprocess) require(sameSource) { "Reserved source differs" }
@@ -316,7 +317,8 @@ class DiscoveryVerificationRegistrationService(
             DiscoveryReviewIdentity.hash(item.expertDocId, frozen.email, frozen.givenNames, frozen.familyNames) == item.identityHash) {
             "Reserved identity differs"
         }
-        if (!sameSource) {
+        val ordinaryOpenAlex = sourceName == "OPENALEX" && context.archivedPaper == null
+        if (!sameSource || ordinaryOpenAlex) {
             // Same name/email does not authorize merging contradictory bound author identifiers.
             val originalIds = frozen.externalIds?.let { mapper.readTree(it) }
             val incomingIds = rawProfile.externalIds?.let { mapper.readTree(it) }
@@ -332,7 +334,9 @@ class DiscoveryVerificationRegistrationService(
             }
         }
         val registration = freeze(item, if (sameSource) rawProfile else frozen, item.sourceName,
-            item.sourceItemKey, config, verifyFingerprint = verifyFingerprint && sameSource)
+            item.sourceItemKey, config, verifyFingerprint = verifyFingerprint && sameSource,
+            conflictExecutionId = context.executionId.takeIf { sameSource && ordinaryOpenAlex })
+        if (registration.conflictReason != null) return registration
         // The owner may have closed a failed RAW write before this later discovery found the identity again.
         // Reopen only this unactivated failure; keep owner, source, snapshot and qualification history intact.
         if (!paperReprocess && missingRawFailure(item)) {
@@ -348,19 +352,33 @@ class DiscoveryVerificationRegistrationService(
      */
     private fun freeze(item: VerificationItem, rawProfile: ExpertProfile, sourceName: String,
                        sourceItemKey: String, config: AdmissionConfigSnapshot,
-                       verifyFingerprint: Boolean = true): DiscoveryRegistration {
+                       verifyFingerprint: Boolean, conflictExecutionId: Long?): DiscoveryRegistration {
         require(item.sourceName == sourceName && item.sourceItemKey == sourceItemKey) { "Reserved source differs" }
         val root = mapper.readTree(item.snapshotJson)
         require(root.path("identityHash").asText() == item.identityHash &&
             root.path("factFingerprint").asText() == item.factFingerprint) { "Reserved snapshot is inconsistent" }
         val frozen = frozenProfile(item)
-        require(factsWithoutCountry(frozen) == factsWithoutCountry(rawProfile)) { "Reserved facts differ from the current input" }
         validateReceipt(item.snapshotJson, frozen)
         if (verifyFingerprint) {
             val recomputed = DiscoveryVerificationAdmissionGate.snapshot(item.expertDocId, frozen, config)
             require(recomputed.identityHash == item.identityHash && recomputed.factFingerprint == item.factFingerprint) {
                 "Frozen profile does not match the reserved fingerprint"
             }
+        }
+        val original = factsWithoutCountry(frozen)
+        val incoming = factsWithoutCountry(rawProfile)
+        if (original != incoming) {
+            require(conflictExecutionId != null) { "Reserved facts differ from the current input" }
+            val before = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(original)
+            val after = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(incoming)
+            val fields = (before.fieldNames().asSequence() + after.fieldNames().asSequence()).distinct()
+                .filter { it != "displayName" && before[it] != after[it] }.sorted().toList()
+            check(fields.isNotEmpty()) { "Unclassified reserved facts difference" }
+            val evidence = mapper.writeValueAsString(mapOf("differingFields" to fields,
+                "frozenIdentityEvidence" to identityEvidence(frozen), "incomingIdentityEvidence" to identityEvidence(rawProfile)))
+            val reason = "RESERVED_FACTS_CONFLICT"
+            repository.recordRegistrationConflict(item.id, conflictExecutionId, reason, evidence, clock.instant())
+            return DiscoveryRegistration(protected = true, conflictReason = reason)
         }
         // A non-RESERVED item was already activated by another caller: never rewrite its RAW.
         return DiscoveryRegistration(item, protected = item.state != VerificationState.RESERVED, preparedProfile = frozen)
@@ -370,6 +388,10 @@ class DiscoveryVerificationRegistrationService(
         val root = mapper.readTree(item.snapshotJson)
         val profile = root.get("profile") ?: throw IllegalStateException("Reserved snapshot has no profile")
         return mapper.treeToValue(profile, ExpertProfile::class.java)
+    }
+
+    private fun identityEvidence(profile: ExpertProfile): String? = profile.identityVerification?.let {
+        "${it.source}:${it.evidenceHash}".takeIf(DiscoveryIdentity::validEvidence)
     }
 
     private fun factsWithoutCountry(profile: ExpertProfile) =

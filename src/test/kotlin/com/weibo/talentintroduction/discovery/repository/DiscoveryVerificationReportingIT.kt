@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=161"])
+@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=173"])
 @Import(DiscoveryVerificationRepository::class, DiscoveryReviewRepository::class, DiscoveryVerificationQueryService::class,
     DiscoveryVerificationReportingIT.Config::class)
 class DiscoveryVerificationReportingIT {
@@ -207,50 +207,52 @@ class DiscoveryVerificationReportingIT {
         server.verify()
     }
 
-    @Test fun `actual 401 and 403 worker failures reach HTTP capabilities without more claims or writes`() {
-        for (status in listOf(401, 403)) {
+    @Test fun `Apollo access refusal leaves dependent records pending and later ORCID professors still qualify`() {
+        for ((status, fault) in listOf(401 to "APOLLO_AUTH_DENIED", 403 to "APOLLO_API_INACCESSIBLE")) {
             VerificationFlowFixture(jdbc, org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.dataSource!!),
                 DiscoveryVerificationProperties(enabled = true, workerEnabled = true, apolloApiKey = "fixture-secret",
-                    requestsPerMinute = 1000)).use { flow ->
+                    requestsPerMinute = 1000, concurrency = 1)).use { flow ->
                 flow.apolloStatus = status
-                val item = flow.seed("APV-FIXTURE-AUTH-$status")
-                // Keep F123's queued records away from this worker's claim loop.
+                if (status == 403) flow.apolloErrorBody = """{"error_code":"API_INACCESSIBLE","error":"Unavailable on free plans"}"""
                 jdbc.update("UPDATE discovery_verification_item SET state='RETRY_WAIT',next_attempt_at='2099-01-01' WHERE owner_execution_id=3001 AND state='QUEUED'")
+                val first = flow.seed("APV-FIXTURE-AUTH-$status")
                 val worker = flow.worker()
                 val factory = org.springframework.beans.factory.support.DefaultListableBeanFactory()
                 factory.registerSingleton("worker", worker)
                 val reader = DiscoveryVerificationQueryService(repository, DiscoveryReviewRepository(jdbc), flow.props,
                     factory.getBeanProvider(DiscoveryVerificationWorker::class.java))
-                val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
-                    com.weibo.talentintroduction.discovery.controller.DiscoveryVerificationController(reader)).build()
                 assertTrue(reader.capabilities().ready)
-                worker.tick()
-                assertTrue(worker.isAuthBlocked())
-                assertEquals(VerificationState.ERROR, flow.item(item.id).state)
-                assertTrue(flow.item(item.id).reasonsJson!!.contains("CONFIG_AUTH"))
-                val attempts = repository.findAttempts(item.id)
-                assertEquals(status, attempts.last().httpStatus)
-                val requests = flow.apolloRequests.size
-                val before = databaseSnapshot()
-                Mockito.clearInvocations(jdbc)
-                repeat(20) {
-                    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
-                        "/api/expert-discovery/verification/capabilities"))
-                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
-                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.ready").value(false))
-                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.reasonCodes[0]").value("CONFIG_AUTH"))
-                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(
-                            org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("fixture-secret"))))
-                    worker.tick()
+                worker.tickAndAwait()
+                assertEquals(fault, worker.apolloSearchBlockReason())
+                assertEquals(listOf(fault), reader.capabilities().reasonCodes)
+                assertFalse(reader.capabilities().ready)
+                val second = flow.seed("APV-FIXTURE-BLOCKED-$status")
+                // Recover an expired lease under the same provider block.
+                assertEquals(second.id, flow.claim().id)
+                flow.clock.now = flow.clock.now.plusSeconds(121)
+                worker.tickAndAwait()
+                for (id in listOf(first.id, second.id)) {
+                    val row = flow.item(id)
+                    assertEquals(VerificationState.COMPLETED, row.state)
+                    assertEquals(VerificationOutcome.PENDING, row.outcome)
+                    assertEquals(VerificationRoute.NONE, row.route)
+                    assertTrue(row.reasonsJson!!.contains(fault))
+                    assertNull(row.admissionRevision)
+                    assertNull(row.apolloPersonId)
                 }
-                assertEquals(before, databaseSnapshot())
-                assertEquals(requests, flow.apolloRequests.size)
-                assertEquals(attempts, repository.findAttempts(item.id))
-                assertFalse(Mockito.mockingDetails(jdbc).invocations.any {
-                    it.method.name in setOf("update", "batchUpdate", "execute")
-                })
-                // A new process-local worker does not infer its latch from historical failures.
-                assertFalse(flow.worker().isAuthBlocked())
+                val failed = repository.findAttempts(first.id).single { it.provider == VerificationProvider.APOLLO }
+                assertEquals(status, failed.httpStatus)
+                assertEquals(if (status == 401) "CONFIG_AUTH" else fault, failed.resultCode)
+                assertTrue(repository.findAttempts(second.id).none { it.provider == VerificationProvider.APOLLO })
+                val professor = flow.seed("APV-FIXTURE-PROFESSOR-$status")
+                flow.jobRole = "Professor"
+                worker.tickAndAwait()
+                assertEquals(VerificationOutcome.DIRECT_CLEAR, flow.item(professor.id).outcome)
+                assertNotNull(flow.item(professor.id).admissionRevision)
+                assertEquals(1, flow.apolloRequests.size)
+                worker.tickAndAwait()
+                assertEquals(1, flow.apolloRequests.size)
+                assertNull(flow.worker().apolloSearchBlockReason())
             }
         }
     }

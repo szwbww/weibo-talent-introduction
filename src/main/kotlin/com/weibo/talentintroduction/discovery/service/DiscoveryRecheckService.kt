@@ -350,7 +350,6 @@ class DiscoveryRecheckService(
         if (repository.recheck(run).control.phase == RecheckPhase.READY) {
             if (!properties.enabled) conflict("VERIFICATION_DISABLED")
             if (!properties.workerEnabled || worker.getIfAvailable() == null) conflict("WORKER_DISABLED")
-            if (worker.getIfAvailable()?.isAuthBlocked() == true) conflict("CONFIG_AUTH")
             if (repository.recheck(run).spec.evidenceMode == RecheckEvidenceMode.REFRESH && run.apolloRequested && properties.apolloApiKey.isBlank())
                 conflict("APOLLO_API_KEY_MISSING")
             try { run.frozenApolloAccess(mapper) } catch (_: Exception) { conflict("CONFIG_INVALID") }

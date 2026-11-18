@@ -12,6 +12,52 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
+    @Test fun `legacy reuse distinguishes plan denial from credential rejection using saved Apollo attempt`() {
+        val mapper = jacksonObjectMapper().findAndRegisterModules()
+        val snapshot = ruleSnapshot()
+        val cached = VerificationWorkerEvidence(progress = VerificationProgress(stage = "APOLLO_SEARCH"))
+        val input = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(VerificationReviewInput(null, evidence = cached))
+            .put("baselineItemId", 3)
+        val root = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(snapshot)
+        root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", input)
+        val lease = lease(null).copy(snapshotJson = root.toString(), reviewEpoch = 1)
+        val now = ruleClock.instant()
+        val recheck = RecheckRun(RecheckSpec("fixture", "key", "{}", RecheckEvidenceMode.REUSE, now,
+            "code", "parser"), RecheckControl(RecheckPhase.RUNNING, "a".repeat(64)))
+        val run = VerificationRun(1, VerificationMode.ENFORCE, VerificationMode.ENFORCE.policyVersion, true,
+            """{"ruleVersion":4}""", true, 1, now, now, mapper.writeValueAsString(recheck))
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        Mockito.`when`(repo.findRun(1)).thenReturn(run)
+        Mockito.`when`(repo.recheck(run)).thenReturn(recheck)
+        Mockito.`when`(repo.isOwned(lease.id, lease.leaseToken!!, lease.generation, now)).thenReturn(true)
+        Mockito.`when`(repo.findItem(3)).thenReturn(lease.copy(id = 3, reviewEpoch = 0, state = VerificationState.ERROR,
+            reasonsJson = """["CONFIG_AUTH"]""", leaseToken = null, leaseUntil = null, completedAt = now))
+        val commits = Mockito.mock(DiscoveryVerificationCommitService::class.java)
+        Mockito.`when`(commits.prepare(lease)).thenReturn(VerificationCommitInput(snapshot, null, null))
+        val providers = Mockito.mock(ApolloPeopleSearchClient::class.java)
+        val orcid = Mockito.mock(OrcidVerificationEvidenceClient::class.java)
+        DiscoveryVerificationWorker(DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture"),
+            repo, orcid, providers, QualificationEvidenceParser(ruleClock), DiscoveryVerificationRules(ruleClock),
+            commits, DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), ruleClock).useWorker { worker ->
+            for ((status, providerCode, expected) in listOf(Triple(403, "API_INACCESSIBLE", "APOLLO_API_INACCESSIBLE"),
+                Triple(403, "FORBIDDEN", "APOLLO_AUTH_DENIED"), Triple(401, "API_INACCESSIBLE", "APOLLO_AUTH_DENIED"))) {
+                val diag = VerificationDiagnostics.fromBytes(VerificationProvider.APOLLO, "/api/v1/mixed_people/api_search",
+                    status, """{"error_code":"$providerCode"}""".toByteArray(), false, "CONFIG_AUTH")
+                val attempt = VerificationAttempt(4, 3, "request", VerificationProvider.APOLLO, VerificationQueryKind.BROAD,
+                    1, 1, now, now, status, "CONFIG_AUTH", "{}", mapper.writeValueAsString(diag), null)
+                Mockito.`when`(repo.findAttempts(3)).thenReturn(listOf(attempt))
+                worker.process(lease)
+                val saved = Mockito.mockingDetails(commits).invocations.last { it.method.name == "commit" }.arguments[1] as VerificationResult
+                assertEquals(VerificationOutcome.PENDING, saved.outcome)
+                assertEquals(listOf(expected), mapper.readValue<List<String>>(saved.reasonsJson))
+                assertEquals(expected, mapper.readValue<VerificationWorkerEvidence>(saved.evidenceJson).apolloAccessFailure)
+                Mockito.clearInvocations(commits)
+            }
+            assertNull(worker.apolloSearchBlockReason())
+        }
+        Mockito.verifyNoInteractions(providers, orcid)
+    }
+
     @Test fun `rebound review rejects an old identity cache even when its serialized cache hash is valid`() {
         val mapper = jacksonObjectMapper().findAndRegisterModules()
         val old = ruleSnapshot()
@@ -156,17 +202,17 @@ class DiscoveryVerificationWorkerTest {
         assertThrows(IllegalArgumentException::class.java) { DiscoveryVerificationProperties(concurrency = 9) }
     }
 
-    @Test fun `auth blocked worker does not claim on later ticks`() {
+    @Test fun `missing Apollo key still schedules recovery projection and verification`() {
         val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
-        val current = worker(DiscoveryVerificationProperties(workerEnabled = true), repo)
-        try {
-            val latch = DiscoveryVerificationWorker::class.java.getDeclaredField("authBlocked")
-            latch.isAccessible = true
-            (latch.get(current) as java.util.concurrent.atomic.AtomicBoolean).set(true)
-            assertTrue(current.isAuthBlocked())
-            repeat(3) { current.tick() }
-            Mockito.verifyNoInteractions(repo)
-        } finally { current.close() }
+        val recovery = Mockito.mock(RegistrationRecovery::class.java)
+        val factory = DefaultListableBeanFactory().also { it.registerSingleton("recovery", recovery) }
+        worker(DiscoveryVerificationProperties(workerEnabled = true), repo, factory).useWorker { current ->
+            assertEquals("APOLLO_API_KEY_MISSING", current.apolloSearchBlockReason())
+            current.tick()
+            Mockito.verify(repo, Mockito.timeout(2000).atLeastOnce()).claimDue(ruleClock.instant(), 120)
+            Mockito.verify(repo).listProjectionDue(10)
+            Mockito.verify(recovery).recoverReserved(10)
+        }
     }
 
     @Test fun `four blocked lanes claim only four and overlapping ticks do not duplicate`() {
@@ -564,8 +610,8 @@ class DiscoveryVerificationWorkerTest {
         val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
         val recovery = Mockito.mock(RegistrationRecovery::class.java)
         val factory = DefaultListableBeanFactory().also { it.registerSingleton("recovery", recovery) }
-        worker(DiscoveryVerificationProperties(workerEnabled = true), repo, factory).useWorker { current ->
-            repeat(20) { assertFalse(current.isAuthBlocked()) }
+        worker(DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture"), repo, factory).useWorker { current ->
+            repeat(20) { assertNull(current.apolloSearchBlockReason()) }
         }
         Mockito.verifyNoInteractions(repo, recovery)
     }
@@ -731,9 +777,9 @@ class DiscoveryVerificationWorkerTest {
             requestCount = 42, transientAttempts = 2)
         Mockito.`when`(repo.findRun(1)).thenReturn(VerificationRun(1, VerificationMode.ENFORCE, VerificationMode.ENFORCE.policyVersion,
             true, """{"apolloMatchingVersion":2}""", createdAt = ruleClock.instant(), updatedAt = ruleClock.instant()))
-        worker(DiscoveryVerificationProperties(workerEnabled = true), repo).useWorker {
+        worker(DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture"), repo).useWorker {
             it.process(lease)
-            assertFalse(it.isAuthBlocked())
+            assertNull(it.apolloSearchBlockReason())
         }
         val saved = Mockito.mockingDetails(repo).invocations.single { it.method.name == "reschedule" }.arguments
         assertEquals(retryAt, saved[3]); assertEquals(2, saved[4])
@@ -783,7 +829,7 @@ class DiscoveryVerificationWorkerTest {
                         OrcidVerificationEvidenceClient(f.props, http, f.clock), ApolloPeopleSearchClient(f.props, http, f.clock),
                         QualificationEvidenceParser(f.clock), f.rules, f.commits,
                         DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock)
-                    restarted().useWorker { it.process(f.claim()); assertFalse(it.isAuthBlocked()) }
+                    restarted().useWorker { it.process(f.claim()); assertNull(it.apolloSearchBlockReason()) }
                     val waiting = f.item(row.id)
                     assertEquals(VerificationState.RETRY_WAIT, waiting.state)
                     assertNull(waiting.outcome); assertEquals(VerificationRoute.NONE, waiting.route)

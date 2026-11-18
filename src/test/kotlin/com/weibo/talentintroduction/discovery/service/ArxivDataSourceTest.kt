@@ -256,6 +256,85 @@ class ArxivDataSourceTest {
         }
     }
 
+    private fun feed(start: Int, total: Int, vararg dates: String): String {
+        val entries = dates.mapIndexed { i, date ->
+            "<entry><id>http://arxiv.org/abs/${start + i}</id><published>$date</published></entry>"
+        }.joinToString("")
+        return """<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+            <opensearch:totalResults>$total</opensearch:totalResults><opensearch:startIndex>$start</opensearch:startIndex>
+            $entries</feed>"""
+    }
+
+    @Test
+    fun `legacy deep offsets recover the last readable minute then resume the bounded query`() {
+        for (cursor in listOf("10000", "12000")) {
+            val rest = RestTemplate()
+            val server = MockRestServiceServer.bindTo(rest).build()
+            val query = "cat:cs*+OR+cat:eess*+OR+cat:cond-mat*+OR+cat:physics*"
+            val bounded = "($query)+AND+submittedDate:%5B202001010000+TO+202611041643%5D"
+            val order = "&sortBy=submittedDate&sortOrder=descending"
+            fun expect(queryAndPage: String, body: String) {
+                server.expect(RequestMatcher { request -> assertEquals("search_query=$queryAndPage$order", request.uri.rawQuery) })
+                    .andRespond(MockRestResponseCreators.withSuccess(body, MediaType.APPLICATION_XML))
+            }
+            val date = "2026-11-04T16:42:53Z"
+            expect("$query&start=9999&max_results=1", feed(9999, 15000, date))
+            expect("$bounded&start=0&max_results=1", feed(0, 2, date))
+            expect("$bounded&start=1&max_results=1", feed(1, 2, "2025-12-31T23:59:59Z"))
+            val source = ArxivDataSource(rest, ArxivProperties(requestDelayMs = 0), pdfExtractor)
+            val criteria = PaperSearchCriteria(pageSize = 1, cursor = cursor, subjectScope = SubjectScopeCatalog.RND_TARGET)
+            val first = source.searchPapers(criteria)
+            assertEquals("t1:202611041643:1", first.nextCursor)
+            assertEquals(2026, first.papers.single().pubYear)
+            val second = source.searchPapers(criteria.copy(cursor = first.nextCursor))
+            assertEquals(2025, second.papers.single().pubYear)
+            assertNull(second.nextCursor)
+            server.verify()
+        }
+    }
+
+    @Test
+    fun `last readable offset clamps page size and rolls forward into the older time range`() {
+        val h = harness()
+        h.stubSearch(body = feed(9999, 12000, "2026-11-04T16:42:00Z"))
+        val first = h.dataSource.searchPapers(PaperSearchCriteria(cursor = "9999"))
+        assertTrue(h.searchUrls.single().contains("&start=9999&max_results=1&"))
+        assertEquals("t1:202611041643:0", first.nextCursor)
+        val second = h.dataSource.parseAtomResponse(feed(9999, 12000, "2024-12-31T23:59:59Z"),
+            PaperSearchCriteria(cursor = "t1:202611041643:9999"))
+        assertEquals("t1:202501010000:0", second.nextCursor)
+    }
+
+    @Test
+    fun `filtered boundary page clamps to the requested years and ends below the lower bound`() {
+        val ds = harness().dataSource
+        val criteria = PaperSearchCriteria(publicationYearFrom = 2020, publicationYearTo = 2022, cursor = "9999")
+        val tooNew = ds.parseAtomResponse(feed(9999, 12000, "2026-11-04T16:42:53Z"), criteria)
+        assertTrue(tooNew.papers.isEmpty())
+        assertEquals("t1:202301010000:0", tooNew.nextCursor)
+        val tooOld = ds.parseAtomResponse(feed(9999, 12000, "2019-12-31T23:55:00Z"), criteria)
+        assertNull(tooOld.nextCursor)
+    }
+
+    @Test
+    fun `unpageable minute corrupt cursors and inconsistent responses fail before advancement`() {
+        val h = harness()
+        val timestamp = "2026-11-04T16:42:53Z"
+        val stalled = assertThrows(IllegalStateException::class.java) {
+            h.dataSource.parseAtomResponse(feed(9999, 20000, timestamp), PaperSearchCriteria(cursor = "t1:202611041643:9999"))
+        }
+        assertEquals("ARXIV_TIME_WINDOW_STALLED", stalled.message)
+        for (cursor in listOf("x", "-1", "t1:202611041643:10000")) {
+            assertThrows(IllegalArgumentException::class.java) { h.dataSource.searchPapers(PaperSearchCriteria(cursor = cursor)) }
+        }
+        assertNull(h.dataSource.parseAtomResponse(feed(9999, 2), PaperSearchCriteria(cursor = "9999")).nextCursor)
+        for (badFeed in listOf(feed(9999, -1), feed(9999, 0, timestamp), feed(9999, 20000), feed(0, 20000, timestamp), ERROR_FEED.replace("#start_must_be_non-negative", ""))) {
+            assertThrows(IllegalStateException::class.java) {
+                h.dataSource.parseAtomResponse(badFeed, PaperSearchCriteria(cursor = "9999"))
+            }
+        }
+    }
+
     @Test
     fun `extractAuthorEmails delegates to PDF extractor`() {
         // R-1（V-1）：与 Crossref 用例同理 —— 按 c10 的 5 参数 JVM 签名打桩，委托断言保持原样。

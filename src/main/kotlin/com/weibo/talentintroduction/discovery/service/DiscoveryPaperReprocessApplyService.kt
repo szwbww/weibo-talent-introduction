@@ -30,8 +30,7 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
     internal var afterEffect: (String) -> Unit = {}
 
     internal fun freezeSettings(access: FrozenApolloAccess): JsonNode {
-        val runningWorker = worker.getIfAvailable() ?: error("VERIFICATION_UNAVAILABLE")
-        check(!runningWorker.isAuthBlocked()) { "VERIFICATION_UNAVAILABLE" }
+        check(worker.getIfAvailable() != null) { "VERIFICATION_UNAVAILABLE" }
         return registration.freezePaperSettings(access)
     }
 

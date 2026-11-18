@@ -27,7 +27,8 @@ data class VerificationAdmissionEvidence(
     val schemaVersion: Int = 1,
     val institutionNormalization: InstitutionNormalization? = null,
     val ruleVersion: Int = 0,
-    val executionContext: VerificationExecutionContext? = null
+    val executionContext: VerificationExecutionContext? = null,
+    val apolloAccessFailure: String? = null
 ) {
     init { require(schemaVersion == 1) }
 }
@@ -72,7 +73,7 @@ class DiscoveryVerificationAdmissionGate(
             val payload = mapper.readValue<VerificationAdmissionEvidence>(requireNotNull(item.evidenceJson))
             rules.evaluate(effectiveSnapshot, payload.evidence, payload.search,
                 institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion,
-                evaluatedAt = payload.executionContext?.evaluationAt).also {
+                evaluatedAt = payload.executionContext?.evaluationAt, apolloAccessFailure = payload.apolloAccessFailure).also {
                 require(it.outcome == item.outcome && it.qualification == item.qualification && it.route == item.route)
                 require(it.matchedPersonId == item.apolloPersonId)
             }

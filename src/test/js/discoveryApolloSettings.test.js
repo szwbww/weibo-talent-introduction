@@ -124,6 +124,20 @@ test('I1 GET failure/malformed/404 has no fallback, retry required; local-only d
     }
 });
 
+test('manual discovery can launch with Apollo access denied and local verification available', async () => {
+    for (const [reasonCodes, expected] of [
+        [['APOLLO_API_INACCESSIBLE'], true],
+        [['APOLLO_AUTH_DENIED'], true],
+        [['APOLLO_API_KEY_MISSING'], false],
+        [['APOLLO_API_INACCESSIBLE', 'VERIFICATION_DISABLED'], false],
+        [[], false]
+    ]) {
+        const s = setup(async url => url.endsWith('apollo-settings') ? saved() : { ...capability, ready: false, reasonCodes });
+        await s.apvLoadCapabilities(1);
+        assert.equal(s.apvCanLaunch(), expected, reasonCodes.join(','));
+    }
+});
+
 test('I4 slow GET/capabilities/PUT from A cannot mutate B or closed modal; request sequence wins', async () => {
     const old = deferred(); const s = setup(() => old.promise);
     const loading = s.apvLoadCapabilities(1), original = s.state();

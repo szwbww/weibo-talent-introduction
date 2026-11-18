@@ -116,6 +116,8 @@ internal object VerificationDiagnostics {
                 listOfNotNull(scalar(it, "message"), scalar(it, "error_code"), scalar(it, "code"))
             }.orEmpty()
     fun classify(provider: VerificationProvider, status: Int, bytes: ByteArray): String = when {
+        provider == VerificationProvider.APOLLO && status == 403 &&
+            errorScalars(errorNode(bytes)).any { it.equals("API_INACCESSIBLE", ignoreCase = true) } -> "APOLLO_API_INACCESSIBLE"
         status == 401 || status == 403 -> "CONFIG_AUTH"
         status == 429 -> "RATE_LIMIT"
         status >= 500 -> "PROVIDER_UNAVAILABLE"
@@ -157,7 +159,7 @@ internal object VerificationDiagnostics {
         }
         val provider = VerificationProvider.valueOf(requireNotNull(text("provider", 32)))
         val classification = requireNotNull(text("classification", 64))
-        require(classification in setOf("CONFIG_AUTH", "RATE_LIMIT", "PROVIDER_UNAVAILABLE", "APOLLO_CREDITS_EXHAUSTED",
+        require(classification in setOf("CONFIG_AUTH", "APOLLO_API_INACCESSIBLE", "RATE_LIMIT", "PROVIDER_UNAVAILABLE", "APOLLO_CREDITS_EXHAUSTED",
             "REQUEST_INVALID", "APOLLO_HTTP_422_UNCLASSIFIED", "EVIDENCE_MISSING", "HTTP_ERROR",
             "RESPONSE_TOO_LARGE", "RESPONSE_INVALID"))
         fun integer(key: String): Int? = node.get(key)?.takeUnless { it.isNull }?.let {
