@@ -224,6 +224,34 @@ class DiscoveryPaperArchiveCaptureTest {
             assertNull(f.service.detail(flat.id).record.extractionSummary)
         }
     }
+    @Test fun `oversized outcome retains original body and replay sees a missing baseline`() {
+        ArchiveFixture().use { f ->
+            f.enable()
+            val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)
+            val expected = outcome("科".repeat(710_000))
+            val sourcePaper = paper("CORE").copy(fullText = "Correspondence: author@fixture.invalid")
+            val returned = capture.capture(context(source = "CORE"), "large", sourcePaper) { expected }
+            assertSame(expected, returned)
+            val record = f.repository.records().single()
+            val envelope = f.mapper.readTree(record.outcomeJson)
+            val first = envelope.path("first")
+            assertEquals(first, envelope.path("latest"))
+            assertFalse(first.has("outcome"))
+            val warning = first.path("retentionWarning")
+            assertEquals("EXTRACTION", warning.path("stage").asText())
+            assertEquals(4 * 1024 * 1024, warning.path("limitBytes").asInt())
+            assertTrue(warning.path("actualBytes").asInt() > warning.path("limitBytes").asInt())
+            assertNull(f.service.detail(record.id).record.extractionSummary)
+            assertEquals(ArchiveAttemptStatus.SAVED, f.repository.attempts(record.id).single().status)
+            val replay = AnalysisFixture(f).analysis.analyze(record.id, false)
+            assertEquals("BASELINE_MISSING", replay.path("baselineCoverage").asText())
+            capture.capture(context(source = "CORE"), "large", sourcePaper) { outcome("NORMAL") }
+            val retried = f.mapper.readTree(f.repository.record(record.id)!!.outcomeJson)
+            assertEquals(first, retried.path("first"))
+            assertEquals("NORMAL", retried.path("latest").path("outcome").path("failureReason").asText())
+        }
+    }
+
     @Test fun `first snapshot frozen latest updates and metadata has no full text or credentials`() {
         ArchiveFixture().use { f ->
             f.enable(); val capture = DiscoveryPaperArchiveCapture(f.service,f.mapper)

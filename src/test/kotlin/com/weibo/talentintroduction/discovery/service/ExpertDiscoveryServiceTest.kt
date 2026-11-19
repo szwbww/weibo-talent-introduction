@@ -26,6 +26,10 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.sample.*
+import com.weibo.talentintroduction.discovery.archive.ArchiveFixture
+import com.weibo.talentintroduction.discovery.archive.ArchiveMysqlFixture
+import com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveCapture
+import com.weibo.talentintroduction.discovery.archive.PaperArchiveBlockedException
 import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
@@ -280,7 +284,8 @@ class ExpertDiscoveryServiceTest {
         identityRepairService: DiscoveryIdentityRepairService? = null,
         personRegistrationService: DiscoveryPersonRegistrationService? = null,
         verificationRegistration: DiscoveryVerificationRegistrationService? = null,
-        sampleCapture: DiscoverySampleCapture? = null
+        sampleCapture: DiscoverySampleCapture? = null,
+        archiveCapture: DiscoveryPaperArchiveCapture? = null
     ): ExpertDiscoveryService {
         // 04：真实准入服务（判定走上面的策略桩；写入经 mock repository；投影经当前 indexWriterService）。
         discoveryReviewService = DiscoveryReviewService(
@@ -295,7 +300,7 @@ class ExpertDiscoveryServiceTest {
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
             enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService,
-            identityRepairService, personRegistrationService, verificationRegistration, sampleCapture
+            identityRepairService, personRegistrationService, verificationRegistration, sampleCapture, archiveCapture
         )
     }
 
@@ -5186,6 +5191,59 @@ class ExpertDiscoveryServiceTest {
         assertEquals(4, forbiddenRequests)
         assertEquals(DiscoveryStopReason.RAW_WRITE_INCOMPLETE, result.stats.bySource.getValue("EUROPE_PMC").stopReason)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").retry?.round)
+    }
+
+    @Test
+    fun `Crossref continues the page after oversized metadata and preserves cursor on failed diagnostic write`() {
+        ArchiveMysqlFixture.clean()
+        ArchiveFixture().use { f ->
+            f.enable()
+            val crossref = Mockito.mock(CrossrefDataSource::class.java)
+            Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+            Mockito.doReturn("CROSSREF").`when`(crossref).sourceName
+            Mockito.doReturn("PDF_PARSE").`when`(crossref).emailExtractionMethod
+            Mockito.doReturn(100).`when`(crossref).maxPapersPerSource
+            DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(crossref, "NO_EMAIL_IN_FULLTEXT")
+            val large = paper("P1", "科".repeat(180_000)).copy(source = "CROSSREF")
+            val other = paper("P2", "Ordinary paper").copy(source = "CROSSREF")
+            val criteria = PaperSearchCriteria(sources = listOf("CROSSREF"), cursor = "ENTRY")
+            stubStoredCheckpoint("CROSSREF", "ENTRY", criteria)
+            val requests = mutableListOf<String?>()
+            Mockito.doAnswer { call ->
+                val cursor = call.getArgument<PaperSearchCriteria>(0).cursor
+                requests += cursor
+                when (cursor) {
+                    "ENTRY" -> PaperSearchResult(listOf(large, other), "NEXT", 2)
+                    "NEXT" -> PaperSearchResult(emptyList(), null, 2)
+                    else -> error("unexpected cursor $cursor")
+                }
+            }.`when`(crossref).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: criteria)
+            val service = createService(timeSource = FakeTime(), archiveCapture = DiscoveryPaperArchiveCapture(f.service, f.mapper))
+            ArchiveMysqlFixture.jdbc.execute("""ALTER TABLE discovery_paper_archive_record ADD CONSTRAINT fail_compact_record
+                CHECK (JSON_EXTRACT(metadata_json, '$.retentionWarning') IS NULL)""")
+            try {
+                val error = assertThrows(PaperArchiveBlockedException::class.java) { service.discover(criteria, "TEST", 42L, false) }
+                assertEquals("DB_UNAVAILABLE", error.code)
+                assertEquals(listOf("ENTRY"), requests)
+                assertEquals("ENTRY", storedCheckpointFor("CROSSREF", criteria).cursor)
+            } finally {
+                ArchiveMysqlFixture.jdbc.execute("ALTER TABLE discovery_paper_archive_record DROP CHECK fail_compact_record")
+            }
+            requests.clear()
+            service.discover(criteria, "TEST", 42L, false)
+            assertEquals(listOf("ENTRY", "NEXT"), requests)
+            assertTrue(storedCheckpointFor("CROSSREF", criteria).exhausted)
+            val records = f.repository.records()
+            assertEquals(2, records.size)
+            assertTrue(records.all { it.outcomeJson != null })
+            val meta = records.map { f.mapper.readTree(it.metadataJson) }.single { it.has("retentionWarning") }
+            assertEquals(large.doi, meta.path("doi").asText())
+            assertEquals(1, meta.path("authors").size())
+            val warning = meta.path("retentionWarning")
+            assertEquals("METADATA", warning.path("stage").asText())
+            assertEquals(512 * 1024, warning.path("limitBytes").asInt())
+            assertTrue(warning.path("actualBytes").asInt() > warning.path("limitBytes").asInt())
+        }
     }
 
     @Test

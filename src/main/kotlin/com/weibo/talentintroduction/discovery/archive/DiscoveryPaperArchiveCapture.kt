@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.discovery.service.PdfAuthorContactLayout
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.UUID
@@ -36,6 +37,7 @@ class DiscoveryPaperArchiveCapture(private val service: DiscoveryPaperArchiveSer
         }
     }
     companion object {
+        private val LOG = LoggerFactory.getLogger(DiscoveryPaperArchiveCapture::class.java)
         private val current = ThreadLocal<Scope>()
         fun hasScope(): Boolean = current.get() != null
         fun beginAttempt(kind: ArchiveAttemptKind, url: String?): Any? {
@@ -113,7 +115,17 @@ class DiscoveryPaperArchiveCapture(private val service: DiscoveryPaperArchiveSer
                 val envelope = mapper.createObjectNode().put("schemaVersion", 1)
                 envelope.set<JsonNode>("first", snapshot)
                 envelope.set<JsonNode>("latest", snapshot)
-                service.finishExtraction(permit.recordId, envelope)
+                try {
+                    service.finishExtraction(permit.recordId, envelope)
+                } catch (e: ArchiveJsonTooLarge) {
+                    // Preserve a missing baseline as missing. An empty emails array would mean a real zero.
+                    snapshot.remove("outcome")
+                    snapshot.set<JsonNode>("retentionWarning", e.diagnostic(mapper, "EXTRACTION"))
+                    if (mapper.writeValueAsBytes(snapshot.path("attemptIds")).size > e.limitBytes / 4) snapshot.remove("attemptIds")
+                    service.finishExtraction(permit.recordId, envelope)
+                    LOG.warn("Partial paper extraction execution={} source={} paper={} bytes={} limit={}",
+                        context.executionId, context.source, paperKey, e.actualBytes, e.limitBytes)
+                }
             }
             return outcome
         } catch (e: Throwable) {

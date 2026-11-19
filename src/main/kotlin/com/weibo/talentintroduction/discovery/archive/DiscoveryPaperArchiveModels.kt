@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.archive
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.Instant
 
 const val ARCHIVE_GIB: Long = 1073741824
@@ -11,8 +12,15 @@ enum class ArchiveAttemptKind { PDF_URL, PMC_XML, PMC_OA_XML, EMBEDDED_TEXT }
 enum class ArchiveRecordState { SAVE_ERROR, STORED, PROCESSING, DELETED, NOT_STORED }
 enum class ArchiveGate { READY, BLOCKED, DISABLED, UNAVAILABLE }
 
-class ArchiveException(val code: String, val httpStatus: Int, override val message: String = code,
+open class ArchiveException(val code: String, val httpStatus: Int, override val message: String = code,
                        val preview: ArchiveDeletePreview? = null) : IllegalStateException(message)
+
+internal class ArchiveJsonTooLarge(val actualBytes: Int, val limitBytes: Int) :
+    ArchiveException("METADATA_TOO_LARGE", 413) {
+    fun diagnostic(mapper: ObjectMapper, stage: String) =
+        mapper.createObjectNode().put("code", code).put("stage", stage)
+            .put("actualBytes", actualBytes).put("limitBytes", limitBytes)
+}
 
 data class ArchiveSetting(val revision: Long = 0, val enabled: Boolean = false,
     val maxBytes: Long = 20 * ARCHIVE_GIB, val minFreeBytes: Long = 5 * ARCHIVE_GIB, val updatedAt: Instant? = null) {

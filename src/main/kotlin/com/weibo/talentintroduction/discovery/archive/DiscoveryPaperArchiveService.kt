@@ -193,7 +193,8 @@ class DiscoveryPaperArchiveService(
     private fun json(node: JsonNode, max: Int, metadata: Boolean = false): String {
         if (!node.isObject || node.path("schemaVersion").asInt() != 1) throw ArchiveException("INVALID_SCHEMA", 400)
         val value = mapper.writeValueAsString(clean(node, metadata))
-        if (value.toByteArray(Charsets.UTF_8).size > max) throw ArchiveException("METADATA_TOO_LARGE", 413)
+        val bytes = value.toByteArray(Charsets.UTF_8).size
+        if (bytes > max) throw ArchiveJsonTooLarge(bytes, max)
         return value
     }
     /** A server-issued, short-lived capability; never part of the HTTP DTO surface. */
@@ -204,7 +205,27 @@ class DiscoveryPaperArchiveService(
     internal fun beginScope(executionId: Long, source: String, key: String, metadata: JsonNode): ScopePermit? = mutation {
         if (!properties.allowed || !repository.setting().enabled) return@mutation null
         preflight(executionId)
-        ScopePermit(beginRecord(executionId, source, key, metadata).id).also { scopePermits.add(it) }
+        val record = try {
+            beginRecord(executionId, source, key, metadata)
+        } catch (e: ArchiveJsonTooLarge) {
+            val compact = mapper.createObjectNode().put("schemaVersion", 1)
+                .put("title", metadata.path("title").asText("").take(1024)).put("source", source)
+            for (field in listOf("doi", "pmid", "pmcId", "pubYear", "entry", "batchNumber", "queueJobId", "downloadUrl", "journal")) {
+                metadata.get(field)?.takeIf { it.isValueNode && it.asText().length <= 2048 }
+                    ?.let { compact.set<JsonNode>(field, it) }
+            }
+            val authors = metadata.path("authors")
+            compact.putArray("authors")
+            if (authors.isArray && mapper.writeValueAsBytes(authors).size <= e.limitBytes / 2) {
+                compact.set<JsonNode>("authors", authors)
+            }
+            compact.set<JsonNode>("retentionWarning", e.diagnostic(mapper, "METADATA").put("originalAuthorCount", authors.size()))
+            beginRecord(executionId, source, key, compact).also {
+                LOG.warn("Partial paper metadata execution={} source={} paper={} bytes={} limit={}",
+                    executionId, source, key, e.actualBytes, e.limitBytes)
+            }
+        }
+        ScopePermit(record.id).also { scopePermits.add(it) }
     }
     private fun permit(value: ScopePermit) {
         if (!scopePermits.contains(value)) throw ArchiveException("INVALID_SCOPE", 409)
