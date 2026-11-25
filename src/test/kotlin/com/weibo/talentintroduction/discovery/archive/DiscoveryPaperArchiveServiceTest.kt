@@ -493,4 +493,121 @@ class DiscoveryPaperArchiveServiceTest {
         assertEquals(503,code("DB_UNAVAILABLE") { service.settings() }.httpStatus)
         assertEquals(503,code("DB_UNAVAILABLE") { service.stats() }.httpStatus)
     }
+
+    @Test fun `scheduledRecovery cleans transient states without hashing referenced available blobs`() {
+        f.enable()
+        val healthy = f.body(f.paper("healthy"), f.pdf(1024, 65))
+        // Corrupt content with identical length so only content hashing detects it.
+        Files.write(path(healthy), f.pdf(1024, 66))
+        val deleting = f.body(f.paper("deleting"), f.pdf(1024, 67))
+        f.repository.blobState(deleting.blobSha256!!, ArchiveBlobState.DELETING)
+        val unreferenced = f.body(f.paper("unreferenced"), f.pdf(1024, 68))
+        ArchiveMysqlFixture.jdbc.update("UPDATE discovery_paper_archive_attempt SET status='DELETED' WHERE id=?", unreferenced.id)
+        val staleAttempt = f.service.beginAttempt(f.paper("stale-started").id, UUID.randomUUID(), 0, ArchiveAttemptKind.PDF_URL)
+        ArchiveMysqlFixture.jdbc.update("UPDATE discovery_paper_archive_attempt SET updated_at=? WHERE id=?",
+            java.time.LocalDateTime.ofInstant(Instant.now().minusSeconds(7200), java.time.ZoneOffset.UTC), staleAttempt.id)
+        val staleTmp = f.root.resolve(".tmp/stale-lightweight")
+        Files.write(staleTmp, ByteArray(16))
+        Files.setLastModifiedTime(staleTmp, FileTime.from(Instant.now().minusSeconds(3601)))
+
+        var hashed = false
+        f.service.failpoint = { if (it == "RECOVERY_BEFORE_HASH") hashed = true }
+        f.service.scheduledRecovery()
+
+        assertFalse(hashed, "lightweight scheduledRecovery must not hash referenced AVAILABLE blobs")
+        assertEquals(ArchiveBlobState.AVAILABLE, f.repository.blob(healthy.blobSha256!!)!!.state)
+        assertFalse(Files.exists(path(deleting)))
+        assertEquals(ArchiveAttemptStatus.DELETED, f.repository.attempt(deleting.id)!!.status)
+        assertEquals(ArchiveBlobState.MISSING, f.repository.blob(deleting.blobSha256!!)!!.state)
+        assertFalse(Files.exists(path(unreferenced)))
+        assertEquals(ArchiveBlobState.MISSING, f.repository.blob(unreferenced.blobSha256!!)!!.state)
+        assertFalse(Files.exists(staleTmp))
+        assertEquals(ArchiveAttemptStatus.SAVE_ERROR, f.repository.attempt(staleAttempt.id)!!.status)
+        assertEquals("INTERRUPTED_WRITE", f.repository.attempt(staleAttempt.id)!!.reasonCode)
+
+        // Explicit full recover still hashes AVAILABLE blobs and marks corrupted files MISSING.
+        f.service.recover()
+        assertTrue(hashed)
+        assertEquals(ArchiveBlobState.MISSING, f.repository.blob(healthy.blobSha256!!)!!.state)
+    }
+
+    @Test fun `hot paths avoid full record and blob table scans`() {
+        f.enable()
+        val p = f.paper("narrow")
+        f.body(p, f.pdf(1024, 65))
+        val spyRepo = Mockito.spy(f.repository)
+        val service = DiscoveryPaperArchiveService(spyRepo, f.props, f.sampleProps, f.mapper).also {
+            it.diskProbe = f.service.diskProbe
+        }
+
+        service.settings()
+        service.stats()
+        service.list(ArchiveQuery())
+        service.recover()
+
+        Mockito.verify(spyRepo, Mockito.never()).records()
+        Mockito.verify(spyRepo, Mockito.never()).blobs()
+        Mockito.verify(spyRepo, Mockito.atLeastOnce()).protectedCount()
+        Mockito.verify(spyRepo, Mockito.atLeastOnce()).staleStartedAttemptIds(Mockito.any() ?: Instant.now())
+    }
+
+    @Test fun `scheduledRecovery triggers full content verification after interval and cleans stray missing blob file`() {
+        f.enable()
+        var current = Instant.now()
+        f.service.clock = { current }
+        val healthy = f.body(f.paper("periodic-full"), f.pdf(1024, 65))
+        Files.write(path(healthy), f.pdf(1024, 66))
+        val stray = f.body(f.paper("stray-missing"), f.pdf(1024, 67))
+        val strayPath = path(stray)
+        f.repository.finishDelete(stray.blobSha256!!, current)
+        // Simulate stray file left on disk while DB row is already MISSING with 0 references.
+        assertTrue(Files.exists(strayPath))
+
+        var hashed = false
+        f.service.failpoint = { if (it == "RECOVERY_BEFORE_HASH") hashed = true }
+        f.service.scheduledRecovery()
+        assertFalse(hashed)
+        assertEquals(ArchiveBlobState.AVAILABLE, f.repository.blob(healthy.blobSha256!!)!!.state)
+
+        current = current.plusSeconds(12L * 3600L + 1L)
+        f.service.scheduledRecovery()
+        assertTrue(hashed)
+        assertEquals(ArchiveBlobState.MISSING, f.repository.blob(healthy.blobSha256!!)!!.state)
+        assertFalse(Files.exists(strayPath))
+    }
+
+    @Test fun `sizes cache avoids redundant directory walks on steady writes and refreshes on external files or near cap`() {
+        f.enable(ARCHIVE_GIB)
+        ArchiveMysqlFixture.task(1, "RUNNING")
+        var walks = 0
+        f.service.onPhysicalWalk = { walks++ }
+
+        // Warm cache via authoritative stats()
+        assertEquals(0L, f.service.stats().storage.blobBytes)
+        assertEquals(1, walks)
+
+        // Three full scope writes well below maxBytes should perform 0 additional physical walks.
+        repeat(3) { i ->
+            val scope = f.service.beginScope(1, "OPENALEX", "steady-$i", f.mapper.readTree("""{"schemaVersion":1}"""))!!
+            try {
+                val attempt = f.service.beginScopeAttempt(scope, UUID.randomUUID(), 0, ArchiveAttemptKind.PDF_URL, null)
+                f.service.saveScopeBody(scope, attempt.id, f.pdf(1024, (65 + i).toByte()), "application/pdf")
+            } finally { f.service.endScope(scope) }
+        }
+        assertEquals(1, walks, "steady-state writes well below cap should reuse cached sizes without re-walking blobs/")
+        val stats = f.service.stats()
+        assertEquals(3072L, stats.storage.blobBytes)
+        assertEquals(3L, stats.storage.fileCount)
+        assertEquals(2, walks)
+
+        // Adding an unexpected top-level external file immediately triggers a physical walk and enforces exact cap.
+        val filler = f.root.resolve("blobs/filler.bin")
+        FileChannel.open(filler, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
+            it.position(ARCHIVE_GIB - 3072 - 1); it.write(ByteBuffer.wrap(byteArrayOf(0)))
+        }
+        code("ARCHIVE_STORAGE_BLOCKED") {
+            f.service.beginScope(1, "OPENALEX", "over-cap", f.mapper.readTree("""{"schemaVersion":1}"""))
+        }
+        assertTrue(walks >= 3, "external file must trigger physical walk and block at exact cap")
+    }
 }

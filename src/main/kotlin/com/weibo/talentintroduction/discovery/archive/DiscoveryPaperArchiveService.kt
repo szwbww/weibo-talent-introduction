@@ -119,6 +119,18 @@ class DiscoveryPaperArchiveService(
     }
     internal var failpoint: (String) -> Unit = {}
     internal var diskProbe: (Path) -> ArchiveDisk = { path -> Files.getFileStore(path).let { ArchiveDisk(it.totalSpace, it.unallocatedSpace, it.usableSpace) } }
+    internal var clock: () -> Instant = { Instant.now() }
+    internal var fullRecoveryIntervalSeconds: Long = FULL_RECOVERY_INTERVAL_SECONDS
+    internal var onPhysicalWalk: () -> Unit = {}
+    private var lastFullRecoveryAt: Instant? = null
+    private data class CachedSizes(
+        val root: Path,
+        val value: Triple<Long, Long, Long>,
+        val measuredAtNanos: Long,
+        val blobsMtime: FileTime?,
+        val tmpMtime: FileTime?
+    )
+    private var cachedSizes: CachedSizes? = null
     private val directoryPermissions = PosixFilePermissions.fromString("rwx------")
     private val filePermissions = PosixFilePermissions.fromString("rw-------")
 
@@ -143,8 +155,18 @@ class DiscoveryPaperArchiveService(
     }
     private fun prepareRoot(): Path = root().also { directory(it); directory(it.resolve("blobs")); directory(it.resolve(".tmp")) }
     private fun blobPath(hash: String): Path {
-        if (!hash.matches(Regex("[a-f0-9]{64}"))) throw ArchiveException("INVALID_HASH", 400)
-        return root().resolve("blobs").resolve(hash.substring(0,2)).resolve("$hash.bin").also { checkPath(it) }
+        if (!SHA256_REGEX.matches(hash)) throw ArchiveException("INVALID_HASH", 400)
+        val blobsDir = root().resolve("blobs")
+        if (Files.isSymbolicLink(blobsDir)) throw ArchiveException("UNSAFE_PATH", 503)
+        return blobPathUnder(hash, blobsDir)
+    }
+    private fun blobPathUnder(hash: String, blobsDir: Path): Path {
+        if (!SHA256_REGEX.matches(hash)) throw ArchiveException("INVALID_HASH", 400)
+        val shard = blobsDir.resolve(hash.substring(0, 2))
+        if (Files.isSymbolicLink(shard)) throw ArchiveException("UNSAFE_PATH", 503)
+        val file = shard.resolve("$hash.bin")
+        if (Files.isSymbolicLink(file)) throw ArchiveException("UNSAFE_PATH", 503)
+        return file
     }
     private fun <T> mutation(create: Boolean = false, action: () -> T): T = lock.withLock {
         try {
@@ -275,8 +297,12 @@ class DiscoveryPaperArchiveService(
             }
         }
         checkActive()
-        val initial = sizes()
+        var initial = sizes(authoritative = false)
         var used = initial.first + initial.second
+        if (capacityRecoveryPending || settings.maxBytes - used <= bytes + SIZE_CACHE_HEADROOM_BYTES) {
+            initial = sizes(authoritative = true)
+            used = initial.first + initial.second
+        }
         fun fits(recovering: Boolean): Boolean {
             val quota = if (recovering) settings.recoveryMaxBytes else settings.maxBytes
             val reserve = if (recovering) settings.recoveryFreeBytes else settings.minFreeBytes
@@ -293,7 +319,7 @@ class DiscoveryPaperArchiveService(
         fun verified(): Boolean {
             if (!fits(true)) return false
             // Only the final authoritative check traverses the archive again.
-            val actual = sizes(); used = actual.first + actual.second
+            val actual = sizes(authoritative = true); used = actual.first + actual.second
             if (!fits(true)) return false
             checkActive()
             capacityRecoveryPending = false
@@ -332,7 +358,7 @@ class DiscoveryPaperArchiveService(
             }
         }
         // Failed unlink/finalization or external filesystem changes require a fresh final measurement.
-        val actual = sizes(); used = actual.first + actual.second
+        val actual = sizes(authoritative = true); used = actual.first + actual.second
         if (verified()) return
         report("BLOCKED", true)
         throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409,
@@ -399,6 +425,7 @@ class DiscoveryPaperArchiveService(
         val media = if (PaperContentFormat.detect(bytes, a.kind) == "PDF") "application/pdf" else "text/plain"
         val temp = root().resolve(".tmp").resolve(UUID.randomUUID().toString())
         activeWriters.add(temp)
+        var committed = false
         try {
             FileChannel.open(temp, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).use { channel ->
                 Files.setPosixFilePermissions(temp, filePermissions)
@@ -408,21 +435,33 @@ class DiscoveryPaperArchiveService(
             failpoint("BEFORE_RENAME")
             if (Files.size(temp) != bytes.size.toLong() || hashFile(temp) != hash) throw ArchiveException("SAVE_ERROR", 503)
             val final = blobPath(hash); directory(final.parent)
+            val previousSize = if (Files.isRegularFile(final, LinkOption.NOFOLLOW_LINKS)) Files.size(final) else null
             Files.move(temp, final, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             Files.setPosixFilePermissions(final, filePermissions)
             FileChannel.open(final.parent, StandardOpenOption.READ).use { it.force(true) }
+            adjustCachedSizesOnBlobWrite(bytes.size.toLong(), previousSize)
             failpoint("AFTER_RENAME")
-            val after = sizes(); val afterDisk = diskProbe(root())
+            val candidateAfter = sizes(authoritative = false)
+            val after = if (settings.maxBytes - (candidateAfter.first + candidateAfter.second) <= SIZE_CACHE_HEADROOM_BYTES) {
+                sizes(authoritative = true)
+            } else candidateAfter
+            val afterDisk = diskProbe(root())
             if (after.first + after.second > settings.maxBytes || afterDisk.usable < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
             repository.saveBody(attemptId, hash, bytes.size.toLong(), media, false, Instant.now())
+            committed = true
             repository.attempt(attemptId)!!
         } catch (e: Exception) {
             // Never remove a final file here: it may be an older committed/shared blob.
+            cachedSizes = null
             try { repository.finishAttempt(attemptId, ArchiveAttemptStatus.SAVE_ERROR, "SAVE_ERROR", null, 0, Instant.now()) } catch (_: Exception) { }
             if (e is ArchiveException) throw e
             if (e is DataAccessException) throw ArchiveException("DB_UNAVAILABLE", 503)
             throw ArchiveException("SAVE_ERROR", 503)
-        } finally { activeWriters.remove(temp); Files.deleteIfExists(temp) }
+        } finally {
+            if (!committed) cachedSizes = null
+            activeWriters.remove(temp)
+            Files.deleteIfExists(temp)
+        }
     }
     private fun hashFile(path: Path): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -432,24 +471,86 @@ class DiscoveryPaperArchiveService(
         }
         return hex(digest.digest())
     }
-    private fun validBlob(blob: ArchiveBlob, hash: Boolean = false): Boolean {
+    private fun validBlob(blob: ArchiveBlob, hash: Boolean = false, blobsDir: Path? = null): Boolean {
         if (blob.state != ArchiveBlobState.AVAILABLE) return false
-        val path = blobPath(blob.sha256)
+        val path = if (blobsDir != null) blobPathUnder(blob.sha256, blobsDir) else blobPath(blob.sha256)
         val valid = Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && Files.size(path) == blob.sizeBytes && (!hash || hashFile(path) == blob.sha256)
         if (!valid) repository.blobState(blob.sha256, ArchiveBlobState.MISSING)
         return valid
     }
-    private fun sizes(): Triple<Long, Long, Long> {
-        val base = root(); if (!Files.exists(base, LinkOption.NOFOLLOW_LINKS)) return Triple(0, 0, 0)
-        var blobs = 0L; var temp = 0L; var files = 0L
-        Files.walk(base).use { stream -> stream.forEach { path ->
-            checkPath(path)
-            if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-                if (path.startsWith(base.resolve("blobs"))) { blobs += Files.size(path); files++ }
-                else if (path.startsWith(base.resolve(".tmp"))) temp += Files.size(path)
+    private fun fileMtimeOrNull(path: Path): FileTime? = try {
+        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS) else null
+    } catch (_: NoSuchFileException) { null }
+    private fun isHex(c: Char): Boolean = c in '0'..'9' || c in 'a'..'f'
+    private fun hasOnlyExpectedShardEntries(blobsDir: Path): Boolean {
+        if (!Files.isDirectory(blobsDir, LinkOption.NOFOLLOW_LINKS)) return !Files.exists(blobsDir, LinkOption.NOFOLLOW_LINKS)
+        Files.newDirectoryStream(blobsDir).use { stream ->
+            for (entry in stream) {
+                val name = entry.fileName.toString()
+                if (name.length != 2 || !isHex(name[0]) || !isHex(name[1])) return false
             }
-        } }
-        return Triple(blobs, temp, files)
+        }
+        return true
+    }
+    private fun adjustCachedSizesOnBlobWrite(writtenBytes: Long, previousSize: Long?) {
+        val cached = cachedSizes ?: return
+        val base = cached.root
+        val deltaBytes = if (previousSize == null) writtenBytes else writtenBytes - previousSize
+        val deltaFiles = if (previousSize == null) 1L else 0L
+        cachedSizes = cached.copy(
+            value = Triple(maxOf(0L, cached.value.first + deltaBytes), cached.value.second, maxOf(0L, cached.value.third + deltaFiles)),
+            blobsMtime = fileMtimeOrNull(base.resolve("blobs")),
+            tmpMtime = fileMtimeOrNull(base.resolve(".tmp"))
+        )
+    }
+    private fun adjustCachedSizesOnBlobDelete(removedBytes: Long) {
+        val cached = cachedSizes ?: return
+        val base = cached.root
+        cachedSizes = cached.copy(
+            value = Triple(maxOf(0L, cached.value.first - removedBytes), cached.value.second, maxOf(0L, cached.value.third - 1L)),
+            blobsMtime = fileMtimeOrNull(base.resolve("blobs")),
+            tmpMtime = fileMtimeOrNull(base.resolve(".tmp"))
+        )
+    }
+    private fun sizes(authoritative: Boolean = true): Triple<Long, Long, Long> {
+        val base = root()
+        if (!Files.exists(base, LinkOption.NOFOLLOW_LINKS)) {
+            cachedSizes = null
+            return Triple(0, 0, 0)
+        }
+        val blobsDir = base.resolve("blobs")
+        val tmpDir = base.resolve(".tmp")
+        val nowNanos = System.nanoTime()
+        if (!authoritative) {
+            val cached = cachedSizes
+            if (cached != null && cached.root == base &&
+                nowNanos - cached.measuredAtNanos < SIZE_CACHE_TTL_NANOS &&
+                !Files.isSymbolicLink(blobsDir) && !Files.isSymbolicLink(tmpDir) &&
+                fileMtimeOrNull(blobsDir) == cached.blobsMtime &&
+                fileMtimeOrNull(tmpDir) == cached.tmpMtime &&
+                hasOnlyExpectedShardEntries(blobsDir)) {
+                return cached.value
+            }
+        }
+        onPhysicalWalk()
+        var blobs = 0L; var temp = 0L; var files = 0L
+        Files.walkFileTree(base, java.util.EnumSet.noneOf(FileVisitOption::class.java), Int.MAX_VALUE, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (attrs.isSymbolicLink) throw ArchiveException("UNSAFE_PATH", 503)
+                return FileVisitResult.CONTINUE
+            }
+            override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (attrs.isSymbolicLink) throw ArchiveException("UNSAFE_PATH", 503)
+                if (attrs.isRegularFile) {
+                    if (file.startsWith(blobsDir)) { blobs += attrs.size(); files++ }
+                    else if (file.startsWith(tmpDir)) temp += attrs.size()
+                }
+                return FileVisitResult.CONTINUE
+            }
+        })
+        val result = Triple(blobs, temp, files)
+        cachedSizes = CachedSizes(base, result, nowNanos, fileMtimeOrNull(blobsDir), fileMtimeOrNull(tmpDir))
+        return result
     }
     private fun nearestParent(path: Path): Path {
         var p = path
@@ -459,7 +560,7 @@ class DiscoveryPaperArchiveService(
     private fun storage(s: ArchiveSetting): ArchiveStorage {
         val available = try { Files.isDirectory(root(), LinkOption.NOFOLLOW_LINKS) } catch (_: Exception) { false }
         val measured = Instant.now()
-        val size = try { sizes() } catch (_: Exception) { null }
+        val size = try { sizes(authoritative = true) } catch (_: Exception) { null }
         val disk = try { diskProbe(nearestParent(root())) } catch (_: Exception) { null }
         val enabled = s.enabled && properties.allowed
         val gate = when {
@@ -470,7 +571,7 @@ class DiscoveryPaperArchiveService(
         }
         val reason = when (gate) { ArchiveGate.READY -> null; ArchiveGate.DISABLED -> "ARCHIVE_DISABLED"; ArchiveGate.UNAVAILABLE -> "STORAGE_UNAVAILABLE"; else -> "ARCHIVE_STORAGE_BLOCKED" }
         return ArchiveStorage(available, size?.let { it.first + it.second }, size?.first, size?.second, size?.third,
-            repository.records().count { it.protected }.toLong(), disk?.total, disk?.let { it.total - it.unallocated }, disk?.usable,
+            repository.protectedCount(), disk?.total, disk?.let { it.total - it.unallocated }, disk?.usable,
             disk?.let { maxOf(0, it.unallocated - it.usable) }, s.maxBytes, s.minFreeBytes, enabled, gate, reason, measured)
     }
     fun settings(): ArchiveSettingsResponse = mutation {
@@ -484,7 +585,9 @@ class DiscoveryPaperArchiveService(
     }
     fun stats(executionId: Long? = null): ArchiveStats = mutation {
         executionId?.let { id(it) }
-        repository.blobs().filter { it.state == ArchiveBlobState.AVAILABLE }.forEach { validBlob(it) }
+        val blobsDir = root().resolve("blobs")
+        if (Files.isSymbolicLink(blobsDir)) throw ArchiveException("UNSAFE_PATH", 503)
+        repository.blobsByStates(listOf(ArchiveBlobState.AVAILABLE)).forEach { validBlob(it, blobsDir = blobsDir) }
         ArchiveStats(executionId, storage(repository.setting()), repository.counts(executionId))
     }
     private fun row(r: ArchiveRecord): ArchiveRow {
@@ -526,7 +629,6 @@ class DiscoveryPaperArchiveService(
     fun list(query: ArchiveQuery): ArchivePage = mutation {
         if (query.page < 0 || query.size !in listOf(20,50,100) || (query.q?.length ?: 0) > 200) throw ArchiveException("INVALID_QUERY", 400)
         query.executionId?.let { id(it) }
-        repository.blobs().filter { it.state == ArchiveBlobState.AVAILABLE }.forEach { validBlob(it) }
         val (records, total) = repository.list(query)
         ArchivePage(records.map { row(it) }, total, query.page, query.size)
     }
@@ -608,12 +710,22 @@ class DiscoveryPaperArchiveService(
     private fun deleteBlob(blob: ArchiveBlob): Boolean {
         repository.transaction { repository.blobState(blob.sha256, ArchiveBlobState.DELETING); true }
         failpoint("AFTER_DELETING")
+        var finished = false
         return try {
-            Files.deleteIfExists(blobPath(blob.sha256))
+            val path = blobPath(blob.sha256)
+            val existingSize = if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) Files.size(path) else null
+            val removed = Files.deleteIfExists(path)
+            if (removed && existingSize != null) adjustCachedSizesOnBlobDelete(existingSize) else cachedSizes = null
             failpoint("AFTER_UNLINK")
             repository.finishDelete(blob.sha256, Instant.now())
+            finished = true
             true
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            cachedSizes = null
+            false
+        } finally {
+            if (!finished) cachedSizes = null
+        }
     }
     fun delete(request: ArchiveDeleteRequest): ArchiveDeleteResult = mutation {
         val d = deletion(request.ids)
@@ -625,7 +737,7 @@ class DiscoveryPaperArchiveService(
                 files++; bytes += blob.sizeBytes
             } else refs.map { it.recordId }.distinct().forEach { failed += ArchiveConflict(it,"DELETE_IO_ERROR") }
         }
-        ArchiveDeleteResult(files,bytes,d.preview.items.flatMap { item -> item.reasonCodes.map { ArchiveConflict(item.id,it) } },failed,sizes().third)
+        ArchiveDeleteResult(files,bytes,d.preview.items.flatMap { item -> item.reasonCodes.map { ArchiveConflict(item.id,it) } },failed,sizes(authoritative = true).third)
     }
     @EventListener(ApplicationReadyEvent::class)
     fun startupRecovery() {
@@ -635,7 +747,18 @@ class DiscoveryPaperArchiveService(
     }
     @Scheduled(fixedDelay = 300000, initialDelay = 300000)
     fun scheduledRecovery() {
-        try { recover() } catch (e: Exception) {
+        try {
+            val now = clock()
+            val last = lastFullRecoveryAt
+            if (last == null) {
+                lastFullRecoveryAt = now
+                recoverLightweight()
+            } else if (java.time.Duration.between(last, now).seconds >= fullRecoveryIntervalSeconds) {
+                recover()
+            } else {
+                recoverLightweight()
+            }
+        } catch (e: Exception) {
             LOG.warn("event=DISCOVERY_PAPER_RECOVERY_UNAVAILABLE reasonCode={}", (e as? ArchiveException)?.code ?: "RECOVERY_FAILED")
         }
     }
@@ -653,7 +776,7 @@ class DiscoveryPaperArchiveService(
             }
         } catch (_: NoSuchFileException) { null }
     }
-    private fun recoverBlob(hash: String, now: Instant) {
+    private fun recoverBlob(hash: String, now: Instant, verifyContent: Boolean = true) {
         val candidate = mutation {
             // The scan snapshot may be stale after another short mutation; always read current state.
             val blob = repository.blob(hash) ?: return@mutation null
@@ -661,14 +784,16 @@ class DiscoveryPaperArchiveService(
                 (analysisReaders[hash] ?: 0) > 0 -> null
                 blob.state == ArchiveBlobState.DELETING -> {
                     // Once DELETING commits, new references/protection are forbidden until this finishes.
-                    Files.deleteIfExists(blobPath(hash)); repository.finishDelete(hash, now)
+                    if (Files.deleteIfExists(blobPath(hash))) cachedSizes = null
+                    repository.finishDelete(hash, now)
                     null
                 }
                 repository.references(hash).isEmpty() -> {
-                    Files.deleteIfExists(blobPath(hash)); repository.deleteUnreferencedBlob(hash)
+                    if (Files.deleteIfExists(blobPath(hash))) cachedSizes = null
+                    repository.deleteUnreferencedBlob(hash)
                     null
                 }
-                blob.state == ArchiveBlobState.AVAILABLE -> {
+                verifyContent && blob.state == ArchiveBlobState.AVAILABLE -> {
                     val path = blobPath(hash)
                     val identity = recoveryIdentity(path)
                     analysisReaders[hash] = (analysisReaders[hash] ?: 0) + 1
@@ -700,13 +825,54 @@ class DiscoveryPaperArchiveService(
             }
         }
     }
+    private fun cleanupStaleTempFiles(base: Path, now: Instant) {
+        val temp = base.resolve(".tmp")
+        checkPath(temp)
+        if (Files.exists(temp, LinkOption.NOFOLLOW_LINKS)) Files.list(temp).use { paths -> paths.forEach { path ->
+            mutation {
+                checkPath(path)
+                if (path !in activeWriters && Files.exists(path, LinkOption.NOFOLLOW_LINKS) &&
+                    Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(now.minusSeconds(3600))) {
+                    if (Files.deleteIfExists(path)) cachedSizes = null
+                }
+            }
+        } }
+    }
+    private fun cleanupStaleStartedAttempts(now: Instant) {
+        val cutoff = now.minusSeconds(3600)
+        val attemptIds = mutation { repository.staleStartedAttemptIds(cutoff) }
+        attemptIds.forEach { attemptId -> mutation {
+            val attempt = repository.attempt(attemptId)
+            if (attempt?.status == ArchiveAttemptStatus.STARTED && attempt.updatedAt.isBefore(cutoff))
+                repository.finishAttempt(attemptId, ArchiveAttemptStatus.SAVE_ERROR, "INTERRUPTED_WRITE", null, 0, now)
+        } }
+    }
+    private fun recoverLightweight() {
+        if (!recoveryRunning.compareAndSet(false, true)) return
+        try {
+            val base = mutation { root().takeIf { Files.exists(it, LinkOption.NOFOLLOW_LINKS) } } ?: return
+            val now = clock()
+            val candidates = mutation {
+                val deleting = repository.blobsByStates(listOf(ArchiveBlobState.DELETING)).map { it.sha256 }
+                val unreferenced = repository.unreferencedAvailableBlobHashes()
+                (deleting + unreferenced).distinct()
+            }
+            candidates.forEach { recoverBlob(it, now, verifyContent = false) }
+            cleanupStaleTempFiles(base, now)
+            cleanupStaleStartedAttempts(now)
+        } catch (e: DataAccessException) { throw ArchiveException("DB_UNAVAILABLE", 503) }
+        catch (e: java.io.IOException) { throw ArchiveException("STORAGE_UNAVAILABLE", 503) }
+        finally { recoveryRunning.set(false) }
+    }
     fun recover() {
         if (!recoveryRunning.compareAndSet(false, true)) return
         try {
             val base = mutation { root().takeIf { Files.exists(it, LinkOption.NOFOLLOW_LINKS) } } ?: return
-            val now = Instant.now()
-            val candidates = mutation { repository.blobs().map { it.sha256 } }
-            candidates.forEach { recoverBlob(it, now) }
+            val now = clock()
+            val candidates = mutation {
+                repository.blobsByStates(listOf(ArchiveBlobState.DELETING, ArchiveBlobState.AVAILABLE)).map { it.sha256 }
+            }
+            candidates.forEach { recoverBlob(it, now, verifyContent = true) }
             val blobs = base.resolve("blobs")
             checkPath(blobs)
             if (Files.exists(blobs, LinkOption.NOFOLLOW_LINKS)) Files.walk(blobs).use { paths -> paths.forEach { path ->
@@ -714,37 +880,27 @@ class DiscoveryPaperArchiveService(
                     checkPath(path)
                     if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                         val hash = path.fileName.toString().removeSuffix(".bin")
-                        if (repository.blob(hash) == null) Files.deleteIfExists(path)
+                        val blob = repository.blob(hash)
+                        if (blob == null || (blob.state == ArchiveBlobState.MISSING &&
+                                (analysisReaders[hash] ?: 0) == 0 && repository.references(hash).isEmpty())) {
+                            if (Files.deleteIfExists(path)) cachedSizes = null
+                        }
                     }
                 }
             } }
-            val temp = base.resolve(".tmp")
-            checkPath(temp)
-            if (Files.exists(temp, LinkOption.NOFOLLOW_LINKS)) Files.list(temp).use { paths -> paths.forEach { path ->
-                mutation {
-                    checkPath(path)
-                    if (path !in activeWriters && Files.exists(path, LinkOption.NOFOLLOW_LINKS) &&
-                        Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(now.minusSeconds(3600)))
-                        Files.deleteIfExists(path)
-                }
-            } }
-            val recordIds = mutation { repository.records().map { it.id } }
-            recordIds.forEach { recordId ->
-                val attemptIds = mutation { repository.attempts(recordId).filter {
-                    it.status == ArchiveAttemptStatus.STARTED && it.updatedAt.isBefore(now.minusSeconds(3600))
-                }.map { it.id } }
-                attemptIds.forEach { attemptId -> mutation {
-                    val attempt = repository.attempt(attemptId)
-                    if (attempt?.status == ArchiveAttemptStatus.STARTED && attempt.updatedAt.isBefore(now.minusSeconds(3600)))
-                        repository.finishAttempt(attemptId, ArchiveAttemptStatus.SAVE_ERROR, "INTERRUPTED_WRITE", null, 0, now)
-                } }
-            }
+            cleanupStaleTempFiles(base, now)
+            cleanupStaleStartedAttempts(now)
+            lastFullRecoveryAt = clock()
         } catch (e: DataAccessException) { throw ArchiveException("DB_UNAVAILABLE", 503) }
         catch (e: java.io.IOException) { throw ArchiveException("STORAGE_UNAVAILABLE", 503) }
         finally { recoveryRunning.set(false) }
     }
     companion object {
         private val LOG = LoggerFactory.getLogger(DiscoveryPaperArchiveService::class.java)
+        private val SHA256_REGEX = Regex("[a-f0-9]{64}")
+        private const val SIZE_CACHE_TTL_NANOS = 30_000_000_000L
+        private const val SIZE_CACHE_HEADROOM_BYTES = 64L * 1024L * 1024L
+        private const val FULL_RECOVERY_INTERVAL_SECONDS = 12L * 3600L
         private val SENSITIVE_FIELDS = setOf("password", "credentials", "credential", "apikey", "token",
             "accesstoken", "refreshtoken", "authorization", "localpath", "filepath", "absolutepath", "directory")
         fun sha(bytes: ByteArray): String = hex(MessageDigest.getInstance("SHA-256").digest(bytes))
