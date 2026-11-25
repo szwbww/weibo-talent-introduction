@@ -46,7 +46,23 @@ class DiscoveryPaperArchiveRecoveryConcurrencyTest {
         Files.createDirectories(root.resolve("blobs"))
         Files.createDirectories(root.resolve(".tmp"))
         Mockito.`when`(repository.blobs()).thenAnswer { blobs.values.sortedByDescending { it.sha256 } }
+        Mockito.`when`(repository.blobsByStates(any())).thenAnswer { call ->
+            val states = call.getArgument<Collection<ArchiveBlobState>>(0).toSet()
+            blobs.values.filter { it.state in states }.sortedByDescending { it.sha256 }
+        }
+        Mockito.`when`(repository.unreferencedAvailableBlobHashes()).thenAnswer {
+            blobs.values.filter { blob ->
+                blob.state == ArchiveBlobState.AVAILABLE &&
+                    attempts.values.none { it.blobSha256 == blob.sha256 && it.status == ArchiveAttemptStatus.SAVED }
+            }.map { it.sha256 }.sorted()
+        }
         Mockito.`when`(repository.records()).thenAnswer { records.values.toList() }
+        Mockito.`when`(repository.protectedCount()).thenAnswer { records.values.count { it.protected }.toLong() }
+        Mockito.`when`(repository.staleStartedAttemptIds(any())).thenAnswer { call ->
+            val cutoff = call.getArgument<Instant>(0)
+            attempts.values.filter { it.status == ArchiveAttemptStatus.STARTED && it.updatedAt.isBefore(cutoff) }
+                .map { it.id }.sorted()
+        }
         Mockito.`when`(repository.blob(Mockito.anyString())).thenAnswer { blobs[it.getArgument(0)] }
         Mockito.`when`(repository.record(Mockito.anyLong())).thenAnswer { records[it.getArgument(0)] }
         Mockito.`when`(repository.attempt(Mockito.anyLong())).thenAnswer { attempts[it.getArgument(0)] }
@@ -209,6 +225,26 @@ class DiscoveryPaperArchiveRecoveryConcurrencyTest {
         Files.write(path(blob), "corrupt content".toByteArray())
         service.recover()
         assertEquals(ArchiveBlobState.MISSING, blobs[blob.sha256]!!.state)
+    }
+
+    @Test fun `lightweight scheduledRecovery respects analysis reader pin without hashing available blobs`() {
+        fixture()
+        val pinned = body(1, "pinned unreferenced")
+        val kept = body(2, "referenced available")
+        Files.write(path(kept), "corrupted! available".toByteArray())
+        var hashed = false
+        service.failpoint = { if (it == "RECOVERY_BEFORE_HASH") hashed = true }
+        service.analysisLease(1).use {
+            attempts.remove(1)
+            service.scheduledRecovery()
+            assertTrue(Files.exists(path(pinned)))
+            assertFalse(hashed)
+            assertEquals(ArchiveBlobState.AVAILABLE, blobs[kept.sha256]!!.state)
+        }
+        service.scheduledRecovery()
+        assertFalse(Files.exists(path(pinned)))
+        assertFalse(hashed)
+        assertEquals(ArchiveBlobState.AVAILABLE, blobs[kept.sha256]!!.state)
     }
 
     private fun <T> completes(future: Future<T>): T = try {

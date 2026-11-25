@@ -59,6 +59,8 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
     }
     fun record(id: Long): ArchiveRecord? = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE id=?", recordMapper, id).firstOrNull()
     fun records(): List<ArchiveRecord> = jdbc.query("SELECT * FROM discovery_paper_archive_record ORDER BY id", recordMapper)
+    fun protectedCount(): Long = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM discovery_paper_archive_record WHERE protected=1", Long::class.java)!!
     /** Task age, not paper insertion order, determines the reclamation order. */
     fun cleanupExecutions(currentExecutionId: Long): List<Long> = jdbc.queryForList("""
         SELECT t.id FROM task_execution t JOIN task_execution current_task ON current_task.id=?
@@ -151,8 +153,27 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
     }
     fun attempt(id: Long): ArchiveAttempt? = jdbc.query("SELECT * FROM discovery_paper_archive_attempt WHERE id=?", attemptMapper, id).firstOrNull()
     fun attempts(recordId: Long): List<ArchiveAttempt> = jdbc.query("SELECT * FROM discovery_paper_archive_attempt WHERE record_id=? ORDER BY id", attemptMapper, recordId)
+    fun staleStartedAttemptIds(before: Instant): List<Long> = jdbc.queryForList(
+        "SELECT id FROM discovery_paper_archive_attempt WHERE status='STARTED' AND updated_at<? ORDER BY id",
+        Long::class.java, db(before))
     fun references(hash: String): List<ArchiveAttempt> = jdbc.query("SELECT * FROM discovery_paper_archive_attempt WHERE blob_sha256=? AND status='SAVED' ORDER BY id", attemptMapper, hash)
     fun blobs(): List<ArchiveBlob> = jdbc.query("SELECT * FROM discovery_paper_archive_blob ORDER BY sha256", blobMapper)
+    fun blobsByStates(states: Collection<ArchiveBlobState>): List<ArchiveBlob> {
+        val distinct = states.distinct()
+        if (distinct.isEmpty()) return emptyList()
+        val placeholders = distinct.joinToString(",") { "?" }
+        return jdbc.query("SELECT * FROM discovery_paper_archive_blob WHERE state IN ($placeholders) ORDER BY sha256",
+            blobMapper, *distinct.map { it.name }.toTypedArray())
+    }
+    fun unreferencedAvailableBlobHashes(): List<String> = jdbc.queryForList("""
+        SELECT b.sha256 FROM discovery_paper_archive_blob b
+        WHERE b.state='AVAILABLE'
+          AND NOT EXISTS (
+              SELECT 1 FROM discovery_paper_archive_attempt a
+              WHERE a.blob_sha256=b.sha256 AND a.status='SAVED'
+          )
+        ORDER BY b.sha256
+        """, String::class.java)
     fun blob(hash: String): ArchiveBlob? = jdbc.query("SELECT * FROM discovery_paper_archive_blob WHERE sha256=?", blobMapper, hash).firstOrNull()
     fun saveBody(attemptId: Long, hash: String, bytes: Long, media: String, reused: Boolean, now: Instant) = transaction {
         val a = attempt(attemptId) ?: throw ArchiveException("NOT_FOUND", 404)

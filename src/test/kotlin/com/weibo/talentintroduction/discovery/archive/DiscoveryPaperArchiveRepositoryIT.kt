@@ -29,7 +29,9 @@ internal object ArchiveMysqlFixture {
         Mysql().withDatabaseName("archive_child01").withUsername("test").withPassword("test").also { it.start() }
     }
     val dataSource by lazy { DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password).also {
-        ResourceDatabasePopulator(ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql"), ClassPathResource("db/migration/V163__paper_archive_lookup_indexes.sql")).execute(it)
+        ResourceDatabasePopulator(ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql"),
+            ClassPathResource("db/migration/V163__paper_archive_lookup_indexes.sql"),
+            ClassPathResource("db/migration/V179__add_paper_archive_maintenance_indexes.sql")).execute(it)
         JdbcTemplate(it).execute("""CREATE TABLE task_execution (
             id BIGINT PRIMARY KEY, task_type VARCHAR(64) NOT NULL, status VARCHAR(32) NOT NULL,
             started_at DATETIME(3) NOT NULL, finished_at DATETIME(3) NULL)""")
@@ -231,6 +233,64 @@ class DiscoveryPaperArchiveRepositoryIT {
             assertEquals(0L,f.service.stats().storage.fileCount)
             assertNotNull(f.service.detail(a.id).paper)
         }
+    }
+
+    @Test fun `maintenance narrow queries return exact subsets and use V179 indexes`() {
+        val r = ArchiveMysqlFixture.repository(); val jdbc = ArchiveMysqlFixture.jdbc
+        val now = Instant.parse("2026-11-25T12:00:00Z")
+        val oldTime = now.minusSeconds(7200)
+        val recentTime = now.minusSeconds(60)
+        val cutoff = now.minusSeconds(3600)
+
+        val p1 = r.beginRecord(1, "OPENALEX", "p1", """{"schemaVersion":1}""", oldTime)
+        val p2 = r.beginRecord(1, "OPENALEX", "p2", """{"schemaVersion":1}""", oldTime)
+        val p3 = r.beginRecord(1, "OPENALEX", "p3", """{"schemaVersion":1}""", oldTime)
+        assertEquals(0L, r.protectedCount())
+        r.protect(p1.id, p1.revision, true, now)
+        r.protect(p3.id, p3.revision, true, now)
+        assertEquals(2L, r.protectedCount())
+
+        val stale1 = r.beginAttempt(p1.id, "stale-1", ArchiveAttemptKind.PDF_URL, null, oldTime)
+        val stale2 = r.beginAttempt(p2.id, "stale-2", ArchiveAttemptKind.PDF_URL, null, cutoff.minusMillis(1))
+        val exactCutoff = r.beginAttempt(p2.id, "exact-cutoff", ArchiveAttemptKind.PDF_URL, null, cutoff)
+        val freshStarted = r.beginAttempt(p3.id, "fresh-started", ArchiveAttemptKind.PDF_URL, null, recentTime)
+        val savedAttempt = r.beginAttempt(p1.id, "saved-old", ArchiveAttemptKind.PDF_URL, null, oldTime)
+        val failedAttempt = r.beginAttempt(p2.id, "failed-old", ArchiveAttemptKind.PDF_URL, null, oldTime)
+        r.finishAttempt(failedAttempt.id, ArchiveAttemptStatus.SAVE_ERROR, "ERR", null, 0, oldTime)
+
+        val hashReferenced = "%064x".format(1)
+        val hashUnreferenced = "%064x".format(2)
+        val hashDeleting = "%064x".format(3)
+        val hashMissing = "%064x".format(4)
+        r.saveBody(savedAttempt.id, hashReferenced, 100, "application/pdf", false, oldTime)
+
+        assertEquals(listOf(stale1.id, stale2.id), r.staleStartedAttemptIds(cutoff))
+        assertFalse(exactCutoff.id in r.staleStartedAttemptIds(cutoff))
+        assertFalse(freshStarted.id in r.staleStartedAttemptIds(cutoff))
+        val tempUnref = r.beginAttempt(p2.id, "unref-attempt", ArchiveAttemptKind.PDF_URL, null, oldTime)
+        r.saveBody(tempUnref.id, hashUnreferenced, 200, "application/pdf", false, oldTime)
+        jdbc.update("UPDATE discovery_paper_archive_attempt SET status='DELETED' WHERE id=?", tempUnref.id)
+        val tempDel = r.beginAttempt(p3.id, "del-attempt", ArchiveAttemptKind.PDF_URL, null, oldTime)
+        r.saveBody(tempDel.id, hashDeleting, 300, "application/pdf", false, oldTime)
+        r.blobState(hashDeleting, ArchiveBlobState.DELETING)
+        val tempMiss = r.beginAttempt(p3.id, "miss-attempt", ArchiveAttemptKind.PDF_URL, null, oldTime)
+        r.saveBody(tempMiss.id, hashMissing, 400, "application/pdf", false, oldTime)
+        r.finishDelete(hashMissing, now)
+
+        assertTrue(r.blobsByStates(emptyList()).isEmpty())
+        assertEquals(listOf(hashDeleting), r.blobsByStates(listOf(ArchiveBlobState.DELETING)).map { it.sha256 })
+        assertEquals(listOf(hashReferenced, hashUnreferenced), r.blobsByStates(listOf(ArchiveBlobState.AVAILABLE)).map { it.sha256 })
+        assertEquals(listOf(hashReferenced, hashUnreferenced, hashDeleting),
+            r.blobsByStates(listOf(ArchiveBlobState.DELETING, ArchiveBlobState.AVAILABLE)).map { it.sha256 })
+        assertEquals(listOf(hashUnreferenced), r.unreferencedAvailableBlobHashes())
+
+        val protectedPlan = jdbc.queryForMap("EXPLAIN SELECT COUNT(*) FROM discovery_paper_archive_record WHERE protected=1")
+        assertEquals("idx_paper_protected", protectedPlan["key"])
+        val stalePlan = jdbc.queryForMap("EXPLAIN SELECT id FROM discovery_paper_archive_attempt WHERE status='STARTED' AND updated_at<?",
+            java.time.LocalDateTime.ofInstant(cutoff, java.time.ZoneOffset.UTC))
+        assertEquals("idx_paper_attempt_status_updated", stalePlan["key"])
+        val blobPlan = jdbc.queryForMap("EXPLAIN SELECT * FROM discovery_paper_archive_blob WHERE state IN ('DELETING') ORDER BY sha256")
+        assertEquals("idx_paper_blob_state", blobPlan["key"])
     }
 }
 

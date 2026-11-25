@@ -200,11 +200,11 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh empty database reaches V178 and creates the reprocess tables without seeded rows`() {
+    fun `fresh empty database reaches V179 and creates the reprocess tables without seeded rows`() {
         val flyway = flyway()
         flyway.clean()
         val result = flyway.migrate()
-        assertEquals("178", result.targetSchemaVersion)
+        assertEquals("179", result.targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("discovery_registration_conflict"))
             assertTrue(c.tableExists("expert_material_file"))
@@ -214,6 +214,9 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.tableExists("discovery_paper_reprocess_item"))
             assertTrue(c.columnExists("inbound_mail_processing", "pending_owner_username"))
             assertTrue(c.indexExists("inbound_mail_processing", "idx_inbound_pending_owner"))
+            assertTrue(c.indexExists("discovery_paper_archive_record", "idx_paper_protected"))
+            assertTrue(c.indexExists("discovery_paper_archive_attempt", "idx_paper_attempt_status_updated"))
+            assertTrue(c.indexExists("discovery_paper_archive_blob", "idx_paper_blob_state"))
             listOf("chk_paper_reprocess_mode", "chk_paper_reprocess_state", "chk_paper_reprocess_phase",
                 "chk_paper_reprocess_active", "chk_paper_reprocess_scope_size").forEach {
                 assertTrue(c.checkConstraintExists("discovery_paper_reprocess_run", it), it)
