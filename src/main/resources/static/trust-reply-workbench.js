@@ -12,6 +12,7 @@
 
     const COMPOSE_PATH = "/api/rag-reply/compose";
     const SNIPPET_PATH = "/api/reply-snippets";
+    const FACT_CATALOG_PATH = "/api/rag/facts";
     const MODES = Object.freeze({ SIMULATION: "SIMULATION", LIVE: "LIVE", AUTO_PREVIEW: "AUTO_PREVIEW" });
     const MODEL_LABELS = Object.freeze({
         DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
@@ -78,10 +79,27 @@
         } else if (paragraph.renderMode === "VERBATIM") {
             tagText = paragraph.edited ? "逐字 · 已脱离事实原文" : "逐字";
         }
-        const tag = tagText ? `<span class="trust-reply-para-tag">${escapeText(tagText)}</span>` : "";
+        const tag = tagText ? `<span class="trust-reply-para-tag" contenteditable="false">${escapeText(tagText)}</span>` : "";
         const indexAttr = paragraph.index == null ? "" : ` data-para-index="${paragraph.index}"`;
         const editableAttr = paragraph.editable === true ? ' contenteditable="true"' : "";
         return `<div class="${classes.join(" ")}"${indexAttr}${editableAttr}>${escapeText(paragraph.text)}${tag}</div>`;
+    }
+
+    function extractParagraphText(paragraph) {
+        if (!paragraph) return "";
+        if (typeof paragraph.cloneNode === "function") {
+            const clone = paragraph.cloneNode(true);
+            if (clone && typeof clone.querySelectorAll === "function") {
+                Array.from(clone.querySelectorAll(".trust-reply-para-tag")).forEach((node) => {
+                    if (typeof node.remove === "function") node.remove();
+                    else if (node.parentNode && typeof node.parentNode.removeChild === "function") {
+                        node.parentNode.removeChild(node);
+                    }
+                });
+            }
+            return String(clone && clone.textContent != null ? clone.textContent : "").replace(/\u00a0/g, " ");
+        }
+        return String(paragraph.textContent || "").replace(/\u00a0/g, " ");
     }
 
     function renderDraft(state) {
@@ -161,9 +179,10 @@
 
     function renderShell(state) {
         const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-        const toolbar = `<div class="trust-reply-toolbar" data-workbench-control><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div><span class="muted">模型</span> <select data-role="model-select"${state.busy ? " disabled" : ""}>${renderModelOptions(state)}</select> <button type="button" class="button primary" data-action="regenerate"${state.busy ? " disabled" : ""}>重新生成</button> <button type="button" class="button" data-action="edit-body">${state.editMode ? "完成编辑" : "编辑正文"}</button> <button type="button" class="button" data-action="copy-draft">复制</button></div></div>`;
+        const copyLabel = state.copied ? "已复制 ✓" : "复制";
+        const toolbar = `<div class="trust-reply-toolbar" data-workbench-control><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div><span class="muted">模型</span> <select data-role="model-select"${state.busy ? " disabled" : ""}>${renderModelOptions(state)}</select> <button type="button" class="button primary" data-action="regenerate"${state.busy ? " disabled" : ""}>重新生成</button> <button type="button" class="button" data-action="edit-body">${state.editMode ? "完成编辑" : "编辑正文"}</button> <button type="button" class="button" data-action="copy-draft">${copyLabel}</button></div></div>`;
         const frameBar = `<div class="trust-reply-frame-bar" data-workbench-control><span class="muted">回复框架</span>${renderFrameSelects(state)}</div>`;
-        const layout = `<div class="trust-reply-layout"><section class="panel"><div class="trust-reply-doc" data-role="draft">${renderDraft(state)}</div></section><div><section class="panel"><div class="panel-head"><h2>用到了哪些事实</h2><span class="muted" data-role="fact-count">${state.usedFacts.length} 条${state.forcedFactCount > 0 ? ` · ${state.forcedFactCount} 条强制` : ""}</span></div><div class="trust-reply-facts" data-role="facts">${renderFactsList(state)}<div class="trust-reply-fact-add"><input data-role="add-fact-input" placeholder="输入 fact_code 后点添加，如 KB-COMM-044"><button type="button" class="button" data-action="add-fact"${state.busy ? " disabled" : ""}>添加</button></div></div></section><section class="panel"><div class="panel-head"><h2>未识别的提问</h2><span class="muted" data-role="unaddressed-count">${state.unaddressed.length} 项</span></div><div class="trust-reply-unaddressed" data-role="unaddressed">${renderUnaddressedList(state)}</div></section></div></div>`;
+        const layout = `<div class="trust-reply-layout"><section class="panel"><div class="trust-reply-doc" data-role="draft">${renderDraft(state)}</div></section><div><section class="panel"><div class="panel-head"><h2>用到了哪些事实</h2><span class="muted" data-role="fact-count">${state.usedFacts.length} 条${state.forcedFactCount > 0 ? ` · ${state.forcedFactCount} 条强制` : ""}</span></div><div class="trust-reply-facts" data-role="facts">${renderFactsList(state)}<div class="trust-reply-fact-add"><input data-role="add-fact-input" placeholder="搜索事实标题或输入 fact_code，回车添加" autocomplete="off"><button type="button" class="button" data-action="add-fact"${state.busy ? " disabled" : ""}>添加</button></div><div class="trust-reply-fact-suggest" data-role="fact-suggest" hidden></div></div></section><section class="panel"><div class="panel-head"><h2>未识别的提问</h2><span class="muted" data-role="unaddressed-count">${state.unaddressed.length} 项</span></div><div class="trust-reply-unaddressed" data-role="unaddressed">${renderUnaddressedList(state)}</div></section></div></div>`;
         const busyOverlay = state.busy
             ? '<div class="trust-reply-busy-overlay" data-role="busy-overlay"><div class="trust-reply-busy-card"><div class="trust-reply-busy-text">正在生成回复…</div><div class="trust-reply-busy-hint">生成完成后会更新正文与事实列表。</div></div></div>'
             : "";
@@ -195,6 +214,9 @@
             busy: false,
             dirty: false,
             editMode: false,
+            copied: false,
+            factCatalog: null,
+            factCatalogLoading: false,
             error: "",
             assemblyReady: false
         };
@@ -325,6 +347,72 @@
         const disposed = { value: false };
         const contextPath = contextPathBase(options.contextPath);
         const listeners = [];
+        let copyTimer = null;
+
+        function matchingFacts(query) {
+            const list = Array.isArray(state.factCatalog) ? state.factCatalog : [];
+            const needle = String(query || "").trim().toLowerCase();
+            const used = new Set(state.usedFactCodes || []);
+            return list
+                .filter((fact) => fact && fact.factCode && fact.enabled !== false && !used.has(fact.factCode))
+                .filter((fact) => !needle
+                    || String(fact.factCode).toLowerCase().includes(needle)
+                    || String(fact.title || "").toLowerCase().includes(needle))
+                .slice(0, 8);
+        }
+
+        function renderFactSuggestions(query) {
+            if (disposed.value || typeof host.querySelector !== "function") return;
+            const box = host.querySelector('[data-role="fact-suggest"]');
+            if (!box) return;
+            const matches = matchingFacts(query);
+            if (!matches.length) {
+                box.innerHTML = "";
+                box.hidden = true;
+                return;
+            }
+            box.innerHTML = matches.map((fact) =>
+                `<button type="button" class="trust-reply-fact-option" data-action="pick-fact" data-code="${escapeText(fact.factCode)}"><span class="trust-reply-fact-code">${escapeText(fact.factCode)}</span><span class="trust-reply-fact-option-title">${escapeText(fact.title || "")}</span></button>`
+            ).join("");
+            box.hidden = false;
+        }
+
+        function ensureFactCatalogLoaded(query) {
+            if (disposed.value) return;
+            if (Array.isArray(state.factCatalog)) {
+                renderFactSuggestions(query);
+                return;
+            }
+            if (state.factCatalogLoading) return;
+            state.factCatalogLoading = true;
+            const controller = new global.AbortController();
+            controllers.add(controller);
+            global.fetch(`${contextPath}${FACT_CATALOG_PATH}`, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                signal: controller.signal
+            }).then((response) => {
+                if (!response.ok) return [];
+                return response.json();
+            }).then((payload) => {
+                if (disposed.value) return;
+                const raw = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.facts) ? payload.facts : []);
+                state.factCatalog = raw
+                    .filter((item) => item && typeof item.factCode === "string" && item.factCode.trim())
+                    .map((item) => ({
+                        factCode: item.factCode.trim(),
+                        title: item.title || "",
+                        enabled: item.enabled !== false
+                    }));
+                state.factCatalogLoading = false;
+                const input = typeof host.querySelector === "function" ? host.querySelector('[data-role="add-fact-input"]') : null;
+                renderFactSuggestions(input && typeof input.value === "string" ? input.value : query);
+            }).catch(() => {
+                state.factCatalogLoading = false;
+            }).then(() => {
+                controllers.delete(controller);
+            });
+        }
 
         function listen(type, handler) {
             host.addEventListener(type, handler);
@@ -463,6 +551,10 @@
             if (disposed.value) return;
             disposed.value = true;
             requestSeq.value += 1;
+            if (copyTimer) {
+                global.clearTimeout(copyTimer);
+                copyTimer = null;
+            }
             controllers.forEach((controller) => controller.abort());
             controllers.clear();
             listeners.forEach((pair) => host.removeEventListener(pair[0], pair[1]));
@@ -484,12 +576,31 @@
             } else if (action === "copy-draft") {
                 const text = documentText(state);
                 if (text && global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
-                    global.navigator.clipboard.writeText(text).catch(() => {});
+                    global.navigator.clipboard.writeText(text).then(() => {
+                        if (disposed.value) return;
+                        state.copied = true;
+                        render();
+                        if (copyTimer) global.clearTimeout(copyTimer);
+                        copyTimer = global.setTimeout(() => {
+                            copyTimer = null;
+                            if (disposed.value) return;
+                            state.copied = false;
+                            render();
+                        }, 1500);
+                    }).catch(() => {});
                 }
             } else if (action === "add-fact") {
                 const input = host.querySelector ? host.querySelector('[data-role="add-fact-input"]') : null;
                 const value = input && typeof input.value === "string" ? input.value : "";
-                addFact(value);
+                const trimmed = value.trim();
+                const matches = matchingFacts(trimmed);
+                const code = (/^[A-Za-z0-9_-]+$/.test(trimmed) && (trimmed.includes("-") || !matches.length))
+                    ? trimmed
+                    : (matches[0] ? matches[0].factCode : trimmed);
+                addFact(code);
+            } else if (action === "pick-fact") {
+                const code = button.dataset ? button.dataset.code : "";
+                addFact(code);
             } else if (action === "remove-fact") {
                 const code = button.dataset ? button.dataset.code : "";
                 removeFact(code);
@@ -520,18 +631,54 @@
         }
 
         function onInputEvent(event) {
-            if (disposed.value || !state.editMode) return;
+            if (disposed.value) return;
             const target = event.target;
             if (!target || typeof target.closest !== "function") return;
+            const factInput = target.closest('[data-role="add-fact-input"]');
+            if (factInput) {
+                ensureFactCatalogLoaded(factInput.value || "");
+                return;
+            }
+            if (!state.editMode) return;
             const paragraph = target.closest(".trust-reply-para");
             if (!paragraph || !paragraph.dataset || paragraph.dataset.paraIndex == null) return;
             const index = Number(paragraph.dataset.paraIndex);
             const current = state.paragraphs[index];
             if (!current) return;
-            const text = paragraph.textContent || "";
+            const text = extractParagraphText(paragraph);
             // 实时红框反馈；state 的提交统一在 focusout（避免打字中整段重绘丢光标）。
             if (text !== current.originalText && paragraph.classList && typeof paragraph.classList.add === "function") {
                 paragraph.classList.add("edited");
+            }
+        }
+
+        function onFocusInEvent(event) {
+            if (disposed.value) return;
+            const target = event.target;
+            if (!target || typeof target.closest !== "function") return;
+            const factInput = target.closest('[data-role="add-fact-input"]');
+            if (factInput) {
+                ensureFactCatalogLoaded(factInput.value || "");
+            }
+        }
+
+        function onKeyDownEvent(event) {
+            if (disposed.value || !event) return;
+            const target = event.target;
+            if (!target || typeof target.closest !== "function") return;
+            const factInput = target.closest('[data-role="add-fact-input"]');
+            if (!factInput) return;
+            if (event.key === "Enter") {
+                if (typeof event.preventDefault === "function") event.preventDefault();
+                const trimmed = String(factInput.value || "").trim();
+                const matches = matchingFacts(trimmed);
+                const code = (/^[A-Za-z0-9_-]+$/.test(trimmed) && (trimmed.includes("-") || !matches.length))
+                    ? trimmed
+                    : (matches[0] ? matches[0].factCode : trimmed);
+                addFact(code);
+            } else if (event.key === "Escape") {
+                const box = typeof host.querySelector === "function" ? host.querySelector('[data-role="fact-suggest"]') : null;
+                if (box) box.hidden = true;
             }
         }
 
@@ -544,7 +691,7 @@
             const index = Number(paragraph.dataset.paraIndex);
             const current = state.paragraphs[index];
             if (!current) return;
-            const text = (paragraph.textContent || "").replace(/\u00a0/g, " ");
+            const text = extractParagraphText(paragraph);
             if (text !== current.text) {
                 current.text = text;
                 if (text !== current.originalText) {
@@ -559,6 +706,8 @@
         listen("click", onClick);
         listen("change", onChangeEvent);
         listen("input", onInputEvent);
+        listen("focusin", onFocusInEvent);
+        listen("keydown", onKeyDownEvent);
         listen("focusout", onFocusOutEvent);
 
         render();

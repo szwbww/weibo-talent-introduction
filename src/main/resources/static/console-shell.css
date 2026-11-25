@@ -41,7 +41,7 @@ body.console-ui{background:#fff;font-size:13px;color:#273446;overflow:hidden}
 .console-ui #mailboxConversationPanel>.panel-head .panel-head-actions{gap:8px}
 .console-ui #view-mailbox.mc-refined #mailboxList{padding:0;flex:1;min-height:0;overflow:hidden}
 .console-ui #mailboxPagination:empty{display:none!important}
-.console-ui #view-mailbox.mc-refined .mail-chat{height:100%;min-height:0;display:grid;grid-template-columns:clamp(360px,28vw,400px) minmax(0,1fr);gap:0;color:#475569}
+.console-ui #view-mailbox.mc-refined .mail-chat{height:100%;min-height:0;display:grid;grid-template-columns:var(--mc-left-width,clamp(360px,28vw,400px)) minmax(0,1fr);gap:0;color:#475569}
 .console-ui #view-mailbox.mc-refined .mail-chat .mc-experts,.console-ui #view-mailbox.mc-refined .mail-chat .mc-conversation{border:0;border-radius:0;background:#fff;min-height:0}
 .console-ui #view-mailbox.mc-refined .mail-chat .mc-experts{border-right:1px solid #e9edf3;overflow:visible}
 .console-ui #view-mailbox.mc-refined .mail-chat .mc-list-tools{padding:15px 13px 13px;gap:11px;border-bottom:1px solid #e9edf3;background:#fff}
@@ -190,3 +190,47 @@ body.console-ui .app-shell,body.console-ui .app-shell:has(#view-meeting-calendar
     .console-ui .world-clock-panel{left:12px;right:12px;bottom:12px;width:auto;max-height:calc(100dvh - 24px)}
 }
 @media(prefers-reduced-motion:reduce){.console-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}.console-ui .mc-filter:active{transform:none}}
+
+/* UX & Style Optimization Layer: non-blocking toast stack, unified z-index stack, modal chrome, flat polish */
+body.console-ui #statusBar{position:fixed;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;pointer-events:none}
+.console-ui .modal-shell,body.console-ui>.modal-shell{z-index:var(--z-modal)}
+.console-ui .preview-drawer-shell,body.console-ui>.preview-drawer-shell{z-index:1040}
+.console-ui .preview-rail,body.console-ui>.preview-rail{z-index:1039}
+.console-ui .action-dialog,body.console-ui>.action-dialog{z-index:var(--z-confirm)}
+.console-ui :is(.modal-panel,.modal-content){border-radius:12px;border-color:#dce4ef;box-shadow:0 20px 56px rgba(15,23,42,.18)}
+.console-ui :is(.modal-close-btn,.button.modal-close-x){display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;min-height:30px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#64748b;font-size:19px;line-height:1;cursor:pointer}
+.console-ui :is(.modal-close-btn,.button.modal-close-x):hover{background:#eef2f7;border-color:#dce4ef;color:#1e293b}
+.console-toast-stack{position:fixed;top:16px;right:20px;z-index:var(--z-toast);display:flex;flex-direction:column;gap:8px;width:min(380px,calc(100vw - 32px));pointer-events:none}
+.console-toast{pointer-events:auto;display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:8px;border:1px solid #dce4ef;background:#fff;color:#1e293b;font-size:12.5px;line-height:1.5;box-shadow:0 10px 28px rgba(15,23,42,.12);animation:console-toast-in 180ms cubic-bezier(.22,1,.36,1)}
+.console-toast-dot{flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#059669}
+.console-toast-ok{border-left:3px solid #059669}
+.console-toast-warn{border-left:3px solid #d97706}.console-toast-warn .console-toast-dot{background:#d97706}
+.console-toast-error{border-left:3px solid #e11d48;background:#fffafb}.console-toast-error .console-toast-dot{background:#e11d48}
+.console-toast-info{border-left:3px solid #246aeb}.console-toast-info .console-toast-dot{background:#246aeb}
+.console-toast-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.console-toast-close{flex:none;width:20px;height:20px;padding:0;border:0;border-radius:4px;background:transparent;color:#94a3b8;font-size:15px;line-height:1;cursor:pointer}
+.console-toast-close:hover{background:#f1f5f9;color:#334155}
+@keyframes console-toast-in{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.trust-reply-fact-suggest{margin-top:6px;border:1px solid #dce4ef;border-radius:7px;background:#fff;max-height:210px;overflow:auto;display:flex;flex-direction:column;gap:2px;padding:4px}
+.trust-reply-fact-option{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:5px;background:transparent;text-align:left;cursor:pointer;font-size:12px;color:#334155}
+.trust-reply-fact-option:hover{background:#eef4ff;color:#1e40af}
+.trust-reply-fact-option-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-ui #view-mailbox.mc-refined .mail-chat .mc-resizer{position:absolute;top:0;right:-3px;bottom:0;width:6px;cursor:col-resize;z-index:12;background:transparent;transition:background-color 140ms ease}
+.console-ui #view-mailbox.mc-refined .mail-chat .mc-resizer:hover,.console-ui #view-mailbox.mc-refined .mail-chat .mc-resizer.is-dragging{background:rgba(36,106,235,.22)}
+.console-ui #view-mailbox.mc-refined .mail-chat .mc-person[data-has-pending=true]:not([data-active=true]){border-left-color:#d97706;background:#fffcf7}
+.console-ui #view-mailbox.mc-refined .mail-chat .mc-person[data-has-pending=true] .mc-person-main strong{color:#1e293b;font-weight:700}
+@media(max-width:760px){.console-ui #view-mailbox.mc-refined .mail-chat .mc-resizer{display:none}}
+.console-ui :is(.panel,.metric-card,.list-item):hover{transform:none;box-shadow:none}
+.console-ui label{text-transform:none;letter-spacing:0}
+.console-ui th{text-transform:none;letter-spacing:0}
+.console-ui :is(table td,.metric-value,.list-pager-info,.mc-person-counts){font-variant-numeric:tabular-nums}
+.contact-quick-search-wrap{position:relative;min-width:210px;max-width:300px;flex:1 1 220px}
+.contact-quick-search{width:100%;min-height:32px;padding:6px 10px;font-size:12px}
+.contact-quick-search-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:45;background:#fff;border:1px solid #dce4ef;border-radius:8px;box-shadow:0 12px 28px rgba(15,23,42,.12);max-height:280px;overflow:auto;padding:4px}
+.contact-quick-search-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:7px 9px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer;color:#1e293b;font-size:12px}
+.contact-quick-search-item:hover{background:#eef4ff;color:#1e40af}
+.contact-quick-search-item span{font-size:11px;color:#64748b}
+.contact-quick-search-empty{padding:10px 12px;font-size:12px;color:#64748b}
+.contact-db-mode-notice{margin-top:8px;padding:7px 10px;border-radius:6px;border:1px solid #f5d08a;background:#fffbeb;color:#92400e;font-size:12px;line-height:1.5}
+#qaRuleSearchInput{min-width:220px;min-height:32px;padding:6px 10px;font-size:12px}
+#qaRulePolicyFilter{min-height:32px;font-size:12px}

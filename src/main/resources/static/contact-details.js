@@ -84,6 +84,7 @@ function initContactDetailsLayout() {
  const nativeUnmount=unmountExpertManualProfileSession;
  unmountExpertManualProfileSession=function(session){if(session&&!session.closed&&!session.delegated)ExpertMeetingRecords.unmount();return nativeUnmount(session)};
  const listProfiles=new Map(),listNotes=new Map();
+ function pruneCache(cache,limit=500){while(cache.size>limit)cache.delete(cache.keys().next().value);}
  function cachedRead(cache,key,url){if(!cache.has(key)){const pending=api(url).catch(e=>{if(cache.get(key)===pending)cache.delete(key);throw e});cache.set(key,pending);}return cache.get(key);}
  function matchingText(profile,name){return expertManualProfileFieldDisplay(EXPERT_MANUAL_PROFILE_FIELD_INDEX.get(name),profile);}
  function updateRowProfile(row,profile){row.querySelector('[data-list-research]').textContent=matchingText(profile,'researchAbility');row.querySelector('[data-list-match]').textContent=matchingText(profile,'companyMatchStatus');}
@@ -91,12 +92,16 @@ function initContactDetailsLayout() {
  const nativeRenderRows=renderContactListItems;
  renderContactListItems=function(){
   nativeRenderRows();
-  const jobs=[...document.querySelectorAll('#contactList .expert-list-item')].map(row=>{
+  const listEl=document.getElementById('contactList');
+  const listRect=listEl&&typeof listEl.getBoundingClientRect==='function'?listEl.getBoundingClientRect():null;
+  const entries=[...document.querySelectorAll('#contactList .expert-list-item')].map((row,index)=>{
    const contact=state.contacts.find(c=>String(c.orcidId)===row.dataset.orcid);if(!contact)return null;
    row.querySelector('.expert-meta').innerHTML='<span>科研能力 <b data-list-research>加载中…</b></span><span>匹配进度 <b data-list-match>加载中…</b></span>';
    const sub=row.querySelector('.expert-row-sub');if(contact.employment&&sub?.firstElementChild?.textContent===contact.employment)sub.firstElementChild.remove();
    const note=document.createElement('div');note.className='fp-list-note';note.innerHTML='<span>备注</span><span data-list-note>加载中…</span>';row.querySelector('.expert-row-main').after(note);
-   return async()=>{
+   const rect=typeof row.getBoundingClientRect==='function'?row.getBoundingClientRect():null;
+   const visible=!listRect||!rect||listRect.height===0||(rect.bottom>=listRect.top-120&&rect.top<=listRect.bottom+120);
+   const run=async()=>{
     if(!row.isConnected)return;
     const key=String(contact.orcidId),noteKey=String(contact.contactId);
     const profileRead=cachedRead(listProfiles,key,`/api/experts/manual-profile?expertId=${encodeURIComponent(key)}&level=${encodeURIComponent(contact.indexLevel||document.getElementById('expertIndexLevel').value)}`);
@@ -106,7 +111,10 @@ function initContactDetailsLayout() {
      noteRead?noteRead.then(n=>{if(row.isConnected&&listNotes.get(noteKey)===noteRead)updateRowNote(row,n.note)}).catch(()=>{if(row.isConnected&&!listNotes.has(noteKey))updateRowNote(row,'备注加载失败')}):Promise.resolve(updateRowNote(row,'尚无收发件箱备注'))
     ]);
    };
+   return {visible,index,run};
   }).filter(Boolean);
+  entries.sort((a,b)=>(b.visible-a.visible)||(a.index-b.index));
+  const jobs=entries.map(entry=>entry.run);
   let cursor=0;async function worker(){while(cursor<jobs.length){const job=jobs[cursor++];await job();}}
   for(let i=0;i<Math.min(4,jobs.length);i++)worker();
  };
@@ -120,6 +128,6 @@ function initContactDetailsLayout() {
  quick.addEventListener('click',()=>{document.getElementById('expertIndexLevel').value='APPLICATION';const status=document.getElementById('contactStatusFilter');status.value='INVITED';status.dispatchEvent(new Event('change',{bubbles:true}));syncQuick();});
  document.getElementById('contactsFilterGroup').addEventListener('change',syncQuick);
  const nativeLoadContacts=loadContacts;
- loadContacts=async function(){listProfiles.clear();listNotes.clear();await nativeLoadContacts();syncQuick();};
+ loadContacts=async function(){pruneCache(listProfiles);pruneCache(listNotes);await nativeLoadContacts();syncQuick();};
 
 }

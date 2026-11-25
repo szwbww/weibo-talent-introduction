@@ -5029,15 +5029,224 @@ async function api(path, options = {}) {
     }
 }
 
+function pushConsoleToast(message, type = "ok") {
+    const text = String(message ?? "").trim();
+    if (!text || typeof document === "undefined" || !document.body) return;
+    if (document.body.classList && typeof document.body.classList.contains === "function"
+        && !document.body.classList.contains("console-ui")) return;
+    const now = typeof Date !== "undefined" && typeof Date.now === "function" ? Date.now() : 0;
+    const last = pushConsoleToast._last;
+    if (last && last.text === text && last.type === type && now - last.at < 250) return;
+    pushConsoleToast._last = { text, type, at: now };
+
+    let stack = typeof $ === "function" ? $("#consoleToastStack") : null;
+    if (!stack && typeof document.getElementById === "function") stack = document.getElementById("consoleToastStack");
+    if (!stack && typeof document.createElement === "function") {
+        stack = document.createElement("div");
+        stack.id = "consoleToastStack";
+        stack.className = "console-toast-stack";
+        stack.setAttribute("aria-live", "polite");
+        stack.setAttribute("aria-atomic", "false");
+        if (typeof document.body.appendChild === "function") document.body.appendChild(stack);
+    }
+    if (!stack || typeof document.createElement !== "function") return;
+
+    const tone = type === "error" ? "error" : (type === "warn" || type === "warning") ? "warn" : (type === "info" ? "info" : "ok");
+    const toast = document.createElement("div");
+    toast.className = `console-toast console-toast-${tone}`;
+    toast.setAttribute("role", tone === "error" ? "alert" : "status");
+
+    const dot = document.createElement("span");
+    dot.className = "console-toast-dot";
+    dot.setAttribute("aria-hidden", "true");
+
+    const body = document.createElement("span");
+    body.className = "console-toast-text";
+    body.textContent = text;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "console-toast-close";
+    closeBtn.setAttribute("aria-label", "关闭提示");
+    closeBtn.textContent = "×";
+
+    let timerId = null;
+    const duration = tone === "error" || tone === "warn" ? 6500 : 3800;
+    const dismiss = () => {
+        if (timerId) clearTimeout(timerId);
+        timerId = null;
+        if (typeof toast.remove === "function") toast.remove();
+        else if (toast.parentNode) toast.parentNode.removeChild(toast);
+    };
+    const armTimer = () => {
+        if (timerId) clearTimeout(timerId);
+        timerId = setTimeout(dismiss, duration);
+    };
+    if (typeof closeBtn.addEventListener === "function") closeBtn.addEventListener("click", dismiss);
+    if (typeof toast.addEventListener === "function") {
+        toast.addEventListener("pointerenter", () => { if (timerId) { clearTimeout(timerId); timerId = null; } });
+        toast.addEventListener("pointerleave", armTimer);
+    }
+    toast.appendChild(dot);
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
+
+    const existing = typeof stack.querySelectorAll === "function" ? Array.from(stack.querySelectorAll(".console-toast")) : (stack.children || []);
+    while (existing.length >= 4) {
+        const oldest = existing.shift();
+        if (oldest && typeof oldest.remove === "function") oldest.remove();
+        else if (oldest?.parentNode) oldest.parentNode.removeChild(oldest);
+    }
+    stack.appendChild(toast);
+    armTimer();
+}
+
 function showStatus(message, type = "ok") {
     const bar = $("#statusBar");
-    bar.textContent = message;
-    bar.className = `status-bar ${type}`;
-    bar.hidden = false;
-    clearTimeout(showStatus.timer);
-    showStatus.timer = setTimeout(() => {
-        bar.hidden = true;
-    }, 4200);
+    if (bar) {
+        bar.textContent = message;
+        bar.className = `status-bar ${type}`;
+        bar.hidden = false;
+        clearTimeout(showStatus.timer);
+        showStatus.timer = setTimeout(() => {
+            bar.hidden = true;
+        }, 4200);
+    }
+    if (typeof pushConsoleToast === "function") {
+        pushConsoleToast(message, type);
+    }
+}
+
+const modalFormCleanSnapshots = new Map();
+
+function serializeModalFormState(modalId) {
+    if (modalId === "accountModal") {
+        if (state.accountEditorMode === "view") return "__readonly__";
+        const form = $("#accountForm");
+        if (!form?.elements) return "";
+        return Array.from(form.elements)
+            .filter((el) => el.name)
+            .map((el) => `${el.name}:${el.type === "checkbox" ? el.checked : el.value}`)
+            .join("|");
+    }
+    if (modalId === "qaRuleModal") {
+        const form = $("#qaRuleForm");
+        if (!form?.elements) return "";
+        const base = Array.from(form.elements)
+            .filter((el) => el.name && !el.disabled)
+            .map((el) => `${el.name}:${el.type === "checkbox" ? el.checked : el.value}`)
+            .join("|");
+        const cov = typeof collectQaCoverageKeys === "function" ? collectQaCoverageKeys().slice().sort().join(",") : "";
+        return `${base}|cov:${cov}`;
+    }
+    if (modalId === "replySnippetModal") {
+        const form = $("#replySnippetForm");
+        if (!form?.elements) return "";
+        const base = Array.from(form.elements)
+            .filter((el) => el.name && !el.disabled)
+            .map((el) => `${el.name}:${el.type === "checkbox" ? el.checked : el.value}`)
+            .join("|");
+        const variants = typeof collectContentVariants === "function"
+            ? JSON.stringify(collectContentVariants($("#replySnippetVariantsContainer")))
+            : "";
+        return `${base}|variants:${variants}`;
+    }
+    if (modalId === "composeTemplateModal") {
+        const form = $("#composeTemplateForm");
+        if (!form?.elements) return "";
+        const base = [
+            form.templateName?.value || "",
+            form.subject?.value || "",
+            form.description?.value || "",
+            Boolean(form.enabled?.checked),
+            state.selectedSubjectSnippetId ?? ""
+        ].join("|");
+        const blocks = typeof collectComposeTemplateBlocksFromForm === "function"
+            ? JSON.stringify(collectComposeTemplateBlocksFromForm())
+            : "";
+        return `${base}|blocks:${blocks}`;
+    }
+    if (modalId === "suppressionModal") {
+        const form = $("#suppressionForm");
+        if (!form?.elements) return "";
+        return `${form.email?.value || ""}|${form.reason?.value || ""}`;
+    }
+    return "";
+}
+
+function captureModalCleanSnapshot(modalId) {
+    modalFormCleanSnapshots.set(modalId, serializeModalFormState(modalId));
+}
+
+function isModalFormDirty(modalId) {
+    if (!modalFormCleanSnapshots.has(modalId)) return false;
+    const clean = modalFormCleanSnapshots.get(modalId);
+    if (clean === "__readonly__") return false;
+    return serializeModalFormState(modalId) !== clean;
+}
+
+async function requestCloseEditorModal(modalId, closeFn) {
+    if (typeof isModalFormDirty === "function" && isModalFormDirty(modalId) && typeof openActionDialog === "function") {
+        const confirmed = await openActionDialog("confirm", {
+            message: "当前表单有未保存的修改，确定放弃修改并关闭吗？"
+        });
+        if (!confirmed) return false;
+    }
+    closeFn();
+    return true;
+}
+
+function handleGlobalEditorEscape(event) {
+    if (!event || event.key !== "Escape" || event.defaultPrevented) return;
+    if (typeof document !== "undefined" && document.getElementById?.("actionDialog")?.open) return;
+
+    const openVarMenu = typeof document !== "undefined" ? document.querySelector?.(".var-insert-menu:not([hidden])") : null;
+    if (openVarMenu) {
+        event.preventDefault();
+        if (typeof closeOpenVarInsertMenus === "function") closeOpenVarInsertMenus();
+        return;
+    }
+    const subjectOpts = $("#composeSubjectOptions");
+    if (subjectOpts && !subjectOpts.hidden) {
+        event.preventDefault();
+        if (typeof closeSubjectSnippetOptions === "function") closeSubjectSnippetOptions();
+        return;
+    }
+    const discoverMenu = $("#discoverModeMenu");
+    if (discoverMenu && !discoverMenu.hidden) {
+        event.preventDefault();
+        discoverMenu.hidden = true;
+        $("#discoverModeToggle")?.setAttribute?.("aria-expanded", "false");
+        return;
+    }
+    const inboundTagModal = $("#inboundAddTagModal");
+    if (inboundTagModal && !inboundTagModal.hidden) {
+        event.preventDefault();
+        if (typeof hideInboundAddTagModal === "function") hideInboundAddTagModal();
+        return;
+    }
+    const previewDrawer = $("#previewDrawer");
+    if (previewDrawer && !previewDrawer.hidden) {
+        event.preventDefault();
+        if (typeof collapsePreviewDrawer === "function") collapsePreviewDrawer();
+        return;
+    }
+
+    const modalStack = [
+        ["composeTemplateModal", () => hideComposeTemplateEditor()],
+        ["replySnippetModal", () => hideReplySnippetEditor()],
+        ["qaRuleModal", () => hideQaRuleEditor()],
+        ["accountModal", () => hideAccountEditor()],
+        ["suppressionModal", () => hideSuppressionEditor()]
+    ];
+    for (const [modalId, closeFn] of modalStack) {
+        const modal = $(`#${modalId}`);
+        if (modal && !modal.hidden) {
+            event.preventDefault();
+            requestCloseEditorModal(modalId, closeFn);
+            return;
+        }
+    }
 }
 
 function badge(value, type) {
@@ -5739,6 +5948,7 @@ function fillAccountForm(account, mode = account ? "edit" : "new") {
     const deleteBtn = $("#deleteAccountBtn");
     deleteBtn.hidden = !account || mode === "view" || account.accountCode === "SIMULATOR_NOOP";
     deleteBtn.disabled = mode === "view";
+    if (typeof captureModalCleanSnapshot === "function") captureModalCleanSnapshot("accountModal");
 }
 
 async function saveAccount(event) {
@@ -6307,7 +6517,25 @@ function qaFactBodyPreview(text) {
 }
 
 function renderQaRulesTable() {
-    $("#qaRulesTable").innerHTML = state.qaRules.map((rule) => {
+    const query = ($("#qaRuleSearchInput")?.value || "").trim().toLowerCase();
+    const policy = ($("#qaRulePolicyFilter")?.value || "").trim().toUpperCase();
+    const filtered = (state.qaRules || []).filter((rule) => {
+        if (policy && String(rule.replyPolicy || "").toUpperCase() !== policy) {
+            return false;
+        }
+        if (!query) return true;
+        const haystack = [
+            rule.id,
+            rule.displayName,
+            rule.categoryName,
+            rule.categoryCode,
+            rule.keywords,
+            rule.answerBody,
+            rule.replyBody
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(query);
+    });
+    $("#qaRulesTable").innerHTML = filtered.map((rule) => {
         const displayName = rule.displayName?.trim();
         const nameCell = displayName
             ? escapeHtml(displayName)
@@ -6331,7 +6559,7 @@ function renderQaRulesTable() {
             </td>
         </tr>
     `;
-    }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">暂无 QA 事实</td></tr>`;
+    }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">${query || policy ? "无匹配的 QA 规则" : "暂无 QA 事实"}</td></tr>`;
 }
 
 async function ensureVariableMeta() {
@@ -7072,6 +7300,7 @@ function fillQaRuleForm(rule) {
     renderQaCoverageKeyOptions(selectedCoverage);
     renderQaCoverageKeyChips(selectedCoverage);
     renderQaCoverageGate();
+    if (typeof captureModalCleanSnapshot === "function") captureModalCleanSnapshot("qaRuleModal");
 }
 
 async function saveQaRule(event) {
@@ -8366,6 +8595,7 @@ function fillReplySnippetForm(snippet, presetType) {
     updateVarValidationForTarget("replySnippetContent", $("#replySnippetContent"));
     setActiveVariant(container, 0);
     mountPreviewRail({ targetId: "replySnippetContent" });
+    if (typeof captureModalCleanSnapshot === "function") captureModalCleanSnapshot("replySnippetModal");
 }
 
 async function saveReplySnippet(event) {
@@ -8489,6 +8719,7 @@ function renderSuppressionsTable() {
 function showSuppressionEditor() {
     $("#suppressionModal").hidden = false;
     document.body.classList.add("modal-open");
+    if (typeof captureModalCleanSnapshot === "function") captureModalCleanSnapshot("suppressionModal");
 }
 
 function hideSuppressionEditor() {
@@ -9268,6 +9499,8 @@ async function loadContacts() {
     const expertTypes = typeof expertTypeActiveValues === "function" ? expertTypeActiveValues() : [];
     let tag = $("#expertTagFilter")?.value || "";
     const useDbContactPath = needsAttention || replyMode;
+    const dbNoticeEl = $("#contactDbModeNotice");
+    if (dbNoticeEl) dbNoticeEl.hidden = !useDbContactPath;
     renderContactListSkeleton();
 
     const tagFilterEl = $("#expertTagFilter");
@@ -16407,6 +16640,7 @@ function openComposeTemplateEditor(template) {
     bindSubjectSnippetEditor();
     refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
     mountPreviewRail({ targetId: "composeTemplate" });
+    if (typeof captureModalCleanSnapshot === "function") captureModalCleanSnapshot("composeTemplateModal");
 }
 
 function hideComposeTemplateEditor() {
@@ -18369,9 +18603,9 @@ async function handleUnmatchedAction(element) {
                 method: "POST",
                 body: JSON.stringify({ operatorStatus: newStatus, operatorName })
             });
-            alert("专家状态变更成功");
+            showStatus("专家状态变更成功", "ok");
         } catch (e) {
-            alert("专家状态变更失败: " + e.message);
+            showStatus("专家状态变更失败: " + e.message, "error");
             return;
         }
         await showUnmatchedDetail(id);
@@ -18389,9 +18623,9 @@ async function handleUnmatchedAction(element) {
                 method: "POST",
                 body: JSON.stringify({ targetLevel: newLevel, operatorName })
             });
-            alert("专家层级变更成功");
+            showStatus("专家层级变更成功", "ok");
         } catch (e) {
-            alert("专家层级变更失败: " + e.message);
+            showStatus("专家层级变更失败: " + e.message, "error");
             return;
         }
         await showUnmatchedDetail(id);
@@ -18718,8 +18952,7 @@ async function handleUnmatchedAction(element) {
     if (action === "rich-command") {
         const command = element.dataset.command;
         if (command === "createLink") {
-            const url = prompt("请输入链接 URL:");
-            if (url) document.execCommand(command, false, url);
+            await applyRichEditorLinkDialog();
         } else {
             document.execCommand(command, false, null);
         }
@@ -19604,6 +19837,7 @@ function bindMonitoringEvents() {
 }
 
 function bindEvents() {
+    if (typeof installConsoleNonBlockingAlert === "function") installConsoleNonBlockingAlert();
     ensureTranslateClickHandler();
     $$(".nav-tabs .nav-tab[data-view]").forEach((tab) => tab.addEventListener("click", () => {
         navigateFromCoreMenu(tab.dataset.view);
@@ -19617,14 +19851,10 @@ function bindEvents() {
     bindMonitoringEvents();
     $("#reloadAccountsBtn").addEventListener("click", loadAccounts);
     $("#newAccountBtn").addEventListener("click", () => fillAccountForm(null, "new"));
-    $("#clearAccountFormBtn").addEventListener("click", hideAccountEditor);
-    $("#accountModalCloseBtn").addEventListener("click", hideAccountEditor);
-    $("#accountModalBackdrop").addEventListener("click", hideAccountEditor);
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#accountModal").hidden) {
-            hideAccountEditor();
-        }
-    });
+    $("#clearAccountFormBtn").addEventListener("click", () => requestCloseEditorModal("accountModal", hideAccountEditor));
+    $("#accountModalCloseBtn").addEventListener("click", () => requestCloseEditorModal("accountModal", hideAccountEditor));
+    $("#accountModalBackdrop").addEventListener("click", () => requestCloseEditorModal("accountModal", hideAccountEditor));
+    document.addEventListener("keydown", handleGlobalEditorEscape);
     $("#accountForm").addEventListener("submit", saveAccount);
     $("#accountForm").inboundMailboxCode.addEventListener("change", updateInboundMailboxFields);
     document.querySelectorAll(".password-toggle").forEach((btn) => {
@@ -19674,7 +19904,8 @@ function bindEvents() {
         qaAuditFrom.value = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(monthAgo);
     }
     $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
-    $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
+    $("#qaRuleSearchInput")?.addEventListener("input", () => renderQaRulesTable());
+    $("#qaRulePolicyFilter")?.addEventListener("change", () => renderQaRulesTable());
     $("#qaRuleForm").addEventListener("submit", (event) => saveQaRule(event).catch((error) => showStatus(error.message, "error")));
     $("#qaRuleForm").addEventListener("change", (event) => {
         if (event.target.matches(".qa-cov-input")) {
@@ -19746,20 +19977,10 @@ function bindEvents() {
             refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
         }
     });
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#previewDrawer").hidden) {
-            collapsePreviewDrawer();
-        }
-    });
     $("#newQaRuleBtn").addEventListener("click", () => fillQaRuleForm(null));
-    $("#clearQaRuleBtn").addEventListener("click", hideQaRuleEditor);
-    $("#qaRuleModalCloseBtn").addEventListener("click", hideQaRuleEditor);
-    $("#qaRuleModalBackdrop").addEventListener("click", hideQaRuleEditor);
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#qaRuleModal").hidden) {
-            hideQaRuleEditor();
-        }
-    });
+    $("#clearQaRuleBtn").addEventListener("click", () => requestCloseEditorModal("qaRuleModal", hideQaRuleEditor));
+    $("#qaRuleModalCloseBtn").addEventListener("click", () => requestCloseEditorModal("qaRuleModal", hideQaRuleEditor));
+    $("#qaRuleModalBackdrop").addEventListener("click", () => requestCloseEditorModal("qaRuleModal", hideQaRuleEditor));
     $("#qaRulesTable").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleQaAction(button).catch((error) => showStatus(error.message, "error"));
@@ -19771,9 +19992,9 @@ function bindEvents() {
     $("#replySnippetForm")?.addEventListener("submit", (event) => {
         saveReplySnippet(event).catch((error) => showStatus(error.message, "error"));
     });
-    $("#clearReplySnippetBtn")?.addEventListener("click", hideReplySnippetEditor);
-    $("#replySnippetModalCloseBtn")?.addEventListener("click", hideReplySnippetEditor);
-    $("#replySnippetModalBackdrop")?.addEventListener("click", hideReplySnippetEditor);
+    $("#clearReplySnippetBtn")?.addEventListener("click", () => requestCloseEditorModal("replySnippetModal", hideReplySnippetEditor));
+    $("#replySnippetModalCloseBtn")?.addEventListener("click", () => requestCloseEditorModal("replySnippetModal", hideReplySnippetEditor));
+    $("#replySnippetModalBackdrop")?.addEventListener("click", () => requestCloseEditorModal("replySnippetModal", hideReplySnippetEditor));
     $("#replySnippetForm")?.snippetType?.addEventListener("change", () => {
         updateReplySnippetDefaultFieldVisibility();
     });
@@ -19781,11 +20002,6 @@ function bindEvents() {
         handleContentVariantEditorClick(event, $("#replySnippetForm"));
     });
     $("#replySnippetForm")?.addEventListener("input", handleContentVariantEditorInput);
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#replySnippetModal")?.hidden) {
-            hideReplySnippetEditor();
-        }
-    });
     $("#replySnippetsPanels")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleReplySnippetAction(button).catch((error) => showStatus(error.message, "error"));
@@ -19800,9 +20016,9 @@ function bindEvents() {
     $("#composeTemplateForm")?.addEventListener("submit", (event) => {
         saveComposeTemplate(event).catch((error) => showStatus(error.message, "error"));
     });
-    $("#composeTemplateCancelBtn")?.addEventListener("click", hideComposeTemplateEditor);
-    $("#composeTemplateModalCloseBtn")?.addEventListener("click", hideComposeTemplateEditor);
-    $("#composeTemplateModalBackdrop")?.addEventListener("click", hideComposeTemplateEditor);
+    $("#composeTemplateCancelBtn")?.addEventListener("click", () => requestCloseEditorModal("composeTemplateModal", hideComposeTemplateEditor));
+    $("#composeTemplateModalCloseBtn")?.addEventListener("click", () => requestCloseEditorModal("composeTemplateModal", hideComposeTemplateEditor));
+    $("#composeTemplateModalBackdrop")?.addEventListener("click", () => requestCloseEditorModal("composeTemplateModal", hideComposeTemplateEditor));
     $("#openComposeTemplatePreviewBtn")?.addEventListener("click", () => {
         openComposeTemplatePreview().catch((error) => showStatus(error.message, "error"));
     });
@@ -19824,11 +20040,6 @@ function bindEvents() {
     $("#composeTemplatesTable")?.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleComposeTemplateAction(button).catch((error) => showStatus(error.message, "error"));
-    });
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#composeTemplateModal")?.hidden) {
-            hideComposeTemplateEditor();
-        }
     });
     $("#reloadSuppressionsBtn").addEventListener("click", () => {
         loadSuppressions().catch((error) => showStatus(error.message, "error"));
@@ -19852,14 +20063,9 @@ function bindEvents() {
     $("#suppressionForm").addEventListener("submit", (event) => {
         saveSuppression(event).catch((error) => showStatus(error.message, "error"));
     });
-    $("#clearSuppressionBtn").addEventListener("click", hideSuppressionEditor);
-    $("#suppressionModalCloseBtn").addEventListener("click", hideSuppressionEditor);
-    $("#suppressionModalBackdrop").addEventListener("click", hideSuppressionEditor);
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#suppressionModal").hidden) {
-            hideSuppressionEditor();
-        }
-    });
+    $("#clearSuppressionBtn").addEventListener("click", () => requestCloseEditorModal("suppressionModal", hideSuppressionEditor));
+    $("#suppressionModalCloseBtn").addEventListener("click", () => requestCloseEditorModal("suppressionModal", hideSuppressionEditor));
+    $("#suppressionModalBackdrop").addEventListener("click", () => requestCloseEditorModal("suppressionModal", hideSuppressionEditor));
     $("#suppressionsTable").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action]");
         if (button) handleSuppressionAction(button).catch((error) => showStatus(error.message, "error"));
@@ -20314,17 +20520,28 @@ function bindEvents() {
             ($("#expertHIndexMinFilter")?.value || "") !== "",
             ($("#expertCitationMinFilter")?.value || "") !== "",
             ($("#expertRecentYearsFilter")?.value || "") !== "",
-            ($("#expertHasFieldFilter")?.selectedOptions?.length || 0) > 0
+            ($("#expertHasFieldFilter")?.selectedOptions?.length || 0) > 0,
+            ($("#expertGateTemplateFilter")?.value || "") !== ""
         ].filter(Boolean).length;
         const countEl = $("#filterActiveCount");
         countEl.hidden = active === 0;
         countEl.textContent = active;
+        const clearBtn = $("#contactClearFiltersBtn");
+        if (clearBtn) {
+            const hasQuick = Boolean(($("#contactQuickSearch")?.value || "").trim());
+            clearBtn.hidden = active === 0 && !hasQuick;
+        }
     };
     const reloadContactsFromStart = () => {
         state.contactsPage = 0;
         updateFilterBadge();
         loadContacts().catch((e) => showStatus(e.message, "error"));
     };
+    $("#contactClearFiltersBtn")?.addEventListener("click", () => {
+        resetAllContactFilters();
+        updateFilterBadge();
+    });
+    bindContactQuickSearch(updateFilterBadge);
     ["expertIndexLevel", "expertIndexSize", "contactNeedsAttentionFilter", "contactReplyModeFilter",
         "contactStatusFilter", "expertTagFilter", "expertSortBy", "expertEmailDomainFilter",
         "expertRegionFilter", "expertDisciplineFilter", "expertHIndexMinFilter", "expertCitationMinFilter",
@@ -20753,8 +20970,75 @@ const ACTION_DIALOG_SCHEMAS = {
             { name: "confirmText", label: "请输入「确认发送」", type: "text", required: true, placeholder: "确认发送" }
         ],
         validate: (result) => (String(result.confirmText || "").trim() === "确认发送" ? null : "输入不匹配，请逐字输入「确认发送」四个字。")
+    },
+    "insert-link": {
+        title: "插入超链接",
+        fields: [
+            { name: "url", label: "链接地址 (URL)", type: "text", required: true, placeholder: "https://example.org" },
+            { name: "text", label: "显示文字（选填，留空使用已选中文本或链接）", type: "text", required: false, placeholder: "例如：Programme Overview" }
+        ],
+        validate: (result) => {
+            const raw = String(result.url || "").trim();
+            if (!raw) return "请输入链接地址。";
+            if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
+                if (!/^(https?:|mailto:)/i.test(raw)) return "仅支持 https://、http:// 或 mailto: 安全链接协议。";
+                return null;
+            }
+            if (!/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:[/?#].*)?$/.test(raw)) {
+                return "请输入有效的 URL（如 https://example.org）。";
+            }
+            return null;
+        }
     }
 };
+
+function normalizeSafeLinkUrl(rawUrl) {
+    const trimmed = String(rawUrl || "").trim();
+    if (!trimmed) return "";
+    if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return "";
+    return `https://${trimmed}`;
+}
+
+async function applyRichEditorLinkDialog() {
+    if (typeof window === "undefined" || typeof document === "undefined") return false;
+    const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+    const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    const selectedText = savedRange ? String(savedRange.toString() || "") : "";
+    if (typeof openActionDialog !== "function") {
+        const fallbackUrl = typeof prompt === "function" ? prompt("请输入链接 URL:") : null;
+        if (fallbackUrl) document.execCommand("createLink", false, normalizeSafeLinkUrl(fallbackUrl) || fallbackUrl);
+        return Boolean(fallbackUrl);
+    }
+    const res = await openActionDialog("insert-link", {});
+    if (!res) return false;
+    const url = normalizeSafeLinkUrl(res.url);
+    if (!url) return false;
+    const customText = String(res.text || "").trim();
+    if (savedRange && sel) {
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+    }
+    if (customText || !selectedText) {
+        const label = customText || url;
+        document.execCommand("insertHTML", false, `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
+    } else {
+        document.execCommand("createLink", false, url);
+    }
+    return true;
+}
+if (typeof window !== "undefined") {
+    window.mcHostPromptLink = applyRichEditorLinkDialog;
+    window.mcHostReadPaneWidth = (key) => {
+        try { return Number(window.localStorage.getItem(key)); } catch (_) { return NaN; }
+    };
+    window.mcHostWritePaneWidth = (key, value) => {
+        try {
+            if (value == null) window.localStorage.removeItem(key);
+            else window.localStorage.setItem(key, String(value));
+        } catch (_) {}
+    };
+}
 
 function openActionDialog(type, options = {}) {
     return new Promise((resolve) => {
@@ -23022,6 +23306,138 @@ function renderTagBarChart(stats) {
             </div>
         `;
     }).join("");
+    if (typeof filterRenderedContactList === "function") {
+        filterRenderedContactList();
+    }
+}
+
+let contactQuickSearchTimer = null;
+let contactQuickSearchSeq = 0;
+
+function filterRenderedContactList() {
+    const query = ($("#contactQuickSearch")?.value || "").trim().toLowerCase();
+    const list = $("#contactList");
+    if (!list || typeof list.querySelectorAll !== "function") return;
+    const rows = Array.from(list.querySelectorAll(".expert-list-item"));
+    if (!rows.length) return;
+    let visible = 0;
+    rows.forEach((row) => {
+        if (!query) {
+            row.hidden = false;
+            visible += 1;
+            return;
+        }
+        const hay = [
+            row.dataset.orcid || "",
+            row.dataset.contactId || "",
+            row.textContent || ""
+        ].join(" ").toLowerCase();
+        const match = hay.includes(query);
+        row.hidden = !match;
+        if (match) visible += 1;
+    });
+    const countInfo = $("#contactCountInfo");
+    if (countInfo) {
+        const total = state.contactsTotalHits ?? state.contacts.length;
+        countInfo.textContent = query
+            ? `筛选结果: ${total} 位专家，本页匹配 ${visible} / ${rows.length} 位`
+            : `筛选结果: ${total} 位专家，当前显示 ${state.contacts.length} 位`;
+    }
+}
+
+function closeContactQuickSearchDropdown() {
+    const dropdown = $("#contactQuickSearchDropdown");
+    if (dropdown) {
+        dropdown.hidden = true;
+        dropdown.innerHTML = "";
+    }
+}
+
+function resetAllContactFilters() {
+    const defaults = {
+        expertSortBy: "",
+        expertIndexLevel: "CANDIDATE",
+        contactStatusFilter: "",
+        contactNeedsAttentionFilter: "",
+        contactReplyModeFilter: "",
+        expertTagFilter: "",
+        expertEmailDomainFilter: "",
+        expertRegionFilter: "",
+        expertDisciplineFilter: "",
+        expertHIndexMinFilter: "",
+        expertCitationMinFilter: "",
+        expertRecentYearsFilter: "",
+        expertGateTemplateFilter: "",
+        contactQuickSearch: ""
+    };
+    Object.entries(defaults).forEach(([id, value]) => {
+        const el = $(`#${id}`);
+        if (el) el.value = value;
+    });
+    document.querySelectorAll("#expertTypeTagSelect .tag-chip.active, #hasFieldTagSelect .tag-chip.active")
+        .forEach((chip) => chip.classList.remove("active"));
+    const gateSummary = $("#expertGateSummary");
+    if (gateSummary) gateSummary.hidden = true;
+    closeContactQuickSearchDropdown();
+    state.contactsPage = 0;
+    loadContacts().catch((e) => showStatus(e.message, "error"));
+}
+
+function bindContactQuickSearch(onQueryChange) {
+    const input = $("#contactQuickSearch");
+    const dropdown = $("#contactQuickSearchDropdown");
+    if (!input || !dropdown) return;
+    input.addEventListener("input", () => {
+        filterRenderedContactList();
+        if (typeof onQueryChange === "function") onQueryChange();
+        const query = input.value.trim();
+        window.clearTimeout(contactQuickSearchTimer);
+        if (query.length < 2) {
+            closeContactQuickSearchDropdown();
+            return;
+        }
+        const seq = ++contactQuickSearchSeq;
+        contactQuickSearchTimer = window.setTimeout(async () => {
+            try {
+                const results = await api(`/api/mail/unmatched-inbound/search-contacts?query=${encodeURIComponent(query)}`);
+                if (seq !== contactQuickSearchSeq) return;
+                const items = Array.isArray(results) ? results.slice(0, 8) : [];
+                if (!items.length) {
+                    dropdown.innerHTML = `<div class="contact-quick-search-empty">未在联系库中找到跨页匹配专家</div>`;
+                    dropdown.hidden = false;
+                    return;
+                }
+                dropdown.innerHTML = items.map((item) => `
+                    <button type="button" class="contact-quick-search-item" data-quick-contact-id="${escapeHtml(item.id)}">
+                        <strong>${escapeHtml(item.expertName || item.expertEmail || item.orcidId || "")}</strong>
+                        <span>${escapeHtml(item.expertEmail || "")}${item.orcidId ? ` · ${escapeHtml(item.orcidId)}` : ""}</span>
+                    </button>
+                `).join("");
+                dropdown.hidden = false;
+            } catch {
+                if (seq === contactQuickSearchSeq) closeContactQuickSearchDropdown();
+            }
+        }, 260);
+    });
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closeContactQuickSearchDropdown();
+        }
+    });
+    dropdown.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-quick-contact-id]");
+        if (!btn) return;
+        const contactId = Number(btn.dataset.quickContactId);
+        closeContactQuickSearchDropdown();
+        if (contactId) {
+            openContactInList(contactId).catch((err) => showStatus(err.message, "error"));
+        }
+    });
+    document.addEventListener("click", (event) => {
+        if (!dropdown.hidden && !event.target.closest(".contact-quick-search-wrap")) {
+            closeContactQuickSearchDropdown();
+        }
+    });
 }
 
 function renderTagPieChart(stats) {
@@ -23263,11 +23679,19 @@ function bindInboundSummaryEvents() {
     });
     $("#inboundAddTagCloseBtn")?.addEventListener("click", hideInboundAddTagModal);
     $("#inboundAddTagBackdrop")?.addEventListener("click", hideInboundAddTagModal);
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !$("#inboundAddTagModal").hidden) {
-            hideInboundAddTagModal();
-        }
-    });
+}
+
+function installConsoleNonBlockingAlert() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (!document.body?.classList?.contains?.("console-ui")) return;
+    if (window.__consoleAlertInstalled) return;
+    window.__consoleAlertInstalled = true;
+    window.alert = function consoleAlertBridge(rawMessage) {
+        const msg = String(rawMessage ?? "").replace(/\s*\n+\s*/g, "；").trim();
+        if (!msg) return;
+        const level = /失败|错误|异常/.test(msg) ? "error" : /未完整|请勿重复|警告/.test(msg) ? "warn" : "ok";
+        showStatus(msg, level);
+    };
 }
 
 function bootstrap() {

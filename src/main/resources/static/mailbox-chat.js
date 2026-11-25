@@ -2046,6 +2046,7 @@
                         </div>
                         <div class="mc-list-viewport"><div class="mc-expert-list" aria-live="polite"></div></div>
                         <div class="mc-pager"></div>
+                        <div class="mc-resizer" data-role="mc-resizer" title="拖拽调整会话列表宽度，双击恢复默认" aria-hidden="true"></div>
                     </aside>
                     <button type="button" class="button mobile-mailbox-back" data-action="mobile-mailbox-back">返回会话列表</button>
                     <section class="mc-conversation" aria-label="专家往来信件"></section>
@@ -2574,8 +2575,9 @@
                 + `；${lastReplyAriaSuffix(lastReplyDisplay(item))}` + (Number(item.failedCount) > 0 ? "；存在发送异常" : "");
             const errorId = `delay-list-${Number(item.contactId)}`;
             const errorIcon = Number(item.failedCount) > 0 ? delayErrorIcon(errorId, `有 ${Number(item.failedCount)} 封邮件发送异常，打开会话查看`, true) : "";
+            const hasPending = (Number(item.displayPendingCount) || pendingCount) > 0;
             return `
-                <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
+                <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-has-pending="${hasPending ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${errorIcon ? ` aria-describedby="${errorId}"` : ""}${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${errorIcon}${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
                         ${typeof window !== "undefined" && window.ExpertMailSettings ? window.ExpertMailSettings.emailMarkup(item) : ""}
@@ -4202,7 +4204,7 @@
             const name = (instance.selectedSummary && (instance.selectedSummary.name || (delegated ? "未填写姓名" : instance.selectedSummary.email))) || "…";
             body.innerHTML = `
                 <header class="mc-header"><div class="mc-identity"><h2>${escapeText(name)}</h2><p>正在加载往来信件…</p></div><div class="mc-actions"></div></header>
-                <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button></div>
+                <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button><button class="mc-text-button" type="button" data-action="mc-jump-compose">✎ 跳至回复</button></div>
                 <div class="mc-scroll" tabindex="0" aria-label="往来信件滚动区"><div class="mc-empty">正在加载往来信件…</div></div>
             `;
             bindScrollListener();
@@ -5760,7 +5762,7 @@
                 </header>
             `;
             const timelineHead = `
-                <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button></div>
+                <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button><button class="mc-text-button" type="button" data-action="mc-jump-compose">✎ 跳至回复</button></div>
             `;
             const scroll = `
                 <div class="mc-scroll" tabindex="0" aria-label="往来信件滚动区">
@@ -10409,6 +10411,11 @@
         function runRichCommand(command) {
             if (typeof document === "undefined" || typeof document.execCommand !== "function") return;
             if (command === "createLink") {
+                const hostPromptLink = hostFn("mcHostPromptLink");
+                if (hostPromptLink) {
+                    hostPromptLink();
+                    return;
+                }
                 const url = typeof prompt === "function" ? prompt("请输入链接 URL:") : null;
                 if (url) document.execCommand(command, false, url);
                 return;
@@ -10641,6 +10648,18 @@
                 }
                 return;
             }
+            if (action === "mc-jump-compose") {
+                const body = conversationBody();
+                const section = body && body.querySelector ? body.querySelector('.mc-section[data-section="manual"]') : null;
+                if (section) {
+                    section.open = true;
+                    const scroll = scrollEl();
+                    if (scroll) setScrollTop(contentOffsetTop(section, scroll) - 8);
+                    const editor = section.querySelector ? section.querySelector(".mc-editor") : null;
+                    if (editor && typeof editor.focus === "function") editor.focus();
+                }
+                return;
+            }
             if (action === "mc-view-attachments") {
                 openMaterials(data.contactId);
                 return;
@@ -10853,19 +10872,156 @@
             trapManageFocus(event);
         }
 
+        function isEditableKeyboardTarget(target) {
+            if (!target) return false;
+            const tag = target.tagName ? String(target.tagName).toLowerCase() : "";
+            if (tag === "input" || tag === "textarea" || tag === "select") return true;
+            if (target.isContentEditable) return true;
+            if (typeof target.getAttribute === "function" && target.getAttribute("contenteditable") === "true") return true;
+            if (typeof target.closest === "function" && target.closest('[contenteditable="true"]')) return true;
+            return false;
+        }
+
+        function stepListSelection(delta) {
+            if (delegated) return false;
+            const items = instance.list.items || [];
+            if (!items.length) return false;
+            if (isUnmatchedChip()) {
+                const currentIdx = items.findIndex((item) => String(item.id) === String(instance.selectedUnmatchedId));
+                const nextIdx = currentIdx < 0 ? 0 : Math.max(0, Math.min(items.length - 1, currentIdx + delta));
+                const next = items[nextIdx];
+                if (next && String(next.id) !== String(instance.selectedUnmatchedId)) {
+                    selectUnmatched(next);
+                    return true;
+                }
+                return false;
+            }
+            const currentIdx = items.findIndex((item) => String(item.contactId) === String(instance.selectedContactId));
+            const nextIdx = currentIdx < 0 ? 0 : Math.max(0, Math.min(items.length - 1, currentIdx + delta));
+            const next = items[nextIdx];
+            if (next && String(next.contactId) !== String(instance.selectedContactId)) {
+                selectExpert(next);
+                return true;
+            }
+            return false;
+        }
+
+        function initSplitPaneResizer() {
+            if (delegated || !host.querySelector) return;
+            const root = host.querySelector(".mail-chat");
+            const resizer = host.querySelector('[data-role="mc-resizer"]');
+            if (!root || !resizer) return;
+            const STORAGE_KEY = "mailbox-chat-left-width";
+            const applyWidth = (px) => {
+                if (!root.style || typeof root.style.setProperty !== "function") return;
+                if (px == null) {
+                    if (typeof root.style.removeProperty === "function") root.style.removeProperty("--mc-left-width");
+                } else {
+                    root.style.setProperty("--mc-left-width", `${px}px`);
+                }
+            };
+            const readWidth = () => {
+                const reader = hostFn("mcHostReadPaneWidth");
+                return reader ? Number(reader(STORAGE_KEY)) : NaN;
+            };
+            const writeWidth = (val) => {
+                const writer = hostFn("mcHostWritePaneWidth");
+                if (writer) writer(STORAGE_KEY, val);
+            };
+            try {
+                const saved = readWidth();
+                if (Number.isFinite(saved) && saved >= 280 && saved <= 520) applyWidth(Math.round(saved));
+            } catch (_) {}
+
+            let dragging = false;
+            let startX = 0;
+            let startWidth = 380;
+            const onMove = (event) => {
+                if (!dragging || instance.disposed) return;
+                const next = Math.max(280, Math.min(520, Math.round(startWidth + (event.clientX - startX))));
+                applyWidth(next);
+                try { writeWidth(next); } catch (_) {}
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                if (resizer.classList) resizer.classList.remove("is-dragging");
+                const doc = docRoot();
+                if (doc && typeof doc.removeEventListener === "function") {
+                    doc.removeEventListener("pointermove", onMove);
+                    doc.removeEventListener("pointerup", onUp);
+                    doc.removeEventListener("pointercancel", onUp);
+                }
+            };
+            const onDown = (event) => {
+                if (instance.mobileMedia && instance.mobileMedia.matches) return;
+                const aside = host.querySelector(".mc-experts");
+                startX = Number(event.clientX) || 0;
+                startWidth = aside && typeof aside.getBoundingClientRect === "function" ? aside.getBoundingClientRect().width : 380;
+                dragging = true;
+                if (resizer.classList) resizer.classList.add("is-dragging");
+                if (typeof event.preventDefault === "function") event.preventDefault();
+                const doc = docRoot();
+                if (doc && typeof doc.addEventListener === "function") {
+                    doc.addEventListener("pointermove", onMove);
+                    doc.addEventListener("pointerup", onUp);
+                    doc.addEventListener("pointercancel", onUp);
+                }
+            };
+            const onDblClick = () => {
+                applyWidth(null);
+                try { writeWidth(null); } catch (_) {}
+            };
+            if (typeof resizer.addEventListener === "function") {
+                resizer.addEventListener("pointerdown", onDown);
+                resizer.addEventListener("dblclick", onDblClick);
+                instance.cleanupResizer = () => {
+                    onUp();
+                    resizer.removeEventListener("pointerdown", onDown);
+                    resizer.removeEventListener("dblclick", onDblClick);
+                };
+            }
+        }
+
         // 02（S-3）：行内原因/处理确认的 Escape 取消必须在 document 层捕获——按钮被原位
         // 替换后焦点落到 body，host 委托收不到该键事件。
         function onDocumentKeyDown(event) {
-            if (instance.disposed) return;
-            if (event.key !== "Escape") return;
-            if (reasonFormSection(null)) {
-                if (event.preventDefault) event.preventDefault();
-                cancelReasonForm();
+            if (instance.disposed || !event || event.isComposing) return;
+            if (event.key === "Escape") {
+                if (reasonFormSection(null)) {
+                    if (event.preventDefault) event.preventDefault();
+                    cancelReasonForm();
+                    return;
+                }
+                if (instance.processConfirm.key != null) {
+                    if (event.preventDefault) event.preventDefault();
+                    cancelProcessConfirm();
+                }
                 return;
             }
-            if (instance.processConfirm.key != null) {
-                if (event.preventDefault) event.preventDefault();
-                cancelProcessConfirm();
+            if (delegated || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (instance.popoverOpen || instance.manage.open || instance.followup.open
+                || instance.materialRequest.open || instance.templateReference.open) return;
+            const doc = docRoot();
+            if (doc && typeof doc.querySelector === "function" && doc.querySelector("dialog[open], .modal-shell:not([hidden]), .modal-overlay:not([hidden])")) return;
+            const viewEl = doc && typeof doc.getElementById === "function" ? doc.getElementById("view-mailbox") : null;
+            if (viewEl && viewEl.classList && typeof viewEl.classList.contains === "function" && !viewEl.classList.contains("active")) return;
+            if (isEditableKeyboardTarget(event.target)) return;
+            if (event.key === "/") {
+                const search = host.querySelector ? host.querySelector('.mc-search-row input[type="search"]') : null;
+                if (search && typeof search.focus === "function") {
+                    if (event.preventDefault) event.preventDefault();
+                    search.focus();
+                    if (typeof search.select === "function") search.select();
+                }
+                return;
+            }
+            if (event.key === "j") {
+                if (stepListSelection(1) && event.preventDefault) event.preventDefault();
+                return;
+            }
+            if (event.key === "k") {
+                if (stepListSelection(-1) && event.preventDefault) event.preventDefault();
             }
         }
 
@@ -10948,6 +11104,21 @@
                     closeFilterPopover({ restore: true, focusButton: true });
                     return;
                 }
+            }
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                const inEditor = target && typeof target.closest === "function" ? target.closest('.mc-section[data-section="manual"] .mc-editor') : null;
+                if (inEditor) {
+                    if (event.preventDefault) event.preventDefault();
+                    const sendBtn = host.querySelector ? host.querySelector('[data-action="mc-send-manual"]') : null;
+                    if (sendBtn && !sendBtn.disabled) sendManualReply();
+                    return;
+                }
+            }
+            if ((event.key === "ArrowDown" || event.key === "ArrowUp") && target && typeof target.closest === "function" && target.closest(".mc-person-main")) {
+                if (stepListSelection(event.key === "ArrowDown" ? 1 : -1) && event.preventDefault) {
+                    event.preventDefault();
+                }
+                return;
             }
             if (event.key === "Enter") {
                 const tag = target.tagName ? String(target.tagName).toLowerCase() : "";
@@ -11211,6 +11382,10 @@
             }
             clearTimeout(instance.searchTimer);
             clearTimeout(instance.saveTimer);
+            if (typeof instance.cleanupResizer === "function") {
+                instance.cleanupResizer();
+                instance.cleanupResizer = null;
+            }
             teardownConversationSubViews();
             handlers.forEach((pair) => host.removeEventListener(pair[0], pair[1]));
             handlers.length = 0;
@@ -11297,6 +11472,7 @@
                 doc.addEventListener("mailbox-pending-badge-changed", onPendingBadgeChanged);
             }
             bindFilterEvents();
+            initSplitPaneResizer();
             loadAuthenticatedUser();
             ensurePortalRoot();
             listenPortal("click", onClickPortal);

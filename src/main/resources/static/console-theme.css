@@ -28,8 +28,10 @@ body.console-ui .console-theme-toggle { width:32px; padding:6px; flex-shrink:0; 
 :root[data-console-theme=dark] .console-ui #viewSubtitle { color:#acb5c3; }
 :root[data-console-theme=dark] .console-ui .task-center-pill { background:#dfe7f4; color:#235bc2; border-color:#b9cae7; }
 :root[data-console-theme=dark] .console-ui :is(.topbar,.topnav) .task-center-pill { background:#2c323d; color:#c3d3f4; border-color:#ffffff12; }
-:root[data-console-theme=dark] .console-ui .button:not(.danger) { background:#f0f3f8; border-color:#b9cae7; color:#235bc2; box-shadow:none; }
-:root[data-console-theme=dark] .console-ui .button:not(.danger):not(:disabled):hover { background:#e4ecfa; border-color:#86a6dc; color:#1b4eaa; }
+:root[data-console-theme=dark] .console-ui .button:not(.danger) { background:#f3f5f8; border-color:#cbd3df; color:#344154; box-shadow:none; }
+:root[data-console-theme=dark] .console-ui .button:not(.danger):not(:disabled):hover { background:#e8ecf2; border-color:#adb8c9; color:#1e293b; }
+:root[data-console-theme=dark] .console-ui .button.secondary:not(:disabled) { background:#e7eefb; border-color:#b9cae7; color:#2157be; }
+:root[data-console-theme=dark] .console-ui .button.secondary:not(:disabled):hover { background:#dbe6fa; border-color:#86a6dc; color:#1849a6; }
 :root[data-console-theme=dark] .console-ui .button.primary:not(:disabled) { background:#246aeb; border-color:#246aeb; color:#fff; box-shadow:0 1px 2px #0000000d; }
 :root[data-console-theme=dark] .console-ui .button.primary:not(:disabled):hover { background:#1858ce; border-color:#1858ce; color:#fff; }
 :root[data-console-theme=dark] .console-ui .button.danger { background:#f5e6e7; border-color:#e7bec2; color:#ad313c; }
@@ -50,7 +52,7 @@ body.console-ui .console-theme-toggle { width:32px; padding:6px; flex-shrink:0; 
 :root[data-console-theme=dark] .console-ui :is(td,th) { border-color:#d4d9e1; }
 
 /* Opaque surfaces, including dialogs mounted directly under body. */
-:root[data-console-theme=dark] .console-ui :is(.modal-panel,.modal-content,.action-dialog,.auth-card,.cr-dialog,.em-drawer,.calendar-dialog,.followup-dialog,.material-request-dialog,.em-upload-dialog,.reply-template-dialog,.contact-timing-dialog,.dp-dialog,.dr-confirm,.rr-dialog,.batch-log-drawer,.dropdown-menu,.mc-filter-popover,.mailbox-progress-menu) { background:#e9ebee; color:#273446; border-color:#cbd1da; }
+:root[data-console-theme=dark] .console-ui :is(.modal-panel,.modal-content,.action-dialog,.auth-card,.cr-dialog,.em-drawer,.calendar-dialog,.followup-dialog,.material-request-dialog,.em-upload-dialog,.reply-template-dialog,.contact-timing-dialog,.dp-dialog,.dr-confirm,.rr-dialog,.batch-log-drawer,.dropdown-menu,.mc-filter-popover,.mailbox-progress-menu,.console-toast,.preview-drawer,.contact-quick-search-dropdown,.trust-reply-fact-suggest) { background:#e9ebee; color:#273446; border-color:#cbd1da; }
 :root[data-console-theme=dark] .console-ui :is(.batch-config-editor-actions,.batch-manual-actions-sticky,.rag-prompt-savebar,.followup-actions,.material-request-actions,.em-upload-actions,.reply-template-footer,.dp-dialog-foot) { background:#e9ebee; border-color:#cbd1da; }
 :root[data-console-theme=dark] .console-ui :is(.task-center-card,.task-center-empty,.task-center-detail,.ec-section,.expert-materials,.calendar-root .calendar-panel,.calendar-root .calendar-agenda,.calendar-root .calendar-filter-bar,.calendar-root .calendar-overview,.dr-recheck .rr-panel) { background:#e9ebee; border-color:#d5d9df; }
 :root[data-console-theme=dark] .console-ui :is(.cr-meetbody,.calendar-root .calendar-day,.followup-mail-option,.reply-template-paper,.material-request-paper,.em-upload-row) { background:#f3f4f6; border-color:#d5d9df; }
