@@ -8,6 +8,8 @@
 
 ## 当前确认口径（人工邮件）
 
+> **关联入口**：近三周 168 封业务邮件提炼的完整 30 条邮件 QA、特例规则与英文范例已统一收口至 [confirmed-email-qa.md](file:///Users/lukai/IdeaProjects/weibo-talent-introduction/.agents/skills/qingfei-expert-reply/references/confirmed-email-qa.md) 及 Skill [SKILL.md](file:///Users/lukai/IdeaProjects/weibo-talent-introduction/.agents/skills/qingfei-expert-reply/SKILL.md)。后续新增人工邮件口径请以该文件为主源同步维护。
+
 ### 启明计划的官方政策文件
 
 **触发场景**：专家询问启明计划的官方政策文件、政府公告、官方链接，或要求发送文件复印件。同类询问统一使用本条口径。

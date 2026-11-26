@@ -7,6 +7,8 @@ docs/reviews/
 cache/
 .DS_Store
 config/application-local.yml
+.env.mailbot
+**/.env.mailbot
 .od-skills/
 .worktrees/
 exports/
